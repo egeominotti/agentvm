@@ -18,8 +18,14 @@ use crate::secret::Secret;
 /// Runs a queued task once a VM slot is free; a stop while it waits ends it there.
 pub(super) async fn run(ctx: Arc<AppCtx>, id: TaskId) {
     let Some(mut stop) = ctx.store.stop_signal(&id) else { return };
-    let _permit = tokio::select! {
-        permit = ctx.scheduler.acquire() => permit,
+    let Some(memory_mb) = ctx.store.get(&id).map(|r| r.memory_mb) else { return };
+    // This Mac's memory minus what macOS keeps: VMs beyond it would push the Mac into swap.
+    let budget_mb = ctx.settings.limits().max_memory_mb();
+    if ctx.scheduler.reserved_mb() + memory_mb > budget_mb {
+        ctx.store.push_boot(&id, "host: waiting for memory: other VMs are using it".into());
+    }
+    let _slot = tokio::select! {
+        slot = ctx.scheduler.acquire(memory_mb, budget_mb) => slot,
         _ = stop.wait_for(|s| *s) => return, // stopped while queued
     };
     if ctx.store.get(&id).is_none_or(|r| r.state != TaskState::Queued) {
