@@ -185,8 +185,10 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
     let git = Git::new(record.repo.clone());
 
     let ws = JobWorkspace::create(&ctx.config.jobs(), id).map_err(|e| format!("job directory: {e}"))?;
+    let t = std::time::Instant::now();
     if record.restore_from.is_none() {
         git.bundle_all(&ws.repo_bundle()).map_err(|e| e.to_string())?;
+        ctx.store.push_boot(id, format!("host: repository packed in {} ms", t.elapsed().as_millis()));
     }
     ws.write_spec(&TaskSpec {
         id: id.to_string(),
@@ -209,6 +211,7 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
         }
         None => ws.clone_disk(&ctx.config.golden()).map_err(|e| format!("disk clone: {e}"))?,
     }
+    ctx.store.push_boot(id, format!("host: disk ready in {} ms", t.elapsed().as_millis()));
     apply(TaskEvent::Prepared)?;
 
     let stop_requested_early = ctx.store.stop_signal(id).is_some_and(|s| *s.borrow());
@@ -245,6 +248,12 @@ async fn supervise(
         let _ = ctx.store.apply(id, TaskEvent::VmStarted);
     };
     let on_tick = || {
+        if !ctx.store.get(id).is_some_and(|r| r.ready) {
+            let lines = ws.job_log();
+            let marker = if record.interactive { "terminal ready" } else { "network ready" };
+            let ready = lines.iter().any(|l| l.ends_with(marker));
+            ctx.store.set_guest_boot(id, lines, ready);
+        }
         ctx.store.set_activity(id, ws.activity());
         if let Some(m) = ws.read_metrics() {
             if record.interactive {

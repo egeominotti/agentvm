@@ -7,5 +7,8 @@
       "hasTrustDialogAccepted": true,
       "hasCompletedProjectOnboarding": true
     }
-  }
+  },
+  "hasSeenAutoDefaultNudge": true,
+  "hasSeenAutoDefaultNotice": true,
+  "hasSeenAutoModeEntryWarning": true
 }

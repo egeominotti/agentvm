@@ -181,6 +181,30 @@ fn invalid_requests_are_rejected_with_a_message() {
     assert!(curl(&["-sf", &format!("{}/api/tasks/nope", server.base)]).is_none());
 }
 
+/// Runs a command in the VM's root shell (through the real PTY socket) and returns its output.
+fn run_in_shell(server: &Server, id: &str, command: &str) -> String {
+    use agentvm::adapters::pty::{Frame, PtyConnection};
+    let _ = server;
+    let socket = agentvm::adapters::jobdir::JobWorkspace::pty_socket_of(
+        std::path::Path::new("/"),
+        &agentvm::domain::ids::TaskId::parse(id).unwrap(),
+    );
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let mut pty = PtyConnection::open(&socket, "shell", 200, 50).await.expect("shell");
+        let line = format!("clear; {command}; echo __END__\n");
+        pty.send(&Frame::Input(line.into_bytes())).await.unwrap();
+        let mut out = String::new();
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline && out.matches("__END__").count() < 2 {
+            if let Ok(Ok(Some(bytes))) = tokio::time::timeout(Duration::from_secs(1), pty.recv()).await {
+                out.push_str(&String::from_utf8_lossy(&bytes));
+            }
+        }
+        out
+    })
+}
+
 fn run_task(server: &Server, repo: &Path, prompt: &str) -> (String, Value) {
     let created = post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo, "prompt": prompt}));
     let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
@@ -298,6 +322,12 @@ fn interactive_terminal_saves_to_the_branch_and_closes() {
         std::thread::sleep(Duration::from_millis(500));
     };
     assert!(usage["cost_usd"].as_f64().unwrap() > 0.0 && usage["input_tokens"].as_u64().unwrap() > 0, "{usage}");
+    // Nothing in Claude's screen waits for a human: no permission or mode prompts.
+    let screen = run_in_shell(&server, &id, "tmux capture-pane -p -t claude -S -300");
+    assert!(screen.contains("Claude Code"), "did not read Claude's screen:\n{screen}");
+    for prompt in ["Make auto mode your default", "Do you trust", "Yes, I accept"] {
+        assert!(!screen.contains(prompt), "Claude is blocked on a prompt ({prompt}):\n{screen}");
+    }
     let saved = post_json(&format!("{}/api/tasks/{id}/save", server.base), &json!({}));
     assert!(saved["commits"].as_u64().unwrap_or(0) >= 1, "{saved}");
     let content = git(repo.path(), &["show", &format!("agent/{id}:term.txt")]);

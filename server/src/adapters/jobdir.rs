@@ -103,6 +103,13 @@ impl JobWorkspace {
         serde_json::from_slice(&fs::read(self.share().join("usage.json")).ok()?).ok()
     }
 
+    /// Lines written by the guest job (`[1.8s] repo ready on …`).
+    pub fn job_log(&self) -> Vec<String> {
+        fs::read_to_string(self.share().join("job.log"))
+            .map(|s| s.lines().map(str::to_owned).collect())
+            .unwrap_or_default()
+    }
+
     pub fn activity(&self) -> Option<String> {
         let s = fs::read_to_string(self.share().join("activity")).ok()?;
         let s = s.trim();

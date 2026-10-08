@@ -64,6 +64,7 @@ function kind(t) {
   if (s === "preparing" || s === "booting") return ["k-boot", "Booting"];
   if (s === "collecting") return ["k-boot", "Saving"];
   if (s === "running") {
+    if (t.interactive && !t.ready) return ["k-boot", "Booting"];
     if (!t.interactive || t.activity === "working") return ["k-work", "Working"];
     if (t.activity === "waiting") return ["k-wait", "Waiting for you"];
     return ["k-idle", "Ready"];
@@ -380,7 +381,7 @@ class VmTerminal {
     this.fit();
     if (this.xterm.cols < 20) this.xterm.resize(100, 30);
     const { cols, rows } = this.xterm;
-    const view = this.fixed ? "&view=1" : "";
+    const view = this.fixed ? "&view=true" : "";
     const ws = new WebSocket(`ws://${location.host}/api/tasks/${this.id}/pty?session=${this.session}&cols=${cols}&rows=${rows}${view}`);
     ws.binaryType = "arraybuffer";
     // Resizes sent while connecting are lost: send the real size once the socket is open.
@@ -400,6 +401,74 @@ class VmTerminal {
     this.xterm.dispose();
     this.el.remove();
   }
+}
+
+// ---------- boot sequence ----------
+/** Turns the task's boot log into steps: real events with real timings. */
+function bootSteps(t) {
+  const host = {}, guest = [];
+  for (const line of t.boot_log || []) {
+    let m = line.match(/^host: (repository packed|disk ready) in (\d+) ms/);
+    if (m) { host[m[1]] = `${m[2]} ms`; continue; }
+    m = line.match(/^\[([\d.]+)s\] (.*)$/);
+    if (m) guest.push({ at: Number(m[1]), text: m[2] });
+  }
+  const seen = re => guest.find(g => re.test(g.text));
+  const secs = g => (g ? `${g.at.toFixed(1)} s` : "");
+  const s = t.status.state;
+  const steps = [
+    { label: "VM slot reserved", done: s !== "queued", detail: s === "queued" ? "waiting for a free slot" : "" },
+    { label: "Disk cloned from the image", done: !!host["disk ready"], detail: host["disk ready"] || "" },
+    { label: "Debian booted", done: !!seen(/^job start/), detail: secs(seen(/^job start/)) },
+    { label: "Repository checked out", done: !!seen(/^repo ready/), detail: secs(seen(/^repo ready/)) },
+    { label: "Network up", done: !!seen(/^network ready/), detail: secs(seen(/^network ready/)) },
+  ];
+  const setup = seen(/^running \.agentvm\/setup\.sh/);
+  if (setup) {
+    const end = seen(/^setup (done|failed)/);
+    steps.push({ label: "Repository setup (.agentvm/setup.sh)", done: !!end, failed: end && /failed/.test(end.text), detail: end ? (/failed/.test(end.text) ? "failed, see setup.log" : secs(end)) : "running" });
+  }
+  const install = seen(/^installing Claude Code/);
+  if (install) steps.push({ label: install.text.replace(/^installing/, "Installing"), done: !!seen(/^Claude Code \d/), detail: secs(seen(/^Claude Code \d/)) });
+  const readyEvt = seen(t.interactive ? /^terminal ready/ : /^network ready/);
+  steps.push({ label: t.interactive ? "Claude Code ready" : "Agent started", done: t.ready || !!readyEvt, detail: secs(readyEvt) });
+  const current = steps.findIndex(x => !x.done);
+  return { steps, current: current < 0 ? steps.length : current };
+}
+
+const BOOT_MARK = `<svg viewBox="0 0 64 64" class="boot-mark" aria-hidden="true">
+  <g class="brackets" stroke-linecap="square" fill="none">
+    <path d="M6 20V6h14"/><path d="M44 6h14v14"/><path d="M58 44v14H44"/><path d="M20 58H6V44"/>
+  </g>
+  <rect class="core" x="22" y="22" width="12" height="20"/>
+  <rect class="scan" x="8" y="8" width="48" height="2"/>
+</svg>`;
+
+/** Boot screen: built once (the animation never restarts), then `update(t)` every tick. */
+function bootPanel(compact = false) {
+  const mark = h("div", { class: `boot-mark-wrap${compact ? " small" : ""}` });
+  mark.innerHTML = BOOT_MARK;
+  const kicker = h("span", { class: "boot-kicker" });
+  const now = h("b", { class: "boot-now" });
+  const clock = h("span", { class: "boot-clock" });
+  const fill = h("i");
+  const list = h("ol", { class: "boot-steps" });
+  const root = compact
+    ? h("div", { class: "boot compact" }, mark, now, h("div", { class: "boot-bar" }, fill), clock)
+    : h("div", { class: "boot" }, mark, h("div", { class: "boot-head" }, kicker, now, clock), h("div", { class: "boot-bar" }, fill), list);
+  root.update = t => {
+    const { steps, current } = bootSteps(t);
+    kicker.textContent = t.status.state === "queued" ? "Queued" : "Sealing your machine";
+    now.textContent = current < steps.length ? `${steps[current].label}…` : "Opening the terminal…";
+    clock.textContent = compact ? `${current} of ${steps.length}, ${age(t)}` : age(t);
+    fill.style.width = `${(100 * current) / steps.length}%`;
+    if (!compact) {
+      list.replaceChildren(...steps.map((x, k) =>
+        h("li", { class: x.failed ? "failed" : x.done ? "done" : k === current ? "now" : "" },
+          h("span", { class: "tick" }), h("span", { class: "what" }, x.label), h("span", { class: "when" }, x.detail))));
+    }
+  };
+  return root;
 }
 
 // ---------- outcome + diff ----------
@@ -481,13 +550,15 @@ class WallView {
     const live = tasks.filter(t => !TERMINAL.has(t.status.state)).length;
     const waiting = tasks.filter(t => t.status.state === "running" && t.activity === "waiting").length;
     const finished = tasks.filter(t => TERMINAL.has(t.status.state));
+    const clear = finished.length
+      ? h("button", { class: "btn ghost small", type: "button", onclick: async () => {
+          for (const t of finished) await api(`/api/tasks/${t.id}`, { method: "DELETE" });
+          toast(`Removed ${plural(finished.length, "finished machine")}`);
+          loadTasks();
+        } }, `Clear ${finished.length} finished`)
+      : "";
     this.head.replaceChildren(h("b", {}, plural(live, "machine")), h("span", {}, waiting ? `${waiting} waiting for you` : "click a machine to work in it"),
-      h("span", { class: "spacer" }),
-      finished.length ? h("button", { class: "btn ghost small", type: "button", onclick: async () => {
-        for (const t of finished) await api(`/api/tasks/${t.id}`, { method: "DELETE" });
-        toast(`Removed ${plural(finished.length, "finished machine")}`);
-        loadTasks();
-      } }, `Clear ${finished.length} finished`) : null);
+      h("span", { class: "spacer" }), clear);
     for (const [id, cell] of this.cells) if (!byId(id)) { cell.destroy(); this.cells.delete(id); }
     tasks.forEach((t, i) => {
       let cell = this.cells.get(t.id);
@@ -522,9 +593,20 @@ class Cell {
     const m = t.metrics;
     this.cpu.replaceChildren(h("b", {}, m ? `${m.cpu_pct.toFixed(0)}%` : "—"), "CPU", sparkline(t.cpu_history, { width: 70, height: 16 }));
     this.mem.replaceChildren(h("b", {}, m ? gb(m.mem_used_mb) : "—"), "RAM", sparkline(t.mem_history, { width: 70, height: 16, color: "var(--wait)" }));
+    this.portChip ??= h("a", { class: "port-chip", target: "_blank", rel: "noopener", onclick: e => e.stopPropagation() });
+    const p0 = t.ports?.[0];
+    this.portChip.hidden = !p0;
+    if (p0) { this.portChip.href = `http://localhost:${p0.host_port}`; this.portChip.textContent = `:${p0.port}${t.ports.length > 1 ? ` +${t.ports.length - 1}` : ""}`; }
+    if (!this.portChip.isConnected) this.proc.before(this.portChip);
     const u = t.usage;
     this.proc.textContent = u?.output_tokens ? `${money(u.cost_usd)}  ${tokens(u.input_tokens + u.output_tokens)} tokens` : m?.top?.[0] ? `${m.top[0].name} ${m.top[0].cpu_pct.toFixed(0)}%` : repoName(t.repo);
-    if (t.status.state === "running" && t.interactive) {
+    if (!TERMINAL.has(t.status.state) && t.interactive && !(t.status.state === "running" && t.ready)) {
+      this.term?.dispose();
+      this.term = null;
+      this.endedFor = null;
+      if (!this.boot || !this.body.contains(this.boot)) { this.boot = bootPanel(true); this.body.replaceChildren(this.boot); }
+      this.boot.update(t);
+    } else if (t.status.state === "running" && t.interactive) {
       if (!this.term) {
         this.body.replaceChildren();
         this.term = new VmTerminal(t.id, "claude", { fontSize: 12, webgl: false, readOnly: true, fixed: { cols: 160, rows: 48 } });
@@ -590,8 +672,16 @@ class FocusView {
     this.renderPanel(t, label);
     if (ended) return this.ended(t);
     if (!t.interactive) return this.overlayText("Running without a terminal", "Started from the API in automatic mode.");
-    if (s !== "running") return this.overlayText(s === "queued" ? "Queued" : "Booting the VM", s === "queued" ? "Every VM slot is busy; it starts as soon as one frees up." : "Debian is starting. Claude opens on its own in a few seconds.");
-    this.overlay.hidden = true;
+    if (s !== "running" || !t.ready) {
+      this.screen.hidden = false;
+      this.result.hidden = true;
+      this.overlay.hidden = false;
+      if (!this.boot || !this.overlay.contains(this.boot)) { this.boot = bootPanel(); this.overlay.replaceChildren(this.boot); }
+      this.boot.update(t);
+      if (s === "running") this.ensureTerm(this.session).connect(); // connect behind the curtain
+      return;
+    }
+    if (!this.overlay.hidden) { this.overlay.classList.add("lift"); setTimeout(() => { this.overlay.hidden = true; this.overlay.classList.remove("lift"); }, 260); }
     this.ensureTerm(this.session).connect();
   }
 
@@ -635,6 +725,12 @@ class FocusView {
           u.context_pct != null && h("dt", {}, "Context used"), u.context_pct != null && h("dd", {}, `${Math.round(u.context_pct)}%`))));
     }
     if (TERMINAL.has(t.status.state)) kids.unshift(h("p", { class: "closed-note" }, "This VM is closed: its disk is gone, the work is on the branch."));
+    if (t.ports?.length) {
+      kids.unshift(h("div", { class: "ports" }, h("h3", {}, "Ports on this Mac"),
+        t.ports.map(p => h("a", { class: "port", href: `http://localhost:${p.host_port}`, target: "_blank", rel: "noopener" },
+          h("b", {}, `:${p.port}`), h("span", {}, p.name || "service"),
+          h("code", {}, `localhost:${p.host_port}`)))));
+    }
     kids.push(h("dl", { class: "kv" },
       h("dt", {}, "State"), h("dd", {}, label),
       h("dt", {}, "Model"), h("dd", {}, modelLabel(t.model)),

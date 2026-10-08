@@ -42,6 +42,12 @@ pub struct TaskRecord {
     /// Claude's cost and tokens (kept across restarts).
     #[serde(default)]
     pub usage: Option<AgentUsage>,
+    /// Boot timeline: host steps (`host: …`) then the guest job's own log lines.
+    #[serde(skip)]
+    pub boot_log: Vec<String>,
+    /// The agent's terminal is up (interactive) or the job is running (automatic).
+    #[serde(skip)]
+    pub ready: bool,
     /// VM ports reachable from the Mac right now.
     #[serde(skip)]
     pub ports: Vec<crate::domain::metrics::ForwardedPort>,
@@ -75,6 +81,8 @@ impl TaskRecord {
             cpus: 0,
             memory_mb: 0,
             usage: None,
+            boot_log: Vec::new(),
+            ready: false,
             ports: Vec::new(),
             metrics: None,
             cpu_history: VecDeque::with_capacity(HISTORY),
@@ -213,6 +221,21 @@ impl Store {
             let record = e.record.clone();
             drop(tasks);
             self.persist(&record);
+        }
+    }
+
+    pub fn push_boot(&self, id: &TaskId, line: String) {
+        if let Some(e) = self.tasks.lock().unwrap().get_mut(id) {
+            e.record.boot_log.push(line);
+        }
+    }
+
+    /// Replaces the guest part of the boot log (the host lines stay first).
+    pub fn set_guest_boot(&self, id: &TaskId, lines: Vec<String>, ready: bool) {
+        if let Some(e) = self.tasks.lock().unwrap().get_mut(id) {
+            e.record.boot_log.retain(|l| l.starts_with("host: "));
+            e.record.boot_log.extend(lines);
+            e.record.ready = ready;
         }
     }
 
