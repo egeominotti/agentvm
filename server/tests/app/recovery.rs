@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use agentvm::domain::ids::TaskId;
 
-use crate::helpers::{ctx, git_repo, running_task as interrupted_task};
+use crate::helpers::{ctx, git_repo, record, running_task as interrupted_task};
 
 async fn wait_terminal(ctx: &agentvm::app::supervisor::AppCtx, id: &TaskId) -> agentvm::app::store::TaskRecord {
     for _ in 0..100 {
@@ -37,4 +37,17 @@ async fn a_vm_gone_while_the_server_was_down_keeps_its_disk_as_a_snapshot() {
         assert_eq!(std::fs::read(ctx.snapshots.disk(&snaps[0].id)).unwrap(), vec![7u8; 4 << 20]);
         assert!(!home.path().join("jobs").join(id.as_str()).join("disk.raw").exists());
     }
+}
+
+/// A task still queued at start-up is launched again at once; the clean-up of folders nobody
+/// owns runs right after and must leave its folder (and the disk it may be cloning) alone.
+#[tokio::test(flavor = "multi_thread")]
+async fn queued_tasks_own_their_folder_at_start_up() {
+    let (home, repo) = (tempfile::tempdir().unwrap(), git_repo());
+    let rec = record(&repo);
+    let id = rec.id.clone();
+    agentvm::app::store::Store::persistent(home.path().join("jobs")).insert(rec);
+    let ctx = ctx(home.path());
+    let live = agentvm::app::supervisor::recover(&ctx);
+    assert!(live.contains(id.as_str()), "{live:?}");
 }

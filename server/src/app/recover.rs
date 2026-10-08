@@ -27,7 +27,11 @@ pub fn recover(ctx: &Arc<AppCtx>) -> HashSet<String> {
         ctx.store.insert(record);
         match state {
             s if s.is_terminal() => {}
-            TaskState::Queued => queued.push(id),
+            TaskState::Queued => {
+                // Launched again below, before the orphan clean-up: its folder is not an orphan.
+                live.insert(id.to_string());
+                queued.push(id);
+            }
             TaskState::Preparing => {
                 let _ = ctx.store.apply(&id, TaskEvent::Failure("interrupted while preparing: launch it again".into()));
             }
