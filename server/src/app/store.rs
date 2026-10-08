@@ -8,6 +8,7 @@ use std::time::SystemTime;
 use tokio::sync::watch;
 
 use super::events::{EventLog, StreamItem};
+use super::record_file::RecordFile;
 // The record type lives in its own module; re-exported where callers have always found it.
 pub use super::record::{HISTORY, TaskRecord};
 use crate::domain::ids::TaskId;
@@ -27,7 +28,13 @@ struct Entry {
     record: TaskRecord,
     log: Arc<EventLog>,
     stop: watch::Sender<bool>,
+    /// Bumped by every change that goes to disk.
+    version: u64,
+    file: RecordFile,
 }
+
+/// A change to write once the store's lock is released.
+type Pending = Option<(TaskRecord, u64, RecordFile)>;
 
 /// Cheap to clone: clones share the same tasks.
 #[derive(Default, Clone)]
@@ -72,33 +79,49 @@ impl Store {
         Self::load_all(dir).0
     }
 
-    fn persist(&self, record: &TaskRecord) {
-        if let Some(dir) = &self.dir {
-            let _ = crate::adapters::records::save(&dir.join(record.id.as_str()).join("record.json"), record);
+    /// Runs `change` under the lock; when it reports the record changed, the new record is
+    /// written to disk after the lock is released (disk I/O never blocks the store).
+    fn update<R>(&self, id: &TaskId, change: impl FnOnce(&mut TaskRecord) -> (R, bool)) -> Option<R> {
+        let (out, pending): (R, Pending) = {
+            let mut tasks = self.tasks.lock().unwrap();
+            let e = tasks.get_mut(id)?;
+            let (out, changed) = change(&mut e.record);
+            let pending = changed.then(|| {
+                e.version += 1;
+                (e.record.clone(), e.version, e.file.clone())
+            });
+            (out, pending)
+        };
+        if let Some((record, version, file)) = pending {
+            file.write(&record, version);
         }
+        Some(out)
     }
 
     pub fn insert(&self, record: TaskRecord) {
         let log = Arc::new(EventLog::new());
         log.push(StreamItem::State(record.state.clone()));
-        self.persist(&record);
-        let entry = Entry { record, log, stop: watch::channel(false).0 };
+        let file = RecordFile::new(self.dir.as_ref().map(|d| d.join(record.id.as_str()).join("record.json")));
+        file.write(&record, 1);
+        let entry = Entry { record, log, stop: watch::channel(false).0, version: 1, file };
         self.tasks.lock().unwrap().insert(entry.record.id.clone(), entry);
     }
 
     pub fn apply(&self, id: &TaskId, event: TaskEvent) -> Result<TaskState, StoreError> {
-        let mut tasks = self.tasks.lock().unwrap();
-        let entry = tasks.get_mut(id).ok_or(StoreError::NotFound)?;
-        let next = transition(&entry.record.state, &event)?;
-        if next != entry.record.state {
-            if next.is_terminal() {
-                entry.record.finished_at = Some(SystemTime::now());
+        let log = self.log(id).ok_or(StoreError::NotFound)?;
+        let result = self.update(id, |record| match transition(&record.state, &event) {
+            Err(e) => (Err(e.into()), false),
+            Ok(next) if next == record.state => (Ok(next), false),
+            Ok(next) => {
+                if next.is_terminal() {
+                    record.finished_at = Some(SystemTime::now());
+                }
+                record.state = next.clone();
+                log.push(StreamItem::State(next.clone()));
+                (Ok(next), true)
             }
-            entry.record.state = next.clone();
-            entry.log.push(StreamItem::State(next.clone()));
-            self.persist(&entry.record);
-        }
-        Ok(next)
+        });
+        result.unwrap_or(Err(StoreError::NotFound))
     }
 
     /// Signals the stop to the supervisor and updates the state (a queued task stops immediately).
@@ -129,25 +152,15 @@ impl Store {
 
     /// Saved to disk only when it changes.
     pub fn set_auto_snapshot_min(&self, id: &TaskId, minutes: Option<u32>) {
-        let mut tasks = self.tasks.lock().unwrap();
-        if let Some(e) = tasks.get_mut(id) {
-            e.record.auto_snapshot_min = minutes;
-            let record = e.record.clone();
-            drop(tasks);
-            self.persist(&record);
-        }
+        self.update(id, |r| ((), std::mem::replace(&mut r.auto_snapshot_min, minutes) != minutes));
     }
 
     pub fn set_usage(&self, id: &TaskId, usage: AgentUsage) {
-        let mut tasks = self.tasks.lock().unwrap();
-        if let Some(e) = tasks.get_mut(id)
-            && e.record.usage.as_ref() != Some(&usage)
-        {
-            e.record.usage = Some(usage);
-            let record = e.record.clone();
-            drop(tasks);
-            self.persist(&record);
-        }
+        self.update(id, |r| {
+            let changed = r.usage.as_ref() != Some(&usage);
+            r.usage = Some(usage);
+            ((), changed)
+        });
     }
 
     pub fn push_boot(&self, id: &TaskId, line: String) {

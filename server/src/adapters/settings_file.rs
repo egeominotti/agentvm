@@ -27,9 +27,7 @@ pub fn keep_copy(path: &Path) -> std::io::Result<PathBuf> {
     Ok(copy)
 }
 
-/// Atomic write (temporary file + rename): a crash never leaves half a file.
+/// Atomic write: a crash never leaves half a file.
 pub fn save(path: &Path, settings: &Settings) -> std::io::Result<()> {
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_vec_pretty(settings)?)?;
-    std::fs::rename(tmp, path)
+    crate::atomic_file::write_json(path, settings)
 }

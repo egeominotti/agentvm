@@ -11,6 +11,7 @@ pub mod proxy;
 pub mod queries;
 pub mod random;
 pub mod record;
+mod record_file;
 pub mod recover;
 pub mod scheduler;
 pub mod session;

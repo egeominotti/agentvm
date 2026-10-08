@@ -50,7 +50,7 @@ impl SnapshotStore {
             clone(disk, &self.disk(&meta.id))?;
             fs::copy(efivars, self.efivars(&meta.id))?;
             let saved = SnapshotMeta { size_mb: allocated_mb(&dir), ..meta.clone() };
-            fs::write(dir.join("meta.json"), serde_json::to_vec_pretty(&saved)?)?;
+            crate::atomic_file::write_json(&dir.join("meta.json"), &saved)?;
             Ok(saved)
         })();
         if result.is_err() {
@@ -95,7 +95,7 @@ impl SnapshotStore {
         if !dir.join("disk.raw").is_file() || !dir.join("efivars").is_file() {
             return Err(io::Error::other("the archive is not an agentvm snapshot"));
         }
-        fs::write(dir.join("meta.json"), serde_json::to_vec_pretty(&meta)?)?;
+        crate::atomic_file::write_json(&dir.join("meta.json"), &meta)?;
         fs::create_dir_all(&self.root)?;
         fs::rename(dir, self.dir(&meta.id))?;
         Ok(self.get(&meta.id).unwrap_or(meta))
