@@ -8,6 +8,7 @@ use crate::domain::metrics::{ForwardedPort, VmMetrics};
 use crate::domain::settings::Model;
 use crate::domain::snapshot::SnapshotId;
 use crate::domain::task::{StateAt, TaskState};
+use crate::domain::telemetry::TelemetrySample;
 use crate::domain::usage::AgentUsage;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -60,6 +61,15 @@ pub struct TaskRecord {
     pub cpu_history: VecDeque<f32>,
     #[serde(skip)]
     pub mem_history: VecDeque<f32>,
+    /// When the last new sample arrived (host clock): older than a few seconds means stale.
+    #[serde(skip)]
+    pub metrics_at: Option<f64>,
+    /// What the balloon currently lets the VM keep.
+    #[serde(skip)]
+    pub memory_limit_mb: Option<u64>,
+    /// The last 5 minutes of telemetry, one sample a second, for live charts.
+    #[serde(skip)]
+    pub live: VecDeque<TelemetrySample>,
     pub created_at: SystemTime,
     #[serde(default)]
     pub finished_at: Option<SystemTime>,
@@ -95,6 +105,9 @@ impl TaskRecord {
             metrics: None,
             cpu_history: VecDeque::with_capacity(HISTORY),
             mem_history: VecDeque::with_capacity(HISTORY),
+            metrics_at: None,
+            memory_limit_mb: None,
+            live: VecDeque::new(),
             created_at: SystemTime::now(),
             finished_at: None,
             timeline: vec![StateAt::now(&TaskState::Queued)],
@@ -122,6 +135,11 @@ impl TaskRecord {
 
     /// Adds a telemetry sample, keeping the last `HISTORY` CPU and memory percentages.
     pub(super) fn push_metrics(&mut self, m: VmMetrics) {
+        // The same sample read again: the guest stopped writing, nothing new to count.
+        if self.metrics.as_ref().is_some_and(|old| old.uptime_s == m.uptime_s) {
+            return;
+        }
+        self.metrics_at = Some(now_s());
         for (history, value) in [(&mut self.cpu_history, m.cpu_pct as f32), (&mut self.mem_history, m.mem_pct() as f32)]
         {
             if history.len() == HISTORY {
@@ -131,4 +149,21 @@ impl TaskRecord {
         }
         self.metrics = Some(m);
     }
+}
+
+/// Samples of live telemetry kept: 5 minutes at one a second.
+pub const LIVE: usize = 300;
+
+impl TaskRecord {
+    pub(super) fn push_live(&mut self, sample: TelemetrySample, memory_limit_mb: u64) {
+        if self.live.len() == LIVE {
+            self.live.pop_front();
+        }
+        self.live.push_back(sample);
+        self.memory_limit_mb = Some(memory_limit_mb);
+    }
+}
+
+fn now_s() -> f64 {
+    SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
 }

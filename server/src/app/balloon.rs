@@ -27,6 +27,11 @@ impl Balloon {
     }
 
     /// Moves the balloon to the target for the latest sample, if that target changed.
+    /// The memory the VM is allowed to keep right now.
+    pub fn target_mb(&self) -> u64 {
+        self.target_mb
+    }
+
     pub fn adjust(&mut self, ws: &JobWorkspace, m: &VmMetrics, working: bool) {
         let busy = working || m.cpu_pct > BUSY_CPU_PCT;
         if busy {

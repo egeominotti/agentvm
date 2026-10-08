@@ -5,3 +5,4 @@ mod diagnostics;
 mod guard;
 mod helpers;
 mod settings;
+mod telemetry;

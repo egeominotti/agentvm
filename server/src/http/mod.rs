@@ -15,6 +15,7 @@ mod settings;
 mod snapshots;
 mod system;
 mod tasks;
+mod telemetry;
 mod terminal;
 
 pub use router::router;

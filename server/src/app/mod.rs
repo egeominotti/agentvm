@@ -24,3 +24,4 @@ pub mod store;
 pub mod submission;
 mod supervise;
 pub mod supervisor;
+pub mod telemetry;

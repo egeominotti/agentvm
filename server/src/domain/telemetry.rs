@@ -21,6 +21,25 @@ pub struct TelemetrySample {
     pub load1: f32,
 }
 
+impl TelemetrySample {
+    /// The sample of one `VmMetrics` read at `at` (host clock), with the memory the VM may keep.
+    pub fn from_metrics(m: &super::metrics::VmMetrics, at: f64, mem_limit_mb: u64) -> Self {
+        TelemetrySample {
+            at,
+            cpu_pct: m.cpu_pct as f32,
+            cpu_peak: m.cpu_pct as f32,
+            mem_used_mb: m.mem_used_mb,
+            mem_limit_mb: Some(mem_limit_mb),
+            disk_used_mb: m.disk_used_mb,
+            disk_read_bps: m.disk_read_bps,
+            disk_write_bps: m.disk_write_bps,
+            net_rx_bps: m.net_rx_bps,
+            net_tx_bps: m.net_tx_bps,
+            load1: m.load1 as f32,
+        }
+    }
+}
+
 /// Seconds averaged into one line.
 pub const PERIOD_S: f64 = 10.0;
 /// A longer gap between samples (the Mac asleep, a paused VM) is never averaged across.
@@ -69,4 +88,12 @@ fn average(samples: &[TelemetrySample]) -> TelemetrySample {
         net_tx_bps: mean_u(|s| s.net_tx_bps),
         load1: samples.iter().map(|s| s.load1).sum::<f32>() / n as f32,
     }
+}
+
+/// At most `max` points for a chart: consecutive lines averaged together (peaks kept).
+pub fn thin(points: &[TelemetrySample], max: usize) -> Vec<TelemetrySample> {
+    if points.len() <= max || max == 0 {
+        return points.to_vec();
+    }
+    points.chunks(points.len().div_ceil(max)).map(average).collect()
 }

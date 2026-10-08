@@ -130,6 +130,10 @@ pub struct TaskDto {
     pub metrics: Option<VmMetrics>,
     pub cpu_history: Vec<f32>,
     pub mem_history: Vec<f32>,
+    /// Seconds since the last new sample (`null`: none yet); over a few seconds, the numbers are stale.
+    pub metrics_age_s: Option<f64>,
+    /// What the balloon lets the VM keep now (`null`: not known yet).
+    pub memory_limit_mb: Option<u64>,
     pub status: TaskState,
     pub created_at: f64,
     pub finished_at: Option<f64>,
@@ -158,6 +162,8 @@ impl From<TaskRecord> for TaskDto {
             metrics: r.metrics,
             cpu_history: r.cpu_history.into(),
             mem_history: r.mem_history.into(),
+            metrics_age_s: r.metrics_at.map(|at| (now_s() - at).max(0.0)),
+            memory_limit_mb: r.memory_limit_mb,
             status: r.state,
             created_at: unix(r.created_at),
             finished_at: r.finished_at.map(unix),
@@ -167,4 +173,8 @@ impl From<TaskRecord> for TaskDto {
 
 fn unix(t: SystemTime) -> f64 {
     t.duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0)
+}
+
+fn now_s() -> f64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
 }

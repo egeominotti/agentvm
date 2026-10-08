@@ -14,6 +14,7 @@ pub use super::record::{HISTORY, TaskRecord};
 use crate::domain::ids::TaskId;
 use crate::domain::metrics::{ForwardedPort, VmMetrics};
 use crate::domain::task::{InvalidTransition, TaskEvent, TaskState, transition};
+use crate::domain::telemetry::TelemetrySample;
 use crate::domain::usage::AgentUsage;
 
 #[derive(Debug, thiserror::Error)]
@@ -169,6 +170,13 @@ impl Store {
     pub fn record_metrics(&self, id: &TaskId, m: VmMetrics) {
         if let Some(e) = self.tasks.lock().unwrap().get_mut(id) {
             e.record.push_metrics(m);
+        }
+    }
+
+    /// A new telemetry sample for the live charts, with the memory the VM may keep now.
+    pub fn record_sample(&self, id: &TaskId, sample: TelemetrySample, memory_limit_mb: u64) {
+        if let Some(e) = self.tasks.lock().unwrap().get_mut(id) {
+            e.record.push_live(sample, memory_limit_mb);
         }
     }
 

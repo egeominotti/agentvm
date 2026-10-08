@@ -7,6 +7,7 @@ use crate::app::proxy::vm_name;
 use crate::app::record::TaskRecord;
 use crate::domain::ids::TaskId;
 use crate::domain::metrics::VmMetrics;
+use crate::domain::telemetry::{Downsampler, TelemetrySample};
 
 /// Reads what the guest wrote to the job folder and publishes it on the task.
 pub(super) struct Ticker<'a> {
@@ -15,11 +16,16 @@ pub(super) struct Ticker<'a> {
     record: &'a TaskRecord,
     ws: &'a JobWorkspace,
     balloon: Balloon,
+    /// Turns the samples into the 10-second lines of the VM's history file.
+    history: Downsampler,
+    /// The guest's uptime in the last sample: the same again means no new sample.
+    last_uptime: Option<u64>,
 }
 
 impl<'a> Ticker<'a> {
     pub(super) fn new(ctx: &'a AppCtx, id: &'a TaskId, record: &'a TaskRecord, ws: &'a JobWorkspace) -> Self {
-        Ticker { ctx, id, record, ws, balloon: Balloon::new(record.memory_mb, ws.memory_target()) }
+        let balloon = Balloon::new(record.memory_mb, ws.memory_target());
+        Ticker { ctx, id, record, ws, balloon, history: Downsampler::default(), last_uptime: None }
     }
 
     pub(super) fn tick(&mut self) {
@@ -30,10 +36,27 @@ impl<'a> Ticker<'a> {
                 self.balloon.adjust(self.ws, &m, working);
                 self.sync_ports(&m);
             }
+            if self.last_uptime != Some(m.uptime_s) {
+                self.last_uptime = Some(m.uptime_s);
+                self.record_sample(&m);
+            }
             self.ctx.store.record_metrics(self.id, m);
         }
         if let Some(u) = self.ws.read_usage() {
             self.ctx.store.set_usage(self.id, u);
+        }
+    }
+
+    /// A new sample: to the live charts at once, and every 10 seconds a line of the history.
+    fn record_sample(&mut self, m: &VmMetrics) {
+        let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64());
+        let sample = TelemetrySample::from_metrics(m, at, self.balloon.target_mb());
+        self.ctx.store.record_sample(self.id, sample.clone(), self.balloon.target_mb());
+        if let Some(line) = self.history.push(sample) {
+            let file = crate::app::telemetry::history_file(self.ctx, self.id);
+            if let Err(e) = crate::adapters::telemetry_file::append(&file, &line) {
+                tracing::warn!(task = %self.id, error = %e, "telemetry history not written");
+            }
         }
     }
 
