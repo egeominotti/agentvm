@@ -3,6 +3,7 @@
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::os::fd::AsRawFd;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 unsafe extern "C" {
@@ -18,8 +19,10 @@ pub struct InstanceLock {
 }
 
 impl InstanceLock {
+    /// Also makes `home` private (0700): it holds repos, VM disks and the API token.
     pub fn acquire(home: &Path) -> io::Result<Self> {
         std::fs::create_dir_all(home)?;
+        std::fs::set_permissions(home, std::fs::Permissions::from_mode(0o700))?;
         let file = OpenOptions::new().create(true).truncate(false).write(true).open(home.join("server.lock"))?;
         // SAFETY: valid descriptor owned by `file`.
         if unsafe { flock(file.as_raw_fd(), LOCK_EX | LOCK_NB) } == 0 {

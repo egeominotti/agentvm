@@ -16,6 +16,7 @@ HOME=/root bash -c "curl -fsSL https://claude.ai/install.sh | bash -s '$VERSION'
 /root/.local/bin/claude --version
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> /root/.bashrc
 
+install -m 755 "$SRC/agentvm-boot" /usr/local/bin/agentvm-boot
 install -m 755 "$SRC/agentvm-job" /usr/local/bin/agentvm-job
 install -m 755 "$SRC/agentvm-pty" /usr/local/bin/agentvm-pty
 install -m 755 "$SRC/agentvm-metrics" /usr/local/bin/agentvm-metrics

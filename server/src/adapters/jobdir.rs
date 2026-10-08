@@ -11,6 +11,7 @@ use std::process::Command;
 use crate::domain::ids::TaskId;
 use crate::domain::outcome::GuestResult;
 use crate::domain::spec::TaskSpec;
+use crate::guestfs;
 use crate::secret::Secret;
 
 unsafe extern "C" {
@@ -18,6 +19,20 @@ unsafe extern "C" {
     fn kill(pid: i32, sig: i32) -> std::ffi::c_int;
     fn getuid() -> u32;
 }
+
+/// Guest scripts of this build, installed by the image's `agentvm-boot` at every launch.
+const RUNTIME: &[(&str, &str)] = &[
+    ("agentvm-job", include_str!("../../../guest/agentvm-job")),
+    ("agentvm-pty", include_str!("../../../guest/agentvm-pty")),
+    ("agentvm-metrics", include_str!("../../../guest/agentvm-metrics")),
+    ("agentvm-statusline", include_str!("../../../guest/agentvm-statusline")),
+    ("agentvm-claude", include_str!("../../../guest/agentvm-claude")),
+    ("tmux.conf", include_str!("../../../guest/config/tmux.conf")),
+];
+
+/// JSON the guest writes (metrics, usage, result) is a few KiB.
+const SMALL_FILE: u64 = 1 << 20;
+const JOB_LOG_MAX: u64 = 256 << 10;
 
 /// Owns `<jobs>/<id>/`. On `Drop` it deletes the disk, EFI variables, token and input bundle;
 /// the logs (`stream.jsonl`, `result.json`, `job.log`, `console.log`) are kept.
@@ -61,6 +76,11 @@ impl JobWorkspace {
         fs::set_permissions(&share, fs::Permissions::from_mode(0o777))?;
         fs::create_dir_all(socket_dir())?;
         fs::set_permissions(socket_dir(), fs::Permissions::from_mode(0o700))?;
+        let runtime = share.join("runtime");
+        fs::create_dir_all(&runtime)?;
+        for (name, text) in RUNTIME {
+            fs::write(runtime.join(name), text)?;
+        }
         Ok(JobWorkspace { dir, id: id.to_string() })
     }
 
@@ -95,23 +115,24 @@ impl JobWorkspace {
         socket_dir().join(format!("{}.sock", self.id))
     }
     pub fn read_metrics(&self) -> Option<crate::domain::metrics::VmMetrics> {
-        serde_json::from_slice(&fs::read(self.share().join("metrics.json")).ok()?).ok()
+        serde_json::from_slice(&guestfs::read(&self.share().join("metrics.json"), SMALL_FILE)?).ok()
     }
 
     /// Cost and tokens copied by the Claude Code status line inside the VM.
     pub fn read_usage(&self) -> Option<crate::domain::usage::AgentUsage> {
-        serde_json::from_slice(&fs::read(self.share().join("usage.json")).ok()?).ok()
+        serde_json::from_slice(&guestfs::read(&self.share().join("usage.json"), SMALL_FILE)?).ok()
     }
 
     /// Lines written by the guest job (`[1.8s] repo ready on …`).
     pub fn job_log(&self) -> Vec<String> {
-        fs::read_to_string(self.share().join("job.log"))
-            .map(|s| s.lines().map(str::to_owned).collect())
+        guestfs::read_prefix(&self.share().join("job.log"), JOB_LOG_MAX)
+            .map(|b| String::from_utf8_lossy(&b).lines().map(str::to_owned).collect())
             .unwrap_or_default()
     }
 
     pub fn activity(&self) -> Option<String> {
-        let s = fs::read_to_string(self.share().join("activity")).ok()?;
+        let b = guestfs::read(&self.share().join("activity"), 64)?;
+        let s = String::from_utf8_lossy(&b);
         let s = s.trim();
         (!s.is_empty()).then(|| s.to_owned())
     }
@@ -161,11 +182,11 @@ impl JobWorkspace {
 
     /// `None` if the file is missing or invalid: only a readable result counts for the outcome.
     pub fn read_result(&self) -> Option<GuestResult> {
-        serde_json::from_slice(&fs::read(self.share().join("result.json")).ok()?).ok()
+        serde_json::from_slice(&guestfs::read(&self.share().join("result.json"), SMALL_FILE)?).ok()
     }
 
     pub fn has_out_bundle(&self) -> bool {
-        self.out_bundle().is_file()
+        guestfs::open_regular(&self.out_bundle()).is_some()
     }
 
     /// Last lines of the serial console, to diagnose a failed boot.
@@ -222,4 +243,9 @@ fn is_vm_helper(pid: i32) -> bool {
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().ends_with("agentvm-vm"))
         .unwrap_or(false)
+}
+
+/// Asks the guest for something by creating `<share>/<name>` (never through a planted symlink).
+pub fn write_request(share: &Path, name: &str) -> io::Result<()> {
+    guestfs::create_empty(&share.join(name))
 }

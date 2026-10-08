@@ -273,3 +273,102 @@ async fn a_vm_outlives_its_process_handle_and_can_be_reattached() {
     again.terminate();
     assert_eq!(again.wait().await, VmExit::Signaled);
 }
+
+/// Runs `cmd` in the VM's root shell and returns what the terminal printed until it finished.
+async fn shell(socket: &std::path::Path, cmd: &str) -> String {
+    use agentvm::adapters::pty::{Frame, PtyConnection};
+    let t0 = Instant::now();
+    loop {
+        // A marker unique to this call that only the output contains (tmux replays old screens).
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let marker = format!("__DONE_{n}__");
+        if let Ok(mut pty) = PtyConnection::open(socket, "shell", 200, 50).await
+            && pty.send(&Frame::Input(format!("{cmd}; echo __DONE\"_\"{n}__\n").into_bytes())).await.is_ok()
+        {
+            let mut seen = String::new();
+            let deadline = Instant::now() + Duration::from_secs(8);
+            while Instant::now() < deadline && !seen.contains(&marker) {
+                if let Ok(Ok(Some(bytes))) = tokio::time::timeout(Duration::from_secs(1), pty.recv()).await {
+                    seen.push_str(&String::from_utf8_lossy(&bytes));
+                }
+            }
+            return seen;
+        }
+        assert!(t0.elapsed() < Duration::from_secs(30), "the shell never answered");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+}
+
+async fn save_reply(ws: &JobWorkspace) -> agentvm::domain::save::SaveReply {
+    let done = ws.share().join("save.done");
+    let _ = std::fs::remove_file(&done);
+    agentvm::adapters::jobdir::write_request(&ws.share(), "save.request").unwrap();
+    let t0 = Instant::now();
+    loop {
+        if let Some(r) = agentvm::guestfs::read(&done, 4096).and_then(|b| agentvm::domain::save::SaveReply::parse(&b)) {
+            return r;
+        }
+        assert!(t0.elapsed() < Duration::from_secs(40), "no save.done");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+/// Husky hooks, a git command holding index.lock: a save must never power off the VM.
+#[tokio::test]
+#[ignore = "requires the golden image"]
+async fn saves_survive_git_failures_in_the_guest() {
+    use agentvm::domain::save::SaveReply;
+    use agentvm::domain::spec::TaskSpec;
+    use agentvm::secret::Secret;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = workspace(&tmp);
+    let base = repo_with_bundle(&ws);
+    ws.write_spec(&TaskSpec {
+        id: "t".into(),
+        prompt: String::new(),
+        branch: "agent/t".into(),
+        base_sha: base,
+        timeout_s: 60,
+        interactive: true,
+        model: None,
+        claude_version: None,
+        restore: false,
+    })
+    .unwrap();
+    ws.write_token(&Secret::new("sk-ant-oat01-not-a-real-token".into())).unwrap();
+    let mut cfg = config(&ws);
+    cfg.pty_socket = Some(ws.pty_socket());
+    let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &cfg, &ws.dir().join("vm.events")).unwrap();
+    assert_eq!(vm.next_event().await, Some(VmEvent::Started));
+    let sock = ws.pty_socket();
+    // Input sent before the guest's shell exists is lost: wait until it echoes.
+    let t0 = Instant::now();
+    while !shell(&sock, "echo ready-$((1+1))").await.contains("ready-2") {
+        assert!(t0.elapsed() < Duration::from_secs(60), "the shell never became ready");
+    }
+
+    // A rejecting pre-commit hook, and a lock another git command releases two seconds later.
+    shell(&sock, "cd /root/work && mkdir -p /tmp/h && printf '#!/bin/sh\\nexit 1\\n' > /tmp/h/pre-commit && chmod +x /tmp/h/pre-commit \
+        && git config core.hooksPath /tmp/h && echo one > one.txt && touch .git/index.lock && { (sleep 2; rm -f .git/index.lock) & }").await;
+    assert_eq!(save_reply(&ws).await, SaveReply::Saved { commits: 1 });
+
+    // A lock that never goes away: the save fails, says why, and the VM keeps running.
+    shell(&sock, "cd /root/work && echo two > two.txt && touch .git/index.lock").await;
+    match save_reply(&ws).await {
+        SaveReply::Failed(e) => assert!(e.contains("index.lock"), "{e}"),
+        other => panic!("expected a failed save, got {other:?}"),
+    }
+    let alive = shell(&sock, "echo still-$((40+2))").await;
+    assert!(
+        alive.contains("still-42"),
+        "the VM went away: {alive:?} {:?}",
+        std::fs::read_to_string(ws.share().join("job.log"))
+    );
+
+    shell(&sock, "rm -f /root/work/.git/index.lock").await;
+    agentvm::adapters::jobdir::write_request(&ws.share(), "close.request").unwrap();
+    assert_eq!(tokio::time::timeout(Duration::from_secs(40), vm.wait()).await.unwrap(), VmExit::Clean);
+    assert_eq!(ws.read_result().expect("result.json").commits, 2);
+}

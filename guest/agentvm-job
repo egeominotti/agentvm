@@ -26,7 +26,7 @@ finish() {
 trap finish EXIT
 
 mkdir -p "$JOB"
-mount -t virtiofs job "$JOB"
+mountpoint -q "$JOB" || mount -t virtiofs job "$JOB"
 # Telemetry for the dashboard, once per second, in every mode.
 /usr/local/bin/agentvm-metrics &
 log "job start"
@@ -86,21 +86,60 @@ if [ -n "$CLAUDE_VERSION" ]; then
   log "Claude Code $("$CLAUDE" --version 2>/dev/null)"
 fi
 
-# Commits whatever is left and bundles the commits since $BASE; sets COMMITS.
-save_work() {
+# Runs git, waiting while another git command (often Claude's) holds the index lock.
+git_retry() {
+  local out i
+  for i in $(seq 40); do
+    if out=$(git "$@" 2>&1); then return 0; fi
+    case "$out" in *index.lock*) sleep 0.25 ;; *) printf '%s\n' "$out" >&2; return 1 ;; esac
+  done
+  printf '%s\n' "$out" >&2
+  return 1
+}
+
+# The steps of a save, run in a subshell with errexit; prints the commit count.
+save_steps() {
   # If the agent switched branches, the work that matters is on HEAD: bring it back to $BRANCH.
   if [ "$(git symbolic-ref -q --short HEAD || true)" != "$BRANCH" ]; then
     log "HEAD not on $BRANCH: realigning"
-    git checkout -q -B "$BRANCH"
+    git_retry checkout -q -B "$BRANCH"
   fi
-  git add -A
-  git diff --cached --quiet || git commit -q -m "agentvm: $ID (auto-commit)"
-  COMMITS=$(git rev-list --count "$BASE..$BRANCH")
-  rm -f "$JOB/out.bundle"
-  if [ "$COMMITS" -gt 0 ]; then
-    git bundle create -q "$JOB/out.bundle" "$BASE..$BRANCH"
+  git_retry add -A
+  # --no-verify: the repo's hooks (husky, lint-staged) must not block saving the agent's work.
+  git diff --cached --quiet || git_retry commit -q --no-verify -m "agentvm: $ID (auto-commit)"
+  local count
+  count=$(git rev-list --count "$BASE..$BRANCH")
+  if [ "$count" -gt 0 ]; then
+    git bundle create -q "$JOB/out.bundle.tmp" "$BASE..$BRANCH"
+    mv -f "$JOB/out.bundle.tmp" "$JOB/out.bundle"
+  else
+    rm -f "$JOB/out.bundle"
   fi
-  log "commits $COMMITS"
+  echo "$count"
+}
+
+# Commits whatever is left and bundles the commits since $BASE. Never exits the script: a failed
+# save sets SAVE_ERROR and the VM keeps running. Sets COMMITS and SAVE_ERROR.
+save_work() {
+  local count rc
+  set +e
+  count=$(set -euo pipefail; save_steps 2> /tmp/agentvm-save.err)
+  rc=$?
+  set -e
+  if [ "$rc" -eq 0 ]; then
+    COMMITS=$count
+    SAVE_ERROR=""
+  else
+    COMMITS=$(git rev-list --count "$BASE..$BRANCH" 2>/dev/null || echo 0)
+    # The first line says what went wrong ("fatal: Unable to create '…/index.lock': File exists.").
+    SAVE_ERROR="git failed while saving: $(grep -m1 . /tmp/agentvm-save.err | cut -c1-300)"
+  fi
+  log "commits $COMMITS${SAVE_ERROR:+ ($SAVE_ERROR)}"
+}
+
+# Atomic: the host must never read a half-written answer.
+reply() { # file json
+  printf '%s' "$2" > "$JOB/$1.tmp" && mv -f "$JOB/$1.tmp" "$JOB/$1"
 }
 
 if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
@@ -117,7 +156,7 @@ if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
     tmux -f /etc/agentvm/tmux.conf new-session -d -s claude -c "$WORK" -x 160 -y 48 /usr/local/bin/agentvm-claude
   log "terminal ready"
 
-  while [ ! -e "$JOB/close.request" ]; do
+  while true; do
     if [ -e "$JOB/sync.request" ]; then
       # Snapshot: flush everything to the disk image before the host clones it.
       rm -f "$JOB/sync.request"
@@ -127,12 +166,18 @@ if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
     if [ -e "$JOB/save.request" ]; then
       rm -f "$JOB/save.request"
       save_work
-      jq -n --argjson c "$COMMITS" '{commits:$c}' > "$JOB/save.done"
+      reply save.done "$(jq -nc --argjson c "$COMMITS" --arg e "$SAVE_ERROR" '{commits:$c} + (if $e == "" then {} else {error:$e} end)')"
+    fi
+    if [ -e "$JOB/close.request" ]; then
+      log "close requested"
+      save_work
+      if [ -z "$SAVE_ERROR" ]; then break; fi
+      # The final save failed: stay up so nothing is lost, and tell the host why.
+      rm -f "$JOB/close.request"
+      reply close.failed "$(jq -nc --arg e "$SAVE_ERROR" '{error:$e}')"
     fi
     sleep 0.3
   done
-  log "close requested"
-  save_work
   if [ "$COMMITS" -gt 0 ]; then write_result ok 0 "$COMMITS"; else write_result no_changes 0 0; fi
   log "job done"
   exit 0
@@ -153,7 +198,9 @@ log "claude exit $CLAUDE_EXIT"
 
 save_work
 
-if [ "$CLAUDE_EXIT" -ne 0 ]; then
+if [ -n "$SAVE_ERROR" ]; then
+  write_result failed "$CLAUDE_EXIT" "$COMMITS" "$SAVE_ERROR"
+elif [ "$CLAUDE_EXIT" -ne 0 ]; then
   write_result failed "$CLAUDE_EXIT" "$COMMITS"
 elif [ "$COMMITS" -eq 0 ]; then
   write_result no_changes 0 0

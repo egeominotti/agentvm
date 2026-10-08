@@ -39,7 +39,7 @@ pub async fn take_snapshot(ctx: &AppCtx, id: &TaskId, name: Option<String>) -> R
     let share = JobWorkspace::share_of(&jobs, id);
     let done = share.join("sync.done");
     let _ = std::fs::remove_file(&done);
-    std::fs::write(share.join("sync.request"), "")?;
+    crate::adapters::jobdir::write_request(&share, "sync.request")?;
     let t0 = tokio::time::Instant::now();
     while !done.exists() {
         if t0.elapsed() > SYNC_TIMEOUT {

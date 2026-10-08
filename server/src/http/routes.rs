@@ -69,7 +69,12 @@ pub fn router(ctx: Arc<AppCtx>) -> Router {
 /// Defense against DNS rebinding and cross-origin requests (POST and WebSocket): loopback Host/Origin only.
 async fn loopback_only(State(port): State<u16>, req: Request, next: Next) -> Response {
     if is_loopback_request(port, &req) {
-        next.run(req).await
+        let mut res = next.run(req).await;
+        // No other site may show the dashboard in a frame and trick clicks on it.
+        let h = res.headers_mut();
+        h.insert(header::X_FRAME_OPTIONS, header::HeaderValue::from_static("DENY"));
+        h.insert(header::CONTENT_SECURITY_POLICY, header::HeaderValue::from_static("frame-ancestors 'none'"));
+        res
     } else {
         ApiError(StatusCode::FORBIDDEN, "request not allowed: use http://127.0.0.1".into()).into_response()
     }
@@ -193,8 +198,8 @@ fn session_error(e: SessionError) -> ApiError {
 
 async fn save(State(ctx): Ctx, Path(id): Path<String>) -> Result<Json<Saved>, ApiError> {
     let (id, _) = find(&ctx, &id)?;
-    let commits = session::save(&ctx, &id).await.map_err(session_error)?;
-    Ok(Json(Saved { commits }))
+    let saved = session::save(&ctx, &id).await.map_err(session_error)?;
+    Ok(Json(Saved { commits: saved.commits, branch: saved.branch }))
 }
 
 async fn close(State(ctx): Ctx, Path(id): Path<String>) -> Result<Json<TaskDto>, ApiError> {

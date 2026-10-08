@@ -4,13 +4,15 @@ use std::time::Duration;
 
 use super::supervisor::AppCtx;
 use crate::adapters::git::Git;
-use crate::adapters::jobdir::JobWorkspace;
+use crate::adapters::jobdir::{JobWorkspace, write_request};
 use crate::adapters::pty::PtyConnection;
 
 /// Terminal types exposed to HTTP through `app`.
 pub use crate::adapters::pty::{Frame as TerminalInput, PtyConnection as Terminal};
 use crate::domain::ids::TaskId;
+use crate::domain::save::SaveReply;
 use crate::domain::task::TaskState;
+use crate::guestfs;
 
 const SAVE_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -55,40 +57,57 @@ pub async fn open_terminal(
         .map_err(|e| SessionError::Unreachable(e.to_string()))
 }
 
-/// Asks the guest to commit and bundle, then updates `agent/<id>` in the repo. Returns the commit count.
-pub async fn save(ctx: &AppCtx, id: &TaskId) -> Result<u32, SessionError> {
+/// Asks the guest to commit and bundle, then imports the work into the repo.
+pub async fn save(ctx: &AppCtx, id: &TaskId) -> Result<Saved, SessionError> {
     let record = running_terminal(ctx, id)?;
-    let share = JobWorkspace::share_of(&ctx.config.jobs(), id);
+    let jobs = ctx.config.jobs();
+    let share = JobWorkspace::share_of(&jobs, id);
     let done = share.join("save.done");
     let _ = std::fs::remove_file(&done);
-    std::fs::write(share.join("save.request"), "").map_err(|e| SessionError::SaveFailed(e.to_string()))?;
+    write_request(&share, "save.request").map_err(|e| SessionError::SaveFailed(e.to_string()))?;
 
     let t0 = tokio::time::Instant::now();
     let commits = loop {
-        if let Ok(text) = std::fs::read_to_string(&done) {
+        // Partial JSON means the guest is still writing: look again on the next round.
+        if let Some(reply) = guestfs::read(&done, 4096).and_then(|b| SaveReply::parse(&b)) {
             let _ = std::fs::remove_file(&done);
-            let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-            break v["commits"].as_u64().unwrap_or(0) as u32;
+            match reply {
+                SaveReply::Saved { commits } => break commits,
+                SaveReply::Failed(e) => return Err(SessionError::SaveFailed(e)),
+            }
         }
         if t0.elapsed() > SAVE_TIMEOUT {
             return Err(SessionError::SaveFailed("the VM did not respond in time".into()));
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     };
+    let mut branch = id.branch();
     if commits > 0 {
-        let bundle = share.join("out.bundle");
-        let branch = id.branch();
-        tokio::task::spawn_blocking(move || Git::new(record.repo).fetch_bundle(&bundle, &branch))
-            .await
-            .map_err(|e| SessionError::SaveFailed(e.to_string()))?
-            .map_err(|e| SessionError::SaveFailed(e.to_string()))?;
+        // Imported from a copy only the Mac controls, not from the file the guest can swap.
+        let (from, copy) =
+            (JobWorkspace::existing(&jobs, id).out_bundle(), jobs.join(id.as_str()).join("saved.bundle"));
+        let target = branch.clone();
+        branch = tokio::task::spawn_blocking(move || {
+            guestfs::copy_out(&from, &copy).map_err(|e| e.to_string())?;
+            Git::new(record.repo).import_bundle(&copy, &target).map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| SessionError::SaveFailed(e.to_string()))?
+        .map_err(SessionError::SaveFailed)?;
     }
-    Ok(commits)
+    Ok(Saved { commits, branch })
+}
+
+/// What a save produced: `branch` is where the work landed (see `Git::import_bundle`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Saved {
+    pub commits: u32,
+    pub branch: String,
 }
 
 /// Final save and shutdown: the supervisor collects the outcome as for any task.
 pub fn close(ctx: &AppCtx, id: &TaskId) -> Result<(), SessionError> {
     running_terminal(ctx, id)?;
     let share = JobWorkspace::share_of(&ctx.config.jobs(), id);
-    std::fs::write(share.join("close.request"), "").map_err(|e| SessionError::Unreachable(e.to_string()))
+    write_request(&share, "close.request").map_err(|e| SessionError::Unreachable(e.to_string()))
 }

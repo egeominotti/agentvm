@@ -93,9 +93,7 @@ pub async fn configure_s3(ctx: &AppCtx, cfg: S3Config, secret: Option<String>) -
     let probe = S3Client::new(cfg.clone(), Secret::new(secret.expose().to_owned()));
     blocking(move || check(&probe)).await?;
     ctx.keychain.write_s3_secret(&secret).map_err(|e| BackupError::Invalid(e.to_string()))?;
-    let mut settings = ctx.settings.get();
-    settings.s3 = Some(cfg);
-    ctx.update_settings(settings).map_err(|e| BackupError::Invalid(e.to_string()))?;
+    ctx.settings.set_s3(Some(cfg)).map_err(|e| BackupError::Invalid(e.to_string()))?;
     Ok(())
 }
 

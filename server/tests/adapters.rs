@@ -54,7 +54,7 @@ fn git_roundtrip_through_bundles() {
         ),
     );
 
-    git.fetch_bundle(&tmp.path().join("out.bundle"), "agent/x").unwrap();
+    assert_eq!(git.import_bundle(&tmp.path().join("out.bundle"), "agent/x").unwrap(), "agent/x");
     assert!(git.rev_parse("agent/x").is_ok());
     assert_eq!(git.commit_count(&base, "agent/x").unwrap(), 1);
     assert!(git.diff(&base, "agent/x").unwrap().contains("new.txt"));
@@ -62,6 +62,62 @@ fn git_roundtrip_through_bundles() {
     assert_eq!(std::fs::read_to_string(repo_dir.join("dirty.txt")).unwrap(), "uncommitted");
     assert!(sh(&repo_dir, "git status --porcelain").contains("?? dirty.txt"));
     assert!(!repo_dir.join("new.txt").exists());
+}
+
+/// A repo plus a "guest" clone of it working on agent/x; returns (git, repo dir, guest dir).
+fn repo_and_guest(tmp: &Path) -> (Git, std::path::PathBuf, std::path::PathBuf) {
+    let repo_dir = tmp.join("repo");
+    std::fs::create_dir(&repo_dir).unwrap();
+    new_repo(&repo_dir);
+    let git = Git::new(RepoPath::new(repo_dir.clone()).unwrap());
+    git.bundle_all(&tmp.join("repo.bundle")).unwrap();
+    sh(tmp, "git clone -q repo.bundle guest");
+    let guest = tmp.join("guest");
+    sh(&guest, "git config user.email a@a && git config user.name a && git checkout -q -b agent/x");
+    (git, repo_dir, guest)
+}
+
+/// The guest commits `file` and bundles its branch, as `save_work` does.
+fn guest_saves(guest: &Path, file: &str) -> std::path::PathBuf {
+    sh(
+        guest,
+        &format!(
+            "echo {file} > {file} && git add . && git commit -qm {file} && git bundle create -q ../out.bundle main..agent/x"
+        ),
+    );
+    guest.parent().unwrap().join("out.bundle")
+}
+
+#[test]
+fn importing_never_discards_commits_made_on_the_agent_branch_by_hand() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (git, repo, guest) = repo_and_guest(tmp.path());
+    assert_eq!(git.import_bundle(&guest_saves(&guest, "a.txt"), "agent/x").unwrap(), "agent/x");
+    sh(
+        &repo,
+        "git checkout -q agent/x && echo mine > mine.txt && git add . && git commit -qm mine && git checkout -q main",
+    );
+
+    let landed = git.import_bundle(&guest_saves(&guest, "b.txt"), "agent/x").unwrap();
+    assert_eq!(landed, "agent/x-vm");
+    assert!(sh(&repo, "git show agent/x:mine.txt").contains("mine"), "the hand-made commit was lost");
+    assert!(sh(&repo, "git show agent/x-vm:b.txt").contains("b.txt"));
+}
+
+#[test]
+fn importing_while_the_agent_branch_is_checked_out_leaves_the_worktree_alone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (git, repo, guest) = repo_and_guest(tmp.path());
+    git.import_bundle(&guest_saves(&guest, "a.txt"), "agent/x").unwrap();
+    sh(&repo, "git checkout -q agent/x");
+
+    let landed = git.import_bundle(&guest_saves(&guest, "b.txt"), "agent/x").unwrap();
+    assert_eq!(landed, "agent/x-vm");
+    assert_eq!(sh(&repo, "git status --porcelain"), "", "the worktree no longer matches its branch");
+    assert!(sh(&repo, "git show agent/x-vm:b.txt").contains("b.txt"));
+    // Later saves keep updating the same side branch.
+    assert_eq!(git.import_bundle(&guest_saves(&guest, "c.txt"), "agent/x").unwrap(), "agent/x-vm");
+    assert!(sh(&repo, "git show agent/x-vm:c.txt").contains("c.txt"));
 }
 
 #[test]
@@ -122,6 +178,78 @@ fn workspace_reads_guest_result() {
     assert!(!ws.has_out_bundle());
 }
 
+/// The guest runs the scripts of the server that started it, not the ones baked in its image.
+#[test]
+fn workspace_ships_the_guest_runtime_of_this_server() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = JobWorkspace::create(&tmp.path().join("jobs"), &task_id()).unwrap();
+    let guest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../guest");
+    for f in
+        ["agentvm-job", "agentvm-pty", "agentvm-metrics", "agentvm-statusline", "agentvm-claude", "config/tmux.conf"]
+    {
+        let shipped = ws.share().join("runtime").join(Path::new(f).file_name().unwrap());
+        assert_eq!(std::fs::read(&shipped).ok(), Some(std::fs::read(guest.join(f)).unwrap()), "{f}");
+    }
+}
+
+/// The guest is root in its VM and can plant symlinks or FIFOs in the shared folder.
+#[test]
+fn host_requests_never_follow_symlinks_planted_by_the_guest() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = JobWorkspace::create(&tmp.path().join("jobs"), &task_id()).unwrap();
+    let victim = tmp.path().join("victim.txt");
+    std::fs::write(&victim, "precious").unwrap();
+    for name in ["save.request", "sync.request", "close.request"] {
+        std::os::unix::fs::symlink(&victim, ws.share().join(name)).unwrap();
+        agentvm::adapters::jobdir::write_request(&ws.share(), name).unwrap();
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "precious", "{name} followed the symlink");
+        assert!(std::fs::symlink_metadata(ws.share().join(name)).unwrap().is_file());
+    }
+}
+
+#[test]
+fn guest_files_behind_symlinks_fifos_or_too_large_are_not_read() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = JobWorkspace::create(&tmp.path().join("jobs"), &task_id()).unwrap();
+    let elsewhere = tmp.path().join("result.json");
+    std::fs::write(&elsewhere, r#"{"status":"ok","claude_exit":0,"commits":2}"#).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, ws.share().join("result.json")).unwrap();
+    assert!(ws.read_result().is_none(), "read through a symlink");
+
+    std::fs::write(ws.share().join("metrics.json"), vec![b' '; 8 << 20]).unwrap();
+    assert!(ws.read_metrics().is_none(), "read an 8 MiB file");
+    std::fs::write(ws.share().join("job.log"), "[1.0s] job start\n".repeat(1 << 20)).unwrap();
+    assert!(ws.job_log().iter().map(String::len).sum::<usize>() <= 256 << 10, "job.log read without a cap");
+
+    // A FIFO with no writer would block the reader forever.
+    assert!(Command::new("mkfifo").arg(ws.share().join("activity")).status().unwrap().success());
+    let share = ws.share();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        tx.send(JobWorkspace::existing(share.parent().unwrap().parent().unwrap(), &task_id_of(&share)).activity())
+    });
+    assert_eq!(rx.recv_timeout(Duration::from_secs(2)).expect("blocked on a FIFO"), None);
+}
+
+fn task_id_of(share: &Path) -> TaskId {
+    TaskId::parse(&share.parent().unwrap().file_name().unwrap().to_string_lossy()).unwrap()
+}
+
+#[tokio::test]
+async fn tail_ignores_a_stream_that_is_a_symlink() {
+    let tmp = tempfile::tempdir().unwrap();
+    let target = tmp.path().join("secret.txt");
+    std::fs::write(&target, "line from the Mac\n").unwrap();
+    let path = tmp.path().join("stream.jsonl");
+    std::os::unix::fs::symlink(&target, &path).unwrap();
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+    let lines = tokio::spawn(tail_lines(path, stop_rx).collect::<Vec<String>>());
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    stop_tx.send(true).unwrap();
+    let got = tokio::time::timeout(Duration::from_secs(5), lines).await.unwrap().unwrap();
+    assert!(got.is_empty(), "{got:?}");
+}
+
 #[tokio::test]
 async fn tail_follows_a_growing_file() {
     let tmp = tempfile::tempdir().unwrap();
@@ -161,6 +289,21 @@ fn keychain_reads_token_from_a_real_keychain() {
 #[test]
 fn missing_token_message_tells_how_to_fix() {
     assert!(KeychainError::Missing.to_string().contains("security add-generic-password -s agentvm -a agentvm -w"));
+}
+
+/// Repos, VM disks and job folders live in AGENTVM_HOME: no other user of the Mac may enter it.
+#[test]
+fn agentvm_home_is_private_to_its_owner() {
+    use agentvm::adapters::lock::InstanceLock;
+    let tmp = tempfile::tempdir().unwrap();
+    let fresh = tmp.path().join("fresh");
+    let _a = InstanceLock::acquire(&fresh).unwrap();
+    assert_eq!(std::fs::metadata(&fresh).unwrap().permissions().mode() & 0o777, 0o700);
+    let open = tmp.path().join("open");
+    std::fs::create_dir(&open).unwrap();
+    std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let _b = InstanceLock::acquire(&open).unwrap();
+    assert_eq!(std::fs::metadata(&open).unwrap().permissions().mode() & 0o777, 0o700);
 }
 
 #[test]

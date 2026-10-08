@@ -16,7 +16,9 @@ pub fn tail_lines(path: PathBuf, mut stop: watch::Receiver<bool>) -> impl Stream
         let mut pending = Vec::new();
         loop {
             let stopping = *stop.borrow();
-            if let Ok(mut f) = tokio::fs::File::open(&path).await
+            // The guest writes this file: never follow a symlink or block on a FIFO it planted.
+            if let Some(f) = crate::guestfs::open_regular(&path)
+                && let mut f = tokio::fs::File::from_std(f)
                 && f.seek(std::io::SeekFrom::Start(offset)).await.is_ok()
             {
                 let mut buf = Vec::new();

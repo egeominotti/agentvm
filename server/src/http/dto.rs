@@ -47,6 +47,8 @@ pub struct TokenUpdate {
 #[derive(Serialize)]
 pub struct Saved {
     pub commits: u32,
+    /// Where the work landed: `agent/<id>`, or `agent/<id>-vm` when that branch has your own commits.
+    pub branch: String,
 }
 
 #[derive(Deserialize)]

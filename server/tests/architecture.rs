@@ -44,12 +44,14 @@ fn adapters_do_not_know_each_other_or_outer_layers() {
         let own = Path::new(&file).file_stem().unwrap().to_str().unwrap().to_owned();
         for other in [
             "archive",
+            "forward",
             "git",
             "host",
             "jobdir",
             "keychain",
             "lock",
             "pty",
+            "records",
             "releases",
             "s3",
             "settings_file",

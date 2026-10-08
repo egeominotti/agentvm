@@ -27,6 +27,7 @@ use crate::domain::settings::{ClaudeVersion, Model, Settings};
 use crate::domain::snapshot::SnapshotId;
 use crate::domain::spec::TaskSpec;
 use crate::domain::task::{TaskEvent, TaskState};
+use crate::guestfs;
 use crate::secret::Secret;
 
 const KILL_GRACE: Duration = Duration::from_secs(15);
@@ -300,10 +301,20 @@ fn collect(
         timed_out,
         has_out_bundle: ws.has_out_bundle(),
     });
-    let branch = id.branch();
+    let mut branch = id.branch();
     let final_ = match (outcome.fetch, outcome.final_) {
-        (true, f) => match Git::new(record.repo.clone()).fetch_bundle(&ws.out_bundle(), &branch) {
-            Ok(()) => f,
+        // Imported from a copy only the Mac controls, not from the file the guest could swap.
+        (true, f) => match guestfs::copy_out(&ws.out_bundle(), &ws.dir().join("final.bundle"))
+            .map_err(|e| e.to_string())
+            .and_then(|_| {
+                Git::new(record.repo.clone())
+                    .import_bundle(&ws.dir().join("final.bundle"), &branch)
+                    .map_err(|e| e.to_string())
+            }) {
+            Ok(landed) => {
+                branch = landed;
+                f
+            }
             Err(e) => Final::Failed(format!("fetch_failed: {e}")),
         },
         (false, f) => f,

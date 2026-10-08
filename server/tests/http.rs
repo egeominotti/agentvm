@@ -152,3 +152,45 @@ async fn launch_rejects_resources_beyond_the_mac() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().unwrap().contains("vCPU"), "{body}");
 }
+
+/// The settings page sends every field it loaded; an S3 bucket set up since must survive that.
+#[tokio::test]
+async fn saving_settings_keeps_the_s3_bucket_configured_since() {
+    let tmp = tempfile::tempdir().unwrap();
+    let get_settings = || Request::get("/api/settings").header("host", "127.0.0.1:7777").body(Body::empty()).unwrap();
+    let (_, before) = send(app(tmp.path()), get_settings()).await;
+    // Meanwhile the S3 form saved a bucket (written as `configure_s3` does).
+    let mut with_s3 = before["settings"].clone();
+    with_s3["s3"] = serde_json::json!({"endpoint": "http://127.0.0.1:9100", "region": "us-east-1", "bucket": "agentvm-backups",
+        "prefix": "agentvm", "access_key": "k", "path_style": true});
+    std::fs::write(tmp.path().join("settings.json"), with_s3.to_string()).unwrap();
+
+    let (_, loaded) = send(app(tmp.path()), get_settings()).await;
+    assert_eq!(
+        loaded["settings"]["s3"]["bucket"], "agentvm-backups",
+        "setup: the saved bucket was not loaded: {loaded}"
+    );
+    let mut stale = before["settings"].clone();
+    stale["max_vms"] = 2.into();
+    let (status, body) = send(app(tmp.path()), json_req("PUT", "/api/settings", stale)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (_, after) = send(app(tmp.path()), get_settings()).await;
+    assert_eq!(after["settings"]["max_vms"], 2);
+    assert_eq!(after["settings"]["s3"]["bucket"], "agentvm-backups", "the S3 settings were wiped");
+}
+
+/// Another site must not be able to show the dashboard in a frame and trick clicks on it.
+#[tokio::test]
+async fn the_dashboard_refuses_to_be_framed() {
+    let tmp = tempfile::tempdir().unwrap();
+    for path in ["/", "/api/status"] {
+        let res = app(tmp.path())
+            .oneshot(Request::get(path).header("host", "127.0.0.1:7777").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.headers().get("x-frame-options").map(|v| v.to_str().unwrap()), Some("DENY"), "{path}");
+        let csp =
+            res.headers().get("content-security-policy").map(|v| v.to_str().unwrap().to_owned()).unwrap_or_default();
+        assert!(csp.contains("frame-ancestors 'none'"), "{path}: {csp}");
+    }
+}

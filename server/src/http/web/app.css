@@ -479,6 +479,23 @@ input[type="range"] { width: 100%; accent-color: var(--brand); height: 20px; }
 .boot.compact .boot-bar { width: 100%; }
 
 /* ---------- ports ---------- */
+.ports-bar {
+  flex-shrink: 0; display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 16px;
+  border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none;
+}
+.ports-label { font-size: var(--fs-xs); font-weight: 510; color: var(--ink-3); margin-right: 4px; white-space: nowrap; }
+.port-link {
+  display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 8px 0 9px; border-radius: 6px;
+  border: 1px solid var(--line-2); background: var(--raised); color: var(--ink); text-decoration: none;
+  font-size: var(--fs-sm); white-space: nowrap; transition: background .12s, border-color .12s;
+}
+.port-link:hover { background: var(--hover); border-color: color-mix(in srgb, var(--done) 45%, var(--line-2)); }
+.port-link .live { width: 6px; height: 6px; border-radius: 50%; background: var(--done); box-shadow: 0 0 0 3px color-mix(in srgb, var(--done) 18%, transparent); }
+.port-link b { font-weight: 510; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.port-link .addr { font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink-2); }
+.port-link .moved { font-size: var(--fs-2xs); color: var(--ink-3); }
+.port-link .ext { width: 13px; height: 13px; color: var(--ink-3); }
+.port-link:hover .ext { color: var(--ink); }
 .ports { display: grid; gap: 4px; }
 .port { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line-2); color: var(--ink); text-decoration: none; font-size: var(--fs-sm); }
 .port:hover { background: var(--hover); }

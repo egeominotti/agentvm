@@ -35,10 +35,22 @@ impl SettingsService {
         self.limits
     }
 
-    pub fn update(&self, new: Settings) -> Result<Settings, UpdateError> {
+    /// Everything but the S3 bucket, which only `set_s3` changes: the settings page sends the
+    /// values it loaded, and a bucket configured since then must not be wiped by them.
+    pub fn update(&self, mut new: Settings) -> Result<Settings, UpdateError> {
+        let mut current = self.current.write().unwrap();
+        new.s3 = current.s3.clone();
         new.validate(&self.limits)?;
         settings_file::save(&self.path, &new)?;
-        *self.current.write().unwrap() = new.clone();
+        *current = new.clone();
+        Ok(new)
+    }
+
+    pub fn set_s3(&self, s3: Option<crate::domain::s3::S3Config>) -> Result<Settings, UpdateError> {
+        let mut current = self.current.write().unwrap();
+        let new = Settings { s3, ..current.clone() };
+        settings_file::save(&self.path, &new)?;
+        *current = new.clone();
         Ok(new)
     }
 }

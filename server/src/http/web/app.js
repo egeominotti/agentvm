@@ -368,6 +368,16 @@ class VmTerminal {
     if (webgl) {
       try { const gl = new WebglAddon.WebglAddon(); gl.onContextLoss(() => gl.dispose()); this.xterm.loadAddon(gl); } catch {}
     }
+    // Text selected in tmux arrives as OSC 52 (base64): put it on the Mac's clipboard.
+    this.xterm.parser.registerOscHandler(52, data => {
+      const b64 = data.slice(data.indexOf(";") + 1);
+      if (readOnly || !b64 || b64 === "?") return true;
+      try {
+        const text = new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0)));
+        navigator.clipboard.writeText(text).then(() => toast("Copied to the clipboard"), () => toast("The browser blocked the clipboard", "err"));
+      } catch {}
+      return true;
+    });
     const enc = new TextEncoder();
     if (!readOnly) this.xterm.onData(d => { if (this.ws?.readyState === 1) this.ws.send(enc.encode(d)); });
     this.xterm.onResize(({ cols, rows }) => { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify({ cols, rows })); });
@@ -664,10 +674,11 @@ class FocusView {
     this.toolbar = h("header", { class: "toolbar" }, h("a", { class: "crumb", href: "#/wall" }, "Machines"), h("span", { class: "crumb-sep" }, "›"),
       h("span", { class: "dot" }), this.titleEl, this.seg, this.snapBtn, this.saveBtn, this.closeBtn, this.stopBtn, this.panelBtn);
     this.overlay = h("div", { class: "overlay" });
+    this.portsBar = h("div", { class: "ports-bar", "aria-label": "Ports open on this Mac" });
     this.screen = h("div", { class: "screen" }, this.overlay);
     this.result = h("div", { class: "result" });
     this.result.hidden = true;
-    this.stage = h("section", { class: "stage" }, this.toolbar, this.screen, this.result);
+    this.stage = h("section", { class: "stage" }, this.toolbar, this.portsBar, this.screen, this.result);
     this.panel = h("aside", { class: "panel", "aria-label": "Telemetry" });
     this.root = h("div", { class: "focus" }, this.stage, this.panel);
   }
@@ -687,6 +698,7 @@ class FocusView {
     this.saveBtn.disabled = this.closeBtn.disabled = this.snapBtn.disabled = s !== "running";
     this.stopBtn.hidden = ended;
     this.renderPanel(t, label);
+    this.renderPorts(ended ? [] : t.ports || []);
     if (ended) return this.ended(t);
     if (!t.interactive) return this.overlayText("Running without a terminal", "Started from the API in automatic mode.");
     if (s !== "running" || !t.ready) {
@@ -700,6 +712,25 @@ class FocusView {
     }
     if (!this.overlay.hidden) { this.overlay.classList.add("lift"); setTimeout(() => { this.overlay.hidden = true; this.overlay.classList.remove("lift"); }, 260); }
     this.ensureTerm(this.session).connect();
+  }
+
+  /** What the VM serves, reachable from the Mac: always in view, right under the toolbar. */
+  renderPorts(ports) {
+    this.portsBar.hidden = !ports.length;
+    const key = ports.map(p => `${p.port}:${p.host_port}:${p.name}`).join(",");
+    if (key === this.portsKey) return;
+    this.portsKey = key;
+    this.portsBar.replaceChildren(h("span", { class: "ports-label" }, "Open on this Mac"),
+      ...ports.map(p => {
+        const url = `http://localhost:${p.host_port}`;
+        const moved = p.host_port !== p.port;
+        return h("a", { class: "port-link", href: url, target: "_blank", rel: "noopener",
+          title: `${p.name || "A service"} listens on port ${p.port} inside the VM.${moved ? ` Port ${p.port} is taken on this Mac, so it is on ${p.host_port}.` : ""}\nOpens ${url}` },
+          h("span", { class: "live" }), h("b", {}, p.name || "service"),
+          h("span", { class: "addr" }, `localhost:${p.host_port}`),
+          moved ? h("span", { class: "moved" }, `${p.port} in the VM`) : null,
+          svg("svg", { class: "i ext", viewBox: "0 0 16 16", "aria-hidden": "true" }, svg("path", { d: "M6 3.5H3.5v9h9V10M9 3.5h3.5V7M12.5 3.5 7 9" })));
+      }));
   }
 
   renderPanel(t, label) {
@@ -733,12 +764,6 @@ class FocusView {
           u.context_pct != null && h("dt", {}, "Context used"), u.context_pct != null && h("dd", {}, `${Math.round(u.context_pct)}%`))));
     }
     if (TERMINAL.has(t.status.state)) kids.unshift(h("p", { class: "closed-note" }, "This VM is closed: its disk is gone, the work is on the branch."));
-    if (t.ports?.length) {
-      kids.unshift(h("div", { class: "ports" }, h("h3", {}, "Ports on this Mac"),
-        t.ports.map(p => h("a", { class: "port", href: `http://localhost:${p.host_port}`, target: "_blank", rel: "noopener" },
-          h("b", {}, `:${p.port}`), h("span", {}, p.name || "service"),
-          h("code", {}, `localhost:${p.host_port}`)))));
-    }
     kids.push(h("dl", { class: "kv" },
       h("dt", {}, "State"), h("dd", {}, label),
       h("dt", {}, "Model"), h("dd", {}, modelLabel(t.model)),
@@ -789,7 +814,8 @@ class FocusView {
   async save() {
     this.saveBtn.disabled = true;
     const r = await api(`/api/tasks/${this.id}/save`, { method: "POST" });
-    toast(r.ok ? (r.data.commits ? `Saved ${plural(r.data.commits, "commit")} to agent/${this.id}` : "Nothing to save yet") : r.data?.error || "Save failed", r.ok ? "ok" : "err");
+    const elsewhere = r.ok && r.data.branch !== `agent/${this.id}`;
+    toast(r.ok ? (r.data.commits ? `Saved ${plural(r.data.commits, "commit")} to ${r.data.branch}${elsewhere ? ` (agent/${this.id} has your own commits or is checked out)` : ""}` : "Nothing to save yet") : r.data?.error || "Save failed", r.ok ? "ok" : "err");
     this.saveBtn.disabled = false;
     this.terms[this.session]?.xterm.focus();
   }

@@ -1,0 +1,15 @@
+#!/bin/bash
+# The only agentvm script baked into the VM image. Everything else (job runner, terminal server,
+# telemetry) comes from the host at every launch in /mnt/job/runtime, so the guest always matches
+# the server that started it: upgrading agentvm never needs a new image for script changes.
+# No `set -e`: whatever happens here, agentvm-job must run (its exit trap powers the VM off).
+JOB=/mnt/job
+mkdir -p "$JOB"
+mountpoint -q "$JOB" || mount -t virtiofs job "$JOB"
+if [ -d "$JOB/runtime" ]; then
+  for f in agentvm-job agentvm-pty agentvm-metrics agentvm-statusline agentvm-claude; do
+    [ -f "$JOB/runtime/$f" ] && install -m 755 "$JOB/runtime/$f" "/usr/local/bin/$f"
+  done
+  [ -f "$JOB/runtime/tmux.conf" ] && install -m 644 "$JOB/runtime/tmux.conf" /etc/agentvm/tmux.conf
+fi
+exec /usr/local/bin/agentvm-job
