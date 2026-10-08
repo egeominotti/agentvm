@@ -204,7 +204,9 @@ impl JobWorkspace {
 
     /// Last lines of the serial console, to diagnose a failed boot.
     pub fn console_tail(&self, lines: usize) -> String {
-        let text = fs::read_to_string(self.console()).unwrap_or_default();
+        // Only the end of the file: the guest decides how much it prints on its console.
+        let text = guestfs::read_suffix(&self.console(), 64 * 1024).unwrap_or_default();
+        let text = String::from_utf8_lossy(&text);
         let all: Vec<&str> = text.lines().collect();
         all[all.len().saturating_sub(lines)..].join("\n")
     }

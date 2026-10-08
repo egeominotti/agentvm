@@ -39,6 +39,17 @@ pub fn read_prefix(path: &Path, max: u64) -> Option<Vec<u8>> {
     Some(buf)
 }
 
+/// At most the last `max` bytes of a regular file.
+pub fn read_suffix(path: &Path, max: u64) -> Option<Vec<u8>> {
+    use std::io::{Seek, SeekFrom};
+    let mut file = open_regular(path)?;
+    let len = file.metadata().ok()?.len();
+    file.seek(SeekFrom::Start(len.saturating_sub(max))).ok()?;
+    let mut buf = Vec::new();
+    file.take(max).read_to_end(&mut buf).ok()?;
+    Some(buf)
+}
+
 /// Creates an empty `path` for the guest to see (see `create_with`).
 pub fn create_empty(path: &Path) -> io::Result<()> {
     create_with(path, b"")

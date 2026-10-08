@@ -8,12 +8,16 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::watch;
 
 const POLL: Duration = Duration::from_millis(200);
+/// Read at most this much at a time: memory stays bounded however fast the file grows.
+const CHUNK: u64 = 1 << 20;
+/// A longer line is dropped (with a short notice): the guest cannot make the host hold it.
+pub const MAX_LINE: usize = 8 << 20;
 
 /// Ends when `stop` becomes `true`: reads what is left and also emits the last line without `\n`.
 pub fn tail_lines(path: PathBuf, mut stop: watch::Receiver<bool>) -> impl Stream<Item = String> {
     async_stream(move |tx| async move {
+        let mut lines = Lines::default();
         let mut offset = 0u64;
-        let mut pending = Vec::new();
         loop {
             let stopping = *stop.borrow();
             // The guest writes this file: never follow a symlink or block on a FIFO it planted.
@@ -21,31 +25,69 @@ pub fn tail_lines(path: PathBuf, mut stop: watch::Receiver<bool>) -> impl Stream
                 && let mut f = tokio::fs::File::from_std(f)
                 && f.seek(std::io::SeekFrom::Start(offset)).await.is_ok()
             {
-                let mut buf = Vec::new();
-                if let Ok(n) = f.read_to_end(&mut buf).await {
+                loop {
+                    let mut buf = Vec::new();
+                    let Ok(n) = (&mut f).take(CHUNK).read_to_end(&mut buf).await else { break };
                     offset += n as u64;
-                    pending.extend_from_slice(&buf);
+                    for line in lines.push(&buf) {
+                        if tx.send(line).await.is_err() {
+                            return;
+                        }
+                    }
+                    if (n as u64) < CHUNK {
+                        break;
+                    }
                 }
             }
-            // One pass over the new bytes, one drain at the end: linear in the size read.
-            let mut start = 0;
-            while let Some(len) = pending[start..].iter().position(|&b| b == b'\n') {
-                let line = String::from_utf8_lossy(&pending[start..start + len]).into_owned();
-                start += len + 1;
-                if tx.send(line).await.is_err() {
-                    return;
-                }
-            }
-            pending.drain(..start);
             if stopping {
-                if !pending.is_empty() {
-                    let _ = tx.send(String::from_utf8_lossy(&pending).into_owned()).await;
+                if let Some(last) = lines.rest() {
+                    let _ = tx.send(last).await;
                 }
                 return;
             }
             let _ = tokio::time::timeout(POLL, stop.changed()).await;
         }
     })
+}
+
+/// Splits bytes into lines across reads, dropping any line longer than `MAX_LINE`.
+#[derive(Default)]
+struct Lines {
+    pending: Vec<u8>,
+    /// Bytes of an oversized line skipped so far (its end not seen yet).
+    skipping: Option<usize>,
+}
+
+impl Lines {
+    fn push(&mut self, bytes: &[u8]) -> Vec<String> {
+        let mut out = Vec::new();
+        for part in bytes.split_inclusive(|&b| b == b'\n') {
+            let (body, ends) = match part.strip_suffix(b"\n") {
+                Some(body) => (body, true),
+                None => (part, false),
+            };
+            if let Some(skipped) = self.skipping.as_mut() {
+                *skipped += part.len();
+            } else if self.pending.len() + body.len() > MAX_LINE {
+                self.skipping = Some(self.pending.len() + part.len());
+                self.pending.clear();
+            } else {
+                self.pending.extend_from_slice(body);
+            }
+            if ends {
+                out.push(match self.skipping.take() {
+                    Some(n) => format!("(agentvm skipped a line of {} MB)", n >> 20),
+                    None => String::from_utf8_lossy(&std::mem::take(&mut self.pending)).into_owned(),
+                });
+            }
+        }
+        out
+    }
+
+    /// The last line, written without a final newline.
+    fn rest(&mut self) -> Option<String> {
+        (!self.pending.is_empty()).then(|| String::from_utf8_lossy(&std::mem::take(&mut self.pending)).into_owned())
+    }
 }
 
 /// Stream fed by a tokio task through a channel.

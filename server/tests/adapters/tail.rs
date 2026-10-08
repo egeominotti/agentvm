@@ -52,3 +52,24 @@ async fn tail_reads_a_large_stream_quickly() {
     assert_eq!(n, 100_000);
     assert!(t0.elapsed() < Duration::from_secs(2), "took {:?}", t0.elapsed());
 }
+
+/// A guest writing a gigantic line (by mistake or on purpose) cannot make the server hold it in
+/// memory: the line is dropped with a short notice, and what follows is read as usual.
+#[tokio::test]
+async fn an_oversized_line_is_skipped_not_held_in_memory() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("stream.jsonl");
+    let mut content = b"first\n".to_vec();
+    content.extend(std::iter::repeat_n(b'x', 20 << 20));
+    content.extend_from_slice(b"\nafter\n");
+    std::fs::write(&path, content).unwrap();
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+    let lines = tokio::spawn(tail_lines(path, stop_rx).collect::<Vec<String>>());
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    stop_tx.send(true).unwrap();
+    let got = tokio::time::timeout(Duration::from_secs(10), lines).await.unwrap().unwrap();
+    assert_eq!(got.len(), 3, "{:?}", got.iter().map(|l| l.len()).collect::<Vec<_>>());
+    assert_eq!(got[0], "first");
+    assert!(got[1].len() < 200 && got[1].contains("skipped"), "{}", &got[1][..got[1].len().min(200)]);
+    assert_eq!(got[2], "after");
+}
