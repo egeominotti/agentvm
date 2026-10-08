@@ -2,9 +2,6 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axum::Json;
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 
 use crate::app::store::TaskRecord;
@@ -29,6 +26,25 @@ pub struct CreateTask {
     pub cpus: Option<u32>,
     #[serde(default)]
     pub memory_mb: Option<u64>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct SnapshotRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// `{"every_min": 15}` for this machine only, `{"every_min": null}` to follow the settings.
+#[derive(Deserialize)]
+pub struct AutoSnapshotInterval {
+    pub every_min: Option<u32>,
+}
+
+#[derive(Deserialize)]
+pub struct S3Update {
+    pub config: crate::domain::s3::S3Config,
+    #[serde(default)]
+    pub secret: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -151,19 +167,4 @@ impl From<TaskRecord> for TaskDto {
 
 fn unix(t: SystemTime) -> f64 {
     t.duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0)
-}
-
-/// Error with a user-facing message: `{"error": "..."}`.
-pub struct ApiError(pub StatusCode, pub String);
-
-impl ApiError {
-    pub fn not_found() -> Self {
-        ApiError(StatusCode::NOT_FOUND, "task not found".into())
-    }
-}
-
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        (self.0, Json(serde_json::json!({ "error": self.1 }))).into_response()
-    }
 }
