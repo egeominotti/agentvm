@@ -27,3 +27,34 @@ pub fn disk_usage(path: &Path) -> u64 {
         meta.blocks() * 512
     }
 }
+
+#[repr(C)]
+struct RLimit {
+    cur: u64,
+    max: u64,
+}
+
+unsafe extern "C" {
+    fn getrlimit(resource: std::ffi::c_int, rlp: *mut RLimit) -> std::ffi::c_int;
+    fn setrlimit(resource: std::ffi::c_int, rlp: *const RLimit) -> std::ffi::c_int;
+}
+
+/// Raises this process's open files limit (launchd starts it at 256: a socket per terminal, port
+/// forward and VM connection runs out with a few VMs). Returns the limit now in force.
+pub fn raise_open_files_limit() -> std::io::Result<u64> {
+    const RLIMIT_NOFILE: std::ffi::c_int = 8;
+    /// macOS refuses more than OPEN_MAX for this limit.
+    const OPEN_MAX: u64 = 10240;
+    let mut limit = RLimit { cur: 0, max: 0 };
+    // SAFETY: valid pointers to a properly laid out struct for the duration of the calls.
+    unsafe {
+        if getrlimit(RLIMIT_NOFILE, &mut limit) != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let wanted = RLimit { cur: OPEN_MAX.min(limit.max).max(limit.cur), max: limit.max };
+        if setrlimit(RLIMIT_NOFILE, &wanted) != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(wanted.cur)
+    }
+}

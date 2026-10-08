@@ -53,3 +53,11 @@ fn claude_releases_lists_real_versions() {
     assert!(r.versions.contains(&r.latest), "{r:?}");
     assert!(semver(&r.versions[0]));
 }
+
+/// The server keeps a socket per terminal, port forward and VM connection: launchd's default of
+/// 256 open files is far too few for twenty VMs.
+#[test]
+fn the_open_files_limit_is_raised() {
+    let limit = agentvm::adapters::host::raise_open_files_limit().unwrap();
+    assert!(limit >= 4096, "{limit}");
+}

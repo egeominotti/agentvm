@@ -11,6 +11,9 @@ use agentvm::config::Config;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut config = Config::from_env();
+    if let Err(e) = agentvm::adapters::host::raise_open_files_limit() {
+        eprintln!("could not raise the open files limit: {e}");
+    }
     // Lock and port first: only a single instance may touch orphaned VMs.
     let _lock = InstanceLock::acquire(&config.home)
         .map_err(|_| anyhow::anyhow!("agentvm is already running on {} (AGENTVM_HOME)", config.home.display()))?;

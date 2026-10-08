@@ -11,6 +11,7 @@ use crate::app::context::AppCtx;
 use crate::domain::ids::TaskId;
 
 const KILL_GRACE: Duration = Duration::from_secs(15);
+const KILL_RETRY: Duration = Duration::from_secs(5);
 
 /// Follows the VM from boot to shutdown. Stop and timeout also apply during boot;
 /// if the helper ignores SIGTERM for `KILL_GRACE`, it gets SIGKILL. `on_tick` runs every second,
@@ -41,7 +42,12 @@ pub(super) async fn wait_for_vm(
             },
             _ = stop.wait_for(|s| *s), if !terminating => stop_requested = true,
             _ = &mut deadline, if !terminating => timed_out = true,
-            _ = &mut kill_timer, if terminating => vm.kill(),
+            _ = &mut kill_timer, if terminating => {
+                vm.kill();
+                // Once elapsed, a sleep stays ready: without a new deadline this loop would spin,
+                // sending SIGKILL as fast as it can until the helper is gone.
+                kill_timer.as_mut().reset(Instant::now() + KILL_RETRY);
+            }
             _ = ticks.tick() => {
                 on_tick();
                 if !terminating {

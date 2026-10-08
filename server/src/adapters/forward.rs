@@ -45,7 +45,13 @@ impl PortForward {
         let listener = bind(guest_port).or_else(|_| bind(0))?;
         let host_port = listener.local_addr()?.port();
         let task = tokio::spawn(async move {
-            while let Ok((mut tcp, _)) = listener.accept().await {
+            loop {
+                // An error here (out of file descriptors, a connection reset while queued) is about
+                // one connection: the forward keeps listening instead of dying for good.
+                let Ok((mut tcp, _)) = listener.accept().await else {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    continue;
+                };
                 let socket = socket.clone();
                 tokio::spawn(async move {
                     if let Ok(mut vm) = connect(&socket, guest_port).await {
