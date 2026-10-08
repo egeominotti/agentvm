@@ -15,7 +15,7 @@ fn next_bits() -> [u8; 2] {
 pub(crate) fn record(repo: &tempfile::TempDir) -> TaskRecord {
     std::fs::create_dir_all(repo.path().join(".git")).unwrap();
     TaskRecord::new(
-        TaskId::generate(SystemTime::now(), next_bits()),
+        TaskId::generate(SystemTime::now(), &next_bits()),
         RepoPath::new(repo.path().to_path_buf()).unwrap(),
         Some(Prompt::new("do something".into()).unwrap()),
         CommitSha::parse(&"b".repeat(40)).unwrap(),

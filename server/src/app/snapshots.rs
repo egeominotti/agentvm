@@ -143,7 +143,7 @@ fn title(record: &TaskRecord, now: SystemTime) -> String {
 
 fn meta_for(record: &TaskRecord, name: String, auto: bool, now: SystemTime) -> SnapshotMeta {
     SnapshotMeta {
-        id: SnapshotId::generate(now, random_bytes()),
+        id: SnapshotId::generate(now, &random_bytes()),
         name,
         source_task: record.id.to_string(),
         repo: record.repo.as_path().display().to_string(),
@@ -180,7 +180,7 @@ fn create_fresh(
     loop {
         match store.create(&meta, disk, efivars) {
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                meta.id = SnapshotId::generate(SystemTime::now(), random_bytes());
+                meta.id = SnapshotId::generate(SystemTime::now(), &random_bytes());
             }
             other => return other,
         }

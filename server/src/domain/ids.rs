@@ -18,7 +18,8 @@ pub enum IdError {
     InvalidId(String),
 }
 
-/// `YYYYMMDD-HHMMSS-xxxx` (UTC + 4 random hex digits): unique and sortable.
+/// A UUIDv7 (RFC 9562): the creation time in ms, then 74 random bits. Unique, and sorted by
+/// time like the `YYYYMMDD-HHMMSS-xxxx` ids before it, which are still read.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct TaskId(String);
@@ -37,29 +38,15 @@ impl From<TaskId> for String {
 }
 
 impl TaskId {
-    pub fn generate(now: SystemTime, rand: [u8; 2]) -> Self {
-        let secs = now.duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let (y, m, d) = civil_from_days((secs / 86_400) as i64);
-        let tod = secs % 86_400;
-        TaskId(format!(
-            "{y:04}{m:02}{d:02}-{:02}{:02}{:02}-{:02x}{:02x}",
-            tod / 3600,
-            tod / 60 % 60,
-            tod % 60,
-            rand[0],
-            rand[1]
-        ))
+    /// `rand`: random bytes, 10 are used (fewer are padded with zeros, for tests).
+    pub fn generate(now: SystemTime, rand: &[u8]) -> Self {
+        TaskId(uuid_v7(now, rand))
     }
 
-    /// Rebuilds an id received from outside (e.g. from a URL); accepts only the generated format.
+    /// Rebuilds an id received from outside (a URL, a file): a UUIDv7 in lower case, or the
+    /// `YYYYMMDD-HHMMSS-xxxx` of tasks made before UUIDs.
     pub fn parse(s: &str) -> Option<Self> {
-        let b = s.as_bytes();
-        let shape = b.len() == 20
-            && b[8] == b'-'
-            && b[15] == b'-'
-            && b[..8].iter().chain(&b[9..15]).all(u8::is_ascii_digit)
-            && b[16..].iter().all(|c| c.is_ascii_hexdigit());
-        shape.then(|| TaskId(s.to_owned()))
+        (is_uuid_v7(s) || is_legacy(s)).then(|| TaskId(s.to_owned()))
     }
 
     pub fn as_str(&self) -> &str {
@@ -71,23 +58,47 @@ impl TaskId {
     }
 }
 
+/// RFC 9562 layout: 48-bit ms timestamp, version 7, 12 random bits, variant 10, 62 random bits.
+fn uuid_v7(now: SystemTime, rand: &[u8]) -> String {
+    let ms = now.duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0) & 0xffff_ffff_ffff;
+    let mut r = [0u8; 10];
+    for (slot, b) in r.iter_mut().zip(rand) {
+        *slot = *b;
+    }
+    let mut b = [0u8; 16];
+    b[..6].copy_from_slice(&ms.to_be_bytes()[2..]);
+    b[6..].copy_from_slice(&r);
+    b[6] = 0x70 | (b[6] & 0x0f);
+    b[8] = 0x80 | (b[8] & 0x3f);
+    let hex: String = b.iter().map(|x| format!("{x:02x}")).collect();
+    format!("{}-{}-{}-{}-{}", &hex[..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..])
+}
+
+fn is_uuid_v7(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 36
+        && b.iter().enumerate().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => *c == b'-',
+            _ => c.is_ascii_digit() || (b'a'..=b'f').contains(c),
+        })
+        && b[14] == b'7'
+        && matches!(b[19], b'8' | b'9' | b'a' | b'b')
+}
+
+/// `YYYYMMDD-HHMMSS-xxxx`: tasks and snapshots made before UUIDs.
+fn is_legacy(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 20
+        && b[8] == b'-'
+        && b[15] == b'-'
+        && b[..8].iter().chain(&b[9..15]).all(u8::is_ascii_digit)
+        && b[16..].iter().all(|c| c.is_ascii_hexdigit())
+}
+
 impl fmt::Display for TaskId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
-}
-
-/// Days since the epoch → (year, month, day), H. Hinnant's algorithm.
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    (yoe + era * 400 + i64::from(m <= 2), m, d)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

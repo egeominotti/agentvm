@@ -12,7 +12,7 @@ use super::ids::TaskId;
 pub struct SnapshotId(String);
 
 impl SnapshotId {
-    pub fn generate(now: SystemTime, rand: [u8; 2]) -> Self {
+    pub fn generate(now: SystemTime, rand: &[u8]) -> Self {
         SnapshotId(format!("snap-{}", TaskId::generate(now, rand)))
     }
 

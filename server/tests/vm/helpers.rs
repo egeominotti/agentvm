@@ -19,7 +19,7 @@ fn golden() -> PathBuf {
 pub(crate) fn unique_id() -> TaskId {
     static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(1);
     let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst).to_be_bytes();
-    TaskId::generate(SystemTime::now(), [n[0] ^ 0x5a, n[1]])
+    TaskId::generate(SystemTime::now(), &[n[0] ^ 0x5a, n[1]])
 }
 
 /// A test that panics must not leave its VM running: VMs are detached from their parent by design.

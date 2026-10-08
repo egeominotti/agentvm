@@ -12,5 +12,5 @@ pub(crate) fn sh(dir: &Path, cmd: &str) -> String {
 }
 
 pub(crate) fn task_id() -> TaskId {
-    TaskId::generate(std::time::SystemTime::now(), [0xab, 0xcd])
+    TaskId::generate(std::time::SystemTime::now(), &[0xab, 0xcd])
 }

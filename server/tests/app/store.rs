@@ -56,7 +56,7 @@ fn stopping_a_queued_task_stops_it_and_signals() {
 #[test]
 fn unknown_task_is_not_found() {
     let store = Store::new();
-    let id = TaskId::generate(SystemTime::now(), [0, 0]);
+    let id = TaskId::generate(SystemTime::now(), &[0, 0]);
     assert!(matches!(store.apply(&id, TaskEvent::SlotAcquired), Err(StoreError::NotFound)));
     assert!(store.get(&id).is_none());
 }

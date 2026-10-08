@@ -6,7 +6,7 @@ use agentvm::domain::snapshot::{AutoSnapshots, SnapshotId, SnapshotMeta};
 
 fn snap(task: &str, at: f64, auto: bool) -> SnapshotMeta {
     SnapshotMeta {
-        id: SnapshotId::generate(std::time::UNIX_EPOCH + Duration::from_secs_f64(at), [at as u8, auto as u8]),
+        id: SnapshotId::generate(std::time::UNIX_EPOCH + Duration::from_secs_f64(at), &[at as u8, auto as u8]),
         name: String::new(),
         source_task: task.into(),
         repo: "/r".into(),

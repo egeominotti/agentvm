@@ -11,7 +11,7 @@ fn stored_snapshot(home: &std::path::Path) -> agentvm::domain::snapshot::Snapsho
 
 fn stored_snapshot_of(home: &std::path::Path, auto: bool) -> agentvm::domain::snapshot::SnapshotId {
     use agentvm::domain::snapshot::{SnapshotId, SnapshotMeta};
-    let id = SnapshotId::generate(SystemTime::now(), [1, 2]);
+    let id = SnapshotId::generate(SystemTime::now(), &[1, 2]);
     let dir = home.join("snapshots").join(id.as_str());
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("disk.raw"), vec![7u8; 4 << 20]).unwrap();

@@ -10,7 +10,7 @@ fn snapshots_are_stored_listed_and_deleted() {
     std::fs::write(&disk, vec![3u8; 1 << 20]).unwrap();
     std::fs::write(&efi, b"efi").unwrap();
     let store = SnapshotStore::new(tmp.path().join("snapshots"));
-    let id = SnapshotId::generate(std::time::SystemTime::now(), [1, 2]);
+    let id = SnapshotId::generate(std::time::SystemTime::now(), &[1, 2]);
     let meta = SnapshotMeta {
         id: id.clone(),
         name: "before refactor".into(),
@@ -47,7 +47,7 @@ fn a_snapshot_never_replaces_one_with_the_same_id() {
     std::fs::write(&other, vec![9u8; 1 << 20]).unwrap();
     std::fs::write(&efi, b"efi").unwrap();
     let store = SnapshotStore::new(tmp.path().join("snapshots"));
-    let id = SnapshotId::generate(std::time::SystemTime::now(), [5, 5]);
+    let id = SnapshotId::generate(std::time::SystemTime::now(), &[5, 5]);
     let meta = SnapshotMeta {
         id: id.clone(),
         name: "first".into(),

@@ -84,7 +84,7 @@ async fn adopt(ctx: &AppCtx, file: &Path, scratch: &Path) -> Result<SnapshotMeta
         .map_err(|_| BackupError::Invalid("the archive is not an agentvm snapshot".into()))?;
     let id = match SnapshotId::parse(meta.id.as_str()) {
         Some(id) if ctx.snapshots.get(&id).is_none() => id,
-        _ => SnapshotId::generate(SystemTime::now(), random_bytes()),
+        _ => SnapshotId::generate(SystemTime::now(), &random_bytes()),
     };
     // Brought back by hand: kept until deleted by hand, never pruned as an automatic snapshot.
     Ok(ctx.snapshots.adopt(scratch, SnapshotMeta { id, auto: false, ..meta })?)

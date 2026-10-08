@@ -69,7 +69,7 @@ pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError
     ctx.keychain.read_token()?;
 
     let model = req.model.unwrap_or(ctx.settings.get().model);
-    let id = TaskId::generate(SystemTime::now(), random_bytes());
+    let id = TaskId::generate(SystemTime::now(), &random_bytes());
     let mut record = TaskRecord::new(id, repo, prompt, base_sha, req.interactive).with_model(model);
     record.claude_version = req.claude_version.map(|v| v.as_str().to_owned());
     record.restore_from = req.restore_from;
@@ -85,7 +85,7 @@ pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError
                 Err(r) => record = *r,
             }
         }
-        record.id = TaskId::generate(SystemTime::now(), random_bytes());
+        record.id = TaskId::generate(SystemTime::now(), &random_bytes());
     };
     tokio::spawn(launch::run(ctx.clone(), id.clone()));
     Ok(id)
