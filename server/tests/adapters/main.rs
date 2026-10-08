@@ -14,4 +14,5 @@ mod server_log;
 mod settings;
 mod snapshots;
 mod tail;
+mod transcripts;
 mod workspace;

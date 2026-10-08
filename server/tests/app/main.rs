@@ -11,6 +11,7 @@ mod events;
 mod golden;
 mod guest_requests;
 mod helpers;
+mod history;
 mod logging;
 mod persistence;
 mod recovery;

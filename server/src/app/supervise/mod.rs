@@ -56,9 +56,12 @@ pub(super) async fn supervise(
 /// Keeps the task's cost in step with the agent's `result` events.
 fn cost_recorder(ctx: &AppCtx, id: &TaskId) -> impl Fn(f64) + Send + 'static {
     let (store, id) = (ctx.store.clone_handle(), id.clone());
+    let history =
+        std::sync::Mutex::new(crate::app::history::UsageRecorder::new(crate::app::history::usage_file(ctx, &id)));
     move |cost_usd: f64| {
         let mut usage = store.get(&id).and_then(|r| r.usage).unwrap_or_default();
         usage.cost_usd = cost_usd;
+        history.lock().unwrap().record(&usage);
         store.set_usage(&id, usage);
     }
 }

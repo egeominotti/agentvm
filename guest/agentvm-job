@@ -44,6 +44,26 @@ mkdir -p "$JOB"
 mountpoint -q "$JOB" || mount -t virtiofs job "$JOB"
 # Telemetry for the dashboard, once per second, in every mode.
 keep_running /usr/local/bin/agentvm-metrics
+
+# Claude Code's sessions, copied to the host as they grow (only the new bytes): there they
+# outlive the VM, for the dashboard's history of the conversation.
+copy_transcripts() {
+  local f dest have size
+  mkdir -p "$JOB/claude"
+  for f in /root/.claude/projects/*/*.jsonl; do
+    [ -f "$f" ] || continue
+    dest="$JOB/claude/$(basename "$(dirname "$f")")--$(basename "$f")"
+    size=$(stat -c %s "$f")
+    have=$(stat -c %s "$dest" 2>/dev/null || echo 0)
+    if [ "$size" -lt "$have" ]; then
+      cp "$f" "$dest.tmp" && mv -f "$dest.tmp" "$dest"
+    elif [ "$size" -gt "$have" ]; then
+      tail -c +"$((have + 1))" "$f" | head -c "$((size - have))" >> "$dest"
+    fi
+  done
+}
+watch_transcripts() { while true; do copy_transcripts; sleep 2; done; }
+keep_running watch_transcripts
 log "job start"
 
 if [ ! -s "$JOB/task.json" ]; then
@@ -198,6 +218,7 @@ if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
     if [ -e "$JOB/save.request" ]; then
       REQ=$(request_id save.request)
       rm -f "$JOB/save.request"
+      copy_transcripts
       save_work
       reply save.done "$(jq -nc --arg id "$REQ" --argjson c "$COMMITS" --arg e "$SAVE_ERROR" \
         '{id:$id, commits:$c} + (if $e == "" then {} else {error:$e} end)')"
@@ -205,6 +226,7 @@ if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
     if [ -e "$JOB/close.request" ]; then
       log "close requested"
       REQ=$(request_id close.request)
+      copy_transcripts
       save_work
       if [ -z "$SAVE_ERROR" ]; then break; fi
       # The final save failed: stay up so nothing is lost, and tell the host why.
@@ -231,6 +253,7 @@ jq -r .prompt "$JOB/task.json" | env -i \
   timeout --kill-after=30 "$TIMEOUT_S" "$CLAUDE" -p --dangerously-skip-permissions ${MODEL:+--model "$MODEL"} --output-format stream-json --verbose \
   3< <(printf '%s' "$TOKEN") > "$JOB/stream.jsonl" 2> "$JOB/claude.err"
 CLAUDE_EXIT=${PIPESTATUS[1]}
+copy_transcripts || true
 set -e
 unset TOKEN
 log "claude exit $CLAUDE_EXIT"

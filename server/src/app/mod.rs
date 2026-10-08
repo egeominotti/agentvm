@@ -8,6 +8,7 @@ pub mod diagnostics;
 pub mod events;
 pub mod golden;
 pub mod guest_channel;
+pub mod history;
 mod launch;
 pub mod ports;
 pub mod proxy;
