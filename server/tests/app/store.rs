@@ -144,3 +144,17 @@ fn records_from_other_versions_load_and_unreadable_ones_are_reported() {
     assert_eq!(records[0].state, TaskState::Running);
     assert_eq!(unreadable, vec!["20261008-120000-bbbb".to_owned()]);
 }
+
+/// Two tasks launched in the same second with the same random bits: the second is refused
+/// instead of silently replacing the first one (whose VM would never be supervised again).
+#[test]
+fn a_task_id_already_in_use_is_refused() {
+    let repo = tempfile::tempdir().unwrap();
+    let store = Store::new();
+    let first = record(&repo);
+    let mut second = first.clone();
+    second.label = Some("second".into());
+    store.try_insert(first.clone()).unwrap();
+    assert!(store.try_insert(second).is_err());
+    assert_eq!(store.get(&first.id).unwrap().label, None);
+}

@@ -6,6 +6,10 @@ use crate::helpers::ctx;
 
 /// A snapshot folder as `take_snapshot` leaves it, with a small disk.
 fn stored_snapshot(home: &std::path::Path) -> agentvm::domain::snapshot::SnapshotId {
+    stored_snapshot_of(home, false)
+}
+
+fn stored_snapshot_of(home: &std::path::Path, auto: bool) -> agentvm::domain::snapshot::SnapshotId {
     use agentvm::domain::snapshot::{SnapshotId, SnapshotMeta};
     let id = SnapshotId::generate(SystemTime::now(), [1, 2]);
     let dir = home.join("snapshots").join(id.as_str());
@@ -24,7 +28,7 @@ fn stored_snapshot(home: &std::path::Path) -> agentvm::domain::snapshot::Snapsho
         size_mb: 4,
         cpus: 0,
         memory_mb: 0,
-        auto: false,
+        auto,
     };
     std::fs::write(dir.join("meta.json"), serde_json::to_vec(&meta).unwrap()).unwrap();
     id
@@ -62,6 +66,20 @@ async fn simultaneous_imports_each_produce_a_complete_snapshot() {
         let dir = home.path().join("snapshots").join(m.id.as_str());
         assert_eq!(std::fs::read(dir.join("disk.raw")).unwrap().len(), 4 << 20);
     }
+}
+
+/// A backup brought back (from S3 or a file) is kept until deleted by hand: the next automatic
+/// snapshot of the machine it came from must not prune it as one of its own.
+#[tokio::test]
+async fn an_imported_backup_is_never_pruned_as_an_automatic_snapshot() {
+    let home = tempfile::tempdir().unwrap();
+    let ctx = ctx(home.path());
+    let id = stored_snapshot_of(home.path(), true);
+    let file = agentvm::app::backups::export(&ctx, &id).await.unwrap();
+    std::fs::remove_dir_all(home.path().join("snapshots").join(id.as_str())).unwrap();
+    let back = agentvm::app::backups::import(&ctx, &file).await.unwrap();
+    assert!(!back.auto, "{back:?}");
+    assert!(!ctx.snapshots.get(&back.id).unwrap().auto);
 }
 
 /// Temporary files left by a crash or a failed transfer are removed when the server starts.

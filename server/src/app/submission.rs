@@ -65,15 +65,25 @@ pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError
     }
     ctx.keychain.read_token()?;
 
-    let id = TaskId::generate(SystemTime::now(), random_bytes());
     let model = req.model.unwrap_or(ctx.settings.get().model);
-    let mut record = TaskRecord::new(id.clone(), repo, prompt, base_sha, req.interactive).with_model(model);
+    let id = TaskId::generate(SystemTime::now(), random_bytes());
+    let mut record = TaskRecord::new(id, repo, prompt, base_sha, req.interactive).with_model(model);
     record.claude_version = req.claude_version.map(|v| v.as_str().to_owned());
     record.restore_from = req.restore_from;
     record.cpus = cpus;
     record.memory_mb = memory_mb;
     record.label = req.label;
-    ctx.store.insert(record);
+    // Two launches in the same second may draw the same id: draw again, never replace a task.
+    let id = loop {
+        let id = record.id.clone();
+        if !ctx.config.jobs().join(id.as_str()).exists() {
+            match ctx.store.try_insert(record) {
+                Ok(()) => break id,
+                Err(r) => record = *r,
+            }
+        }
+        record.id = TaskId::generate(SystemTime::now(), random_bytes());
+    };
     tokio::spawn(launch::run(ctx.clone(), id.clone()));
     Ok(id)
 }

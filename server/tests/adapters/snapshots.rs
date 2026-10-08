@@ -35,6 +35,40 @@ fn snapshots_are_stored_listed_and_deleted() {
     assert!(store.list().is_empty());
 }
 
+/// Two snapshots with the same id (same second, same random bits): the second is refused and
+/// the first one stays as it was, never deleted by the failed attempt.
+#[test]
+fn a_snapshot_never_replaces_one_with_the_same_id() {
+    use agentvm::adapters::snapshots::SnapshotStore;
+    use agentvm::domain::snapshot::{SnapshotId, SnapshotMeta};
+    let tmp = tempfile::tempdir().unwrap();
+    let (disk, efi, other) = (tmp.path().join("disk.raw"), tmp.path().join("efivars"), tmp.path().join("other.raw"));
+    std::fs::write(&disk, vec![3u8; 1 << 20]).unwrap();
+    std::fs::write(&other, vec![9u8; 1 << 20]).unwrap();
+    std::fs::write(&efi, b"efi").unwrap();
+    let store = SnapshotStore::new(tmp.path().join("snapshots"));
+    let id = SnapshotId::generate(std::time::SystemTime::now(), [5, 5]);
+    let meta = SnapshotMeta {
+        id: id.clone(),
+        name: "first".into(),
+        source_task: "20261008-120000-abcd".into(),
+        repo: "/tmp/repo".into(),
+        base_sha: "a".repeat(40),
+        model: "default".into(),
+        claude_version: None,
+        created_at: 1.0,
+        size_mb: 0,
+        cpus: 2,
+        memory_mb: 2048,
+        auto: false,
+    };
+    store.create(&meta, &disk, &efi).unwrap();
+    let again = store.create(&SnapshotMeta { name: "second".into(), ..meta }, &other, &efi);
+    assert_eq!(again.unwrap_err().kind(), std::io::ErrorKind::AlreadyExists);
+    assert_eq!(store.get(&id).unwrap().name, "first");
+    assert_eq!(std::fs::read(store.disk(&id)).unwrap(), vec![3u8; 1 << 20]);
+}
+
 #[test]
 fn snapshot_ids_reject_path_tricks() {
     use agentvm::domain::snapshot::SnapshotId;

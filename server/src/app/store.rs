@@ -98,13 +98,29 @@ impl Store {
         Some(out)
     }
 
+    /// Adds or replaces a task (reloading the saved ones after a restart).
     pub fn insert(&self, record: TaskRecord) {
+        let entry = self.entry(record);
+        self.tasks.lock().unwrap().insert(entry.record.id.clone(), entry);
+    }
+
+    /// Adds a new task, unless its id is already taken: it is handed back untouched.
+    pub fn try_insert(&self, record: TaskRecord) -> Result<(), Box<TaskRecord>> {
+        let mut tasks = self.tasks.lock().unwrap();
+        if tasks.contains_key(&record.id) {
+            return Err(Box::new(record));
+        }
+        let entry = self.entry(record);
+        tasks.insert(entry.record.id.clone(), entry);
+        Ok(())
+    }
+
+    fn entry(&self, record: TaskRecord) -> Entry {
         let log = Arc::new(EventLog::new());
         log.push(StreamItem::State(record.state.clone()));
         let file = RecordFile::new(self.dir.as_ref().map(|d| d.join(record.id.as_str()).join("record.json")));
         file.write(&record, 1);
-        let entry = Entry { record, log, stop: watch::channel(false).0, version: 1, file };
-        self.tasks.lock().unwrap().insert(entry.record.id.clone(), entry);
+        Entry { record, log, stop: watch::channel(false).0, version: 1, file }
     }
 
     pub fn apply(&self, id: &TaskId, event: TaskEvent) -> Result<TaskState, StoreError> {

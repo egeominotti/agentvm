@@ -68,7 +68,14 @@ pub async fn export(ctx: &AppCtx, sid: &SnapshotId) -> Result<PathBuf, BackupErr
 /// Adds an archive as a local snapshot. Keeps its id unless that id already exists here.
 pub async fn import(ctx: &AppCtx, file: &Path) -> Result<SnapshotMeta, BackupError> {
     let scratch = ctx.snapshots.scratch(&format!("import-{}", unique()))?;
-    let (from, to) = (file.to_path_buf(), scratch.clone());
+    let adopted = adopt(ctx, file, &scratch).await;
+    // Whatever happened, the scratch folder (possibly gigabytes) does not wait for a restart.
+    let _ = std::fs::remove_dir_all(&scratch);
+    adopted
+}
+
+async fn adopt(ctx: &AppCtx, file: &Path, scratch: &Path) -> Result<SnapshotMeta, BackupError> {
+    let (from, to) = (file.to_path_buf(), scratch.to_path_buf());
     blocking(move || Ok(archive::unpack(&from, &to)?)).await?;
     let meta: SnapshotMeta = serde_json::from_slice(&std::fs::read(scratch.join("meta.json"))?)
         .map_err(|_| BackupError::Invalid("the archive is not an agentvm snapshot".into()))?;
@@ -76,9 +83,8 @@ pub async fn import(ctx: &AppCtx, file: &Path) -> Result<SnapshotMeta, BackupErr
         Some(id) if ctx.snapshots.get(&id).is_none() => id,
         _ => SnapshotId::generate(SystemTime::now(), random_bytes()),
     };
-    let adopted = ctx.snapshots.adopt(&scratch, SnapshotMeta { id, ..meta });
-    let _ = std::fs::remove_dir_all(&scratch);
-    Ok(adopted?)
+    // Brought back by hand: kept until deleted by hand, never pruned as an automatic snapshot.
+    Ok(ctx.snapshots.adopt(scratch, SnapshotMeta { id, auto: false, ..meta })?)
 }
 
 pub fn s3_client(ctx: &AppCtx) -> Result<S3Client, BackupError> {

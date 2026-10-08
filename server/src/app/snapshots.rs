@@ -110,7 +110,7 @@ async fn take(
     let store_meta = meta.clone();
     let root = ctx.config.home.join("snapshots");
     tokio::task::spawn_blocking(move || {
-        crate::adapters::snapshots::SnapshotStore::new(root).create(&store_meta, &disk, &efivars)
+        create_fresh(&crate::adapters::snapshots::SnapshotStore::new(root), store_meta, &disk, &efivars)
     })
     .await
     .map_err(|e| SnapshotError::Io(std::io::Error::other(e.to_string())))?
@@ -154,7 +154,24 @@ pub fn keep_disk(ctx: &AppCtx, record: &TaskRecord, ws: &JobWorkspace) -> Option
     }
     let now = SystemTime::now();
     let meta = meta_for(record, format!("Interrupted: {}", title(record, now)), false, now);
-    ctx.snapshots.create(&meta, &disk, &efivars).ok().map(|m| m.name)
+    create_fresh(&ctx.snapshots, meta, &disk, &efivars).ok().map(|m| m.name)
+}
+
+/// Creates the snapshot, drawing a new id if this one is taken (same second, same random bits).
+fn create_fresh(
+    store: &crate::adapters::snapshots::SnapshotStore,
+    mut meta: SnapshotMeta,
+    disk: &std::path::Path,
+    efivars: &std::path::Path,
+) -> std::io::Result<SnapshotMeta> {
+    loop {
+        match store.create(&meta, disk, efivars) {
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                meta.id = SnapshotId::generate(SystemTime::now(), random_bytes());
+            }
+            other => return other,
+        }
+    }
 }
 
 /// Starts a new terminal VM from the snapshot; Claude continues its last conversation.

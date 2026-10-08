@@ -43,7 +43,10 @@ impl SnapshotStore {
     /// Clones the disk (instant on APFS) and copies the EFI variables next to the metadata.
     pub fn create(&self, meta: &SnapshotMeta, disk: &Path, efivars: &Path) -> io::Result<SnapshotMeta> {
         let dir = self.dir(&meta.id);
-        fs::create_dir_all(&dir)?;
+        fs::create_dir_all(&self.root)?;
+        // `create_dir`, not `_all`: an existing snapshot with this id is refused (AlreadyExists),
+        // and the cleanup below only ever removes the folder this call created.
+        fs::create_dir(&dir)?;
         let result = (|| {
             // The guest flushed its cache; make sure the host has written it to the file too.
             fs::File::open(disk)?.sync_all()?;
