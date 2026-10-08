@@ -1,0 +1,33 @@
+# Tagging vX.Y.Z publishes a GitHub release with the Mac binaries and everything needed to build
+# the VM image. The image itself is built on the user's Mac (scripts/build-golden.sh).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: scripts/build.sh
+      - name: Package
+        run: |
+          name="agentvm-${GITHUB_REF_NAME}-macos-arm64"
+          mkdir -p "dist/$name"
+          cp -R bin scripts guest dev README.md CHANGELOG.md SECURITY.md "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          shasum -a 256 "dist/$name.tar.gz" > "dist/$name.tar.gz.sha256"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.sha256 \
+            --title "agentvm $GITHUB_REF_NAME" \
+            --notes "See CHANGELOG.md. After unpacking: scripts/build-golden.sh, then bin/agentvm-server."

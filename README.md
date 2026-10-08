@@ -30,6 +30,10 @@
   <a href="#development">Development</a>
 </p>
 
+<p align="center">
+  <img src="docs/assets/wall.jpg" alt="The Machines wall: five Claude Code agents working in parallel, each in its own VM" width="100%">
+</p>
+
 ---
 
 ## Why agentvm
@@ -61,6 +65,8 @@ repository as a git branch, and the VM is thrown away.
 | **Snapshots** | Freeze a whole running VM (files, packages, Claude's conversation) in under a second and restore it into a new machine where Claude continues the conversation. |
 | **Backups anywhere** | Download snapshots as `.tar.zst`, import them on another Mac, or back them up to any S3-compatible storage: AWS S3, Cloudflare R2, Hetzner Object Storage, Backblaze B2, MinIO, RustFS. Multipart uploads up to ~640 GB. |
 | **Survives restarts** | VMs keep running when the server restarts; the new server re-attaches to them and picks up where it left off. |
+| **Ports on localhost** | Anything listening inside a VM (dev servers, databases) is forwarded to `127.0.0.1` on the Mac, even when it binds to the VM's localhost. |
+| **Per-repo setup** | `.agentvm/setup.sh` runs before Claude starts: install dependencies, seed a database, start a dev server. |
 | **Telemetry** | Per VM: CPU, memory, disk, network, busiest processes, uptime. Per agent: cost at API prices, tokens in/out, lines changed, context used. |
 | **Settings, applied live** | VMs at once, vCPUs, memory, default model, time limits, Claude token (Keychain), VM image rebuilds with a chosen Claude Code version, S3, storage cleanup. |
 
@@ -104,6 +110,19 @@ scripts/dev-s3.sh up       # RustFS in Docker: S3 on http://127.0.0.1:9100, cons
 ```
 
 It prints the values to paste in **Settings → Backups to S3** (provider *Local*).
+
+## A closer look
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/machine.jpg" alt="A machine: Claude Code at work, telemetry, Claude usage and a forwarded port"></td>
+    <td width="50%"><img src="docs/assets/boot.jpg" alt="The boot sequence with real timings"></td>
+  </tr>
+  <tr>
+    <td>A machine: Claude Code at work, its telemetry, Claude's cost and a dev server reachable on <code>localhost</code>.</td>
+    <td>The boot sequence, built from real events: disk clone in milliseconds, Debian up in under two seconds.</td>
+  </tr>
+</table>
 
 ## How it works
 
@@ -218,6 +237,11 @@ cargo test --manifest-path server/Cargo.toml -- --ignored    # real VMs, Claude 
 
 CI runs formatting, clippy, the tests that need no VM, the Swift build and script checks on every
 push. GitHub's macOS runners cannot nest virtualization, so VM tests run locally.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
+Release notes: [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
