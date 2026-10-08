@@ -590,125 +590,205 @@ class FocusView {
   destroy() { for (const term of Object.values(this.terms)) term.dispose(); }
 }
 
-/** Settings: resources, agent, account, VM image, storage. */
+/** Settings: full width, section index on the left, every change saved on the spot. */
 class SettingsView {
   constructor() {
     this.root = h("div", { class: "settings" });
     this.built = false;
+    this.saveTimer = null;
   }
+
   /** Built once; live parts refresh on actions and while the image is rebuilding. */
   async update() {
     if (this.built) return;
     this.built = true;
     await loadSettings();
-    const s = state.settings.settings, lim = state.settings.limits;
-    const field = (label, input, hint) => h("div", { class: "set" }, h("label", {}, label), input, hint);
-    const num = (name, value, attrs = {}) => h("input", { name, type: "number", value: String(value), ...attrs });
-    this.maxHint = h("div", { class: "hint" });
-    const form = h("form", { class: "card", onsubmit: e => this.save(e) },
-      h("h2", {}, "Resources"),
-      h("p", { class: "lede" }, `This Mac has ${lim.cpus} cores and ${gb(lim.ram_mb)} of memory. Changes apply to new VMs; the VM limit applies at once.`),
-      h("div", { class: "grid2" },
-        field("VMs at the same time", num("max_vms", s.max_vms, { min: 1, max: 64 }), this.maxHint),
-        field("vCPUs per VM", num("cpus", s.cpus, { min: 1, max: lim.cpus }), h("div", { class: "hint" }, `1 to ${lim.cpus}. vCPUs are shared, so they can add up to more than the cores.`)),
-        field("Memory per VM", h("select", { name: "memory_mb" }, [1024, 2048, 4096, 6144, 8192, 12288, 16384].filter(v => v <= lim.ram_mb - 8192).map(v => h("option", { value: String(v), selected: v === s.memory_mb }, gb(v)))), h("div", { class: "hint" }, "Reserved for each running VM."))),
-      h("h2", {}, "Agent"),
-      h("div", { class: "grid2" },
-        field("Default model", h("select", { name: "model" }, [["default", "Default for the account"], ["sonnet", "Sonnet"], ["opus", "Opus"], ["haiku", "Haiku"]].map(([v, l]) => h("option", { value: v, selected: v === s.model }, l))), h("div", { class: "hint" }, "Each launch can override it.")),
-        field("Time limit for automatic tasks", num("timeout_min", Math.round(s.timeout_s / 60), { min: 1, max: 1440 }), h("div", { class: "hint" }, "Minutes. Terminals never time out: you close them.")),
-        field("Default repository", h("input", { name: "default_repo", value: s.default_repo ?? "", placeholder: "~/code/my-app", spellcheck: "false" }), h("div", { class: "hint" }, "Prefilled in the launcher."))),
-      h("div", { class: "row-actions" }, h("button", { class: "btn primary", type: "submit" }, "Save settings"), this.msg = h("span", { class: "msg" })));
-    form.addEventListener("input", () => this.recommend(form));
-    this.recommend(form);
+    this.draft = { ...state.settings.settings };
+    const lim = state.settings.limits;
+    const sections = [
+      ["resources", "Resources", this.resources(lim)],
+      ["agent", "Agent", this.agent()],
+      ["account", "Claude account", this.account()],
+      ["notifications", "Notifications", this.notifications()],
+      ["image", "VM image", this.image()],
+      ["storage", "Storage", this.storage()],
+    ];
+    this.navLinks = sections.map(([id, label]) => h("a", { href: `#/settings`, "data-target": id, onclick: e => { e.preventDefault(); this.scrollTo(id); } }, label));
+    this.content = h("div", { class: "settings-content" },
+      h("header", { class: "settings-head" }, h("h1", {}, "Settings"), this.saveState = h("span", { class: "save-state" }, "Changes are saved automatically")),
+      h("div", { class: "settings-grid" }, sections.map(([id, label, body]) => h("section", { class: `card span-${id}`, id: `set-${id}`, "data-section": id }, h("h2", {}, label), body))));
+    this.root.replaceChildren(h("nav", { class: "settings-nav", "aria-label": "Settings sections" }, this.navLinks), this.content);
+    this.content.addEventListener("scroll", () => this.spy());
+    this.spy();
+    this.refreshLive();
+  }
 
+  scrollTo(id) {
+    $(`#set-${id}`, this.root)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  spy() {
+    const top = this.content.getBoundingClientRect().top + 80;
+    let active = "resources";
+    for (const sec of this.content.querySelectorAll("[data-section]")) if (sec.getBoundingClientRect().top <= top) active = sec.dataset.section;
+    for (const a of this.navLinks) a.setAttribute("aria-current", String(a.dataset.target === active));
+  }
+
+  // ----- sections -----
+  resources(lim) {
+    const s = this.draft;
+    const memChoices = [1024, 2048, 4096, 6144, 8192, 12288, 16384].filter(v => v <= lim.ram_mb - 8192);
+    this.vmsOut = h("output", { class: "big-value" });
+    this.cpuOut = h("output", { class: "big-value" });
+    this.vmsInput = h("input", { type: "range", min: "1", max: String(Math.min(64, Math.max(lim.cpus * 2, 16))), value: String(s.max_vms), oninput: e => this.set("max_vms", Number(e.target.value)) });
+    this.cpuInput = h("input", { type: "range", min: "1", max: String(lim.cpus), value: String(s.cpus), oninput: e => this.set("cpus", Number(e.target.value)) });
+    this.memSeg = h("div", { class: "seg wide", role: "radiogroup", "aria-label": "Memory per VM" },
+      memChoices.map(v => h("button", { type: "button", role: "radio", "data-value": String(v), onclick: () => this.set("memory_mb", v) }, gb(v))));
+    this.budget = h("div", { class: "budget" });
+    this.resErr = h("p", { class: "field-error", role: "alert" });
+    const block = h("div", { class: "res" },
+      h("div", { class: "slider" }, h("div", { class: "slider-head" }, h("label", {}, "VMs at the same time"), this.vmsOut), this.vmsInput,
+        h("p", { class: "hint" }, "Extra launches wait in a queue. Takes effect at once.")),
+      h("div", { class: "slider" }, h("div", { class: "slider-head" }, h("label", {}, "vCPUs per VM"), this.cpuOut), this.cpuInput,
+        h("p", { class: "hint" }, `This Mac has ${lim.cpus} cores. vCPUs are shared, so the total can exceed them.`)),
+      h("div", { class: "slider" }, h("div", { class: "slider-head" }, h("label", {}, "Memory per VM")), this.memSeg,
+        h("p", { class: "hint" }, "Reserved for each running VM. New VMs use the new size.")));
+    this.paintResources();
+    return [h("p", { class: "lede" }, `Resources of this Mac given to the VMs: ${lim.cpus} cores, ${gb(lim.ram_mb)} of memory.`), block, this.budget, this.resErr];
+  }
+
+  paintResources() {
+    const s = this.draft, lim = state.settings.limits;
+    this.vmsOut.textContent = String(s.max_vms);
+    this.cpuOut.textContent = String(s.cpus);
+    for (const b of this.memSeg.children) b.setAttribute("aria-checked", String(Number(b.dataset.value) === s.memory_mb));
+    const total = lim.ram_mb, reserve = 8192, used = s.max_vms * s.memory_mb, fit = Math.max(1, Math.floor((total - reserve) / s.memory_mb));
+    const over = used > total - reserve;
+    this.budget.className = `budget${over ? " over" : ""}`;
+    this.budget.replaceChildren(
+      h("div", { class: "budget-bar" },
+        h("i", { class: "vms", style: `width:${Math.min(100, (100 * used) / total)}%` }),
+        h("i", { class: "reserve", style: `width:${(100 * reserve) / total}%` })),
+      h("div", { class: "budget-legend" },
+        h("span", {}, h("b", {}, `${s.max_vms} × ${gb(s.memory_mb)} = ${gb(used)}`), ` for VMs at full load`),
+        h("span", {}, `${gb(reserve)} kept for macOS`),
+        h("span", { class: "fit" }, over ? `Over budget: at most ${fit} VMs of ${gb(s.memory_mb)} fit without swapping` : `Fits: up to ${fit} VMs of ${gb(s.memory_mb)}`)));
+  }
+
+  agent() {
+    const s = this.draft;
+    const models = [["default", "Account default", "Whatever Claude Code picks"], ["sonnet", "Sonnet", "Fast, great for most work"], ["opus", "Opus", "Most capable, slower"], ["haiku", "Haiku", "Fastest and lightest"]];
+    this.modelCards = h("div", { class: "choices", role: "radiogroup", "aria-label": "Default model" },
+      models.map(([v, name, desc]) => h("button", { type: "button", role: "radio", "data-value": v, "aria-checked": String(s.model === v), onclick: () => this.set("model", v) }, h("b", {}, name), h("span", {}, desc))));
+    this.timeoutIn = h("input", { type: "number", min: "1", max: "1440", value: String(Math.round(s.timeout_s / 60)), oninput: e => this.set("timeout_s", Number(e.target.value) * 60) });
+    this.repoIn = h("input", { value: s.default_repo ?? "", placeholder: "~/code/my-app", spellcheck: "false", oninput: e => this.set("default_repo", e.target.value.trim() || null) });
+    this.agentErr = h("p", { class: "field-error", role: "alert" });
+    return [
+      h("div", { class: "set" }, h("label", {}, "Default model"), this.modelCards, h("p", { class: "hint" }, "Every launch can pick a different one.")),
+      h("div", { class: "pair" },
+        h("div", { class: "set" }, h("label", {}, "Time limit for automatic tasks"), h("div", { class: "unit" }, this.timeoutIn, h("span", {}, "minutes")), h("p", { class: "hint" }, "Terminals never time out: you close them.")),
+        h("div", { class: "set" }, h("label", {}, "Default repository"), this.repoIn, h("p", { class: "hint" }, "Prefilled in New VM."))),
+      this.agentErr];
+  }
+
+  account() {
+    this.tokenPill = h("span", { class: "pill" });
     this.tokenMsg = h("span", { class: "msg" });
-    this.tokenState = h("div", { class: "hint" });
-    const token = h("form", { class: "card", onsubmit: e => this.saveToken(e) },
-      h("h2", {}, "Claude account"),
-      h("p", { class: "lede" }, "agentvm uses a long-lived token of your Claude subscription, stored in the macOS Keychain. Create one with claude setup-token."),
-      this.tokenState,
-      h("div", { class: "grid2" }, field("New token", h("input", { name: "token", type: "password", placeholder: "sk-ant-oat01-…", autocomplete: "off", spellcheck: "false" }))),
-      h("div", { class: "row-actions" }, h("button", { class: "btn", type: "submit" }, "Save token"), this.tokenMsg));
+    const input = h("input", { name: "token", type: "password", placeholder: "Paste a token: sk-ant-oat01-…", autocomplete: "off", spellcheck: "false" });
+    const form = h("form", { class: "inline-form", onsubmit: e => this.saveToken(e, input) }, input, h("button", { class: "btn", type: "submit" }, "Save token"));
+    return [
+      h("div", { class: "status-line" }, this.tokenPill, h("span", { class: "lede" }, "A long-lived token of your Claude subscription, stored in the macOS Keychain.")),
+      form, this.tokenMsg,
+      h("p", { class: "hint" }, "Create one in a terminal with ", h("code", {}, "claude setup-token"), ". Running VMs keep the token they started with.")];
+  }
 
+  notifications() {
+    this.notifySwitch = h("button", { class: "switch", type: "button", role: "switch", onclick: () => this.toggleNotify() }, h("i"));
+    this.notifyMsg = h("span", { class: "hint" });
+    this.showNotify();
+    return [h("div", { class: "status-line" }, this.notifySwitch, h("div", {}, h("b", {}, "Notify me when Claude is waiting"),
+      h("p", { class: "hint" }, "A desktop notification when an agent finishes a turn while this page is in the background.")), this.notifyMsg)];
+  }
+
+  image() {
     this.goldenFacts = h("div", { class: "facts" });
     this.goldenLog = h("pre", { class: "log", hidden: true });
     this.rebuildBtn = h("button", { class: "btn", type: "button", onclick: () => this.rebuild() }, "Rebuild image");
     this.goldenMsg = h("span", { class: "msg" });
-    const golden = h("section", { class: "card" },
-      h("h2", {}, "VM image"),
-      h("p", { class: "lede" }, "Every VM starts as an instant copy of this Debian 13 image with Claude Code preinstalled. Rebuild it to update Claude Code and the system packages; running VMs are not affected."),
-      this.goldenFacts, h("div", { class: "row-actions" }, this.rebuildBtn, this.goldenMsg), this.goldenLog);
+    return [h("p", { class: "lede" }, "Every VM starts as an instant copy of this Debian 13 image with Claude Code preinstalled. Rebuild it to update Claude Code and the system packages; running VMs are not affected."),
+      this.goldenFacts, h("div", { class: "row-actions" }, this.rebuildBtn, this.goldenMsg), this.goldenLog];
+  }
 
+  storage() {
     this.storageFacts = h("div", { class: "facts" });
     this.cleanMsg = h("span", { class: "msg" });
-    const storage = h("section", { class: "card" },
-      h("h2", {}, "Storage"),
-      h("p", { class: "lede" }, "Disks of closed VMs are deleted at once. Their logs stay in the job folders until you clean them up."),
-      this.storageFacts,
-      h("div", { class: "row-actions" }, h("button", { class: "btn", type: "button", onclick: () => this.cleanup() }, "Delete logs of closed VMs"), this.cleanMsg));
+    return [h("p", { class: "lede" }, "Disks of closed VMs are deleted at once. Their logs stay until you clean them up."),
+      this.storageFacts, h("div", { class: "row-actions" }, h("button", { class: "btn", type: "button", onclick: () => this.cleanup() }, "Delete logs of closed VMs"), this.cleanMsg)];
+  }
 
-    this.notifyMsg = h("span", { class: "msg" });
-    const notify = h("section", { class: "card" },
-      h("h2", {}, "Notifications"),
-      h("p", { class: "lede" }, "Get a desktop notification when an agent finishes a turn and waits for you while this page is in the background."),
-      h("div", { class: "row-actions" }, h("button", { class: "btn", type: "button", onclick: () => this.toggleNotify() }, "Turn on notifications"), this.notifyMsg));
-    this.root.replaceChildren(h("div", { class: "settings-inner" }, h("h1", {}, "Settings"), form, token, notify, golden, storage));
-    this.showNotify();
-    this.refreshLive();
+  // ----- auto-save -----
+  set(key, value) {
+    this.draft[key] = value;
+    if (key === "model") for (const b of this.modelCards.children) b.setAttribute("aria-checked", String(b.dataset.value === value));
+    this.paintResources();
+    this.saveState.className = "save-state pending";
+    this.saveState.textContent = "Saving…";
+    clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => this.save(), 450);
   }
-  recommend(form) {
-    const mem = Number(form.memory_mb.value);
-    const rec = Math.max(1, Math.floor((state.settings.limits.ram_mb - 8192) / mem));
-    this.maxHint.replaceChildren("Fits in RAM: ", h("b", {}, String(rec)), ` VMs of ${gb(mem)}. More than that pushes the Mac into swap.`);
-  }
-  async save(e) {
-    e.preventDefault();
-    const f = e.target;
-    const body = {
-      max_vms: Number(f.max_vms.value), cpus: Number(f.cpus.value), memory_mb: Number(f.memory_mb.value),
-      timeout_s: Number(f.timeout_min.value) * 60, model: f.model.value, default_repo: f.default_repo.value.trim() || null,
-    };
-    const r = await api("/api/settings", { method: "PUT", body });
-    this.msg.className = `msg ${r.ok ? "ok" : "err"}`;
-    this.msg.textContent = r.ok ? "Saved." : r.data?.error || "Could not save.";
+  async save() {
+    const r = await api("/api/settings", { method: "PUT", body: this.draft });
+    const err = r.ok ? "" : r.data?.error || "Could not save.";
+    const resourceError = /VM|vCPU|memory/i.test(err);
+    this.resErr.textContent = resourceError ? err : "";
+    this.agentErr.textContent = err && !resourceError ? err : "";
+    this.saveState.className = `save-state ${r.ok ? "ok" : "err"}`;
+    this.saveState.textContent = r.ok ? "All changes saved" : "Not saved: fix the highlighted value";
     if (r.ok) { state.settings = r.data; loadStatus(); }
   }
-  async saveToken(e) {
+
+  async saveToken(e, input) {
     e.preventDefault();
-    const input = e.target.token;
     const r = await api("/api/settings/token", { method: "PUT", body: { token: input.value } });
     this.tokenMsg.className = `msg ${r.ok ? "ok" : "err"}`;
-    this.tokenMsg.textContent = r.ok ? "Token saved in the Keychain. New VMs use it." : r.data?.error || "Could not save the token.";
-    if (r.ok) { input.value = ""; loadStatus(); }
+    this.tokenMsg.textContent = r.ok ? "Saved in the Keychain. New VMs use it." : r.data?.error || "Could not save the token.";
+    if (r.ok) { input.value = ""; await loadStatus(); this.paintToken(); }
   }
+  paintToken() {
+    const ok = state.status?.token;
+    this.tokenPill.className = `pill ${ok ? "ok" : "err"}`;
+    this.tokenPill.textContent = ok ? "Connected" : "Missing";
+  }
+
   showNotify() {
-    const supported = "Notification" in window;
-    this.notifyMsg.className = `msg ${notificationsOn() ? "ok" : ""}`;
-    this.notifyMsg.textContent = !supported ? "This browser has no notifications." : notificationsOn() ? "On." : Notification.permission === "denied" ? "Blocked in the browser settings." : "Off.";
+    const on = notificationsOn();
+    this.notifySwitch.setAttribute("aria-checked", String(on));
+    this.notifyMsg.textContent = !("Notification" in window) ? "Not supported here." : Notification.permission === "denied" ? "Blocked in the browser settings." : "";
   }
   async toggleNotify() {
     if (!("Notification" in window)) return;
-    if (notificationsOn()) { localStorage.setItem("agentvm.notify", "off"); }
+    if (notificationsOn()) localStorage.setItem("agentvm.notify", "off");
     else { localStorage.removeItem("agentvm.notify"); if (Notification.permission === "default") await Notification.requestPermission(); }
     this.showNotify();
   }
+
   async rebuild() {
     const r = await api("/api/golden/rebuild", { method: "POST" });
     this.goldenMsg.className = `msg ${r.ok ? "" : "err"}`;
-    this.goldenMsg.textContent = r.ok ? "Rebuilding… about 2 minutes." : r.data?.error || "Could not start the rebuild.";
+    this.goldenMsg.textContent = r.ok ? "Rebuilding, about 2 minutes…" : r.data?.error || "Could not start the rebuild.";
     this.refreshLive();
   }
   async cleanup() {
     const r = await api("/api/storage/cleanup", { method: "POST" });
-    this.cleanMsg.className = "msg ok";
+    this.cleanMsg.className = `msg ${r.ok ? "ok" : "err"}`;
     this.cleanMsg.textContent = r.ok ? `Deleted ${plural(r.data.removed, "job folder")}.` : "Cleanup failed.";
     this.refreshLive();
   }
+
   async refreshLive() {
+    this.paintToken();
     const fact = (label, value) => h("div", { class: "fact" }, h("span", {}, label), h("b", {}, value));
-    this.tokenState?.replaceChildren(state.status?.token ? "A token is saved and working." : "No token saved yet: VMs cannot start Claude.");
     const [g, st] = await Promise.all([api("/api/golden"), api("/api/storage")]);
-    if (g.ok && this.goldenFacts) {
+    if (g.ok) {
       const d = g.data;
       this.goldenFacts.replaceChildren(
         fact("Status", d.rebuilding ? "Rebuilding" : d.exists ? "Ready" : "Missing"),
@@ -721,11 +801,10 @@ class SettingsView {
       if (d.last_result && !d.rebuilding) { this.goldenMsg.className = `msg ${d.last_result === "ok" ? "ok" : "err"}`; this.goldenMsg.textContent = d.last_result === "ok" ? "Image rebuilt." : `Rebuild ${d.last_result}.`; }
       if (d.rebuilding) setTimeout(() => current === this && this.refreshLive(), 1500);
     }
-    if (st.ok && this.storageFacts) {
-      this.storageFacts.replaceChildren(fact("Job folders", String(st.data.jobs)), fact("Job logs", gb(st.data.jobs_mb)), fact("VM image", gb(st.data.golden_mb)));
-    }
+    if (st.ok) this.storageFacts.replaceChildren(fact("Job folders", String(st.data.jobs)), fact("Job logs", gb(st.data.jobs_mb)), fact("VM image", gb(st.data.golden_mb)));
   }
-  destroy() {}
+
+  destroy() { clearTimeout(this.saveTimer); }
 }
 
 // ---------- routing ----------
