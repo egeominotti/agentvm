@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -11,6 +12,8 @@ struct Server {
     child: Child,
     base: String,
     home: tempfile::TempDir,
+    /// Everything the server wrote on stderr, shown when the test fails.
+    log: Arc<Mutex<String>>,
 }
 
 impl Drop for Server {
@@ -21,6 +24,11 @@ impl Drop for Server {
         let _ = Command::new("pkill")
             .args(["-TERM", "-f", &format!("agentvm-vm --config {}", self.home.path().display())])
             .status();
+        if std::thread::panicking() {
+            // Keep the jobs (Claude's stream.jsonl, guest logs) to find out why.
+            self.home.disable_cleanup(true);
+            eprintln!("server home kept: {}\nserver log:\n{}", self.home.path().display(), self.log.lock().unwrap());
+        }
     }
 }
 
@@ -33,22 +41,61 @@ fn test_home() -> tempfile::TempDir {
     home
 }
 
-fn spawn_server(home: &Path) -> (Child, String) {
-    spawn_server_env(home, &[])
+/// A server that may fail to start: its stderr is left to the caller.
+fn spawn_server(home: &Path) -> Child {
+    Command::new(server_bin())
+        .env("AGENTVM_PORT", "0")
+        .env("AGENTVM_HOME", home)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("bin/agentvm-server: run scripts/build.sh")
 }
 
-fn spawn_server_env(home: &Path, env: &[(&str, &str)]) -> (Child, String) {
-    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-    let bin = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../bin/agentvm-server");
-    let child = Command::new(bin)
-        .env("AGENTVM_PORT", port.to_string())
-        .env("AGENTVM_HOME", home)
+fn server_bin() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../bin/agentvm-server")
+}
+
+/// Starts a server on a port it picks itself (no race with other tests for a free port) and
+/// keeps reading its stderr, so a chatty server never blocks on a full pipe.
+fn launch(home: tempfile::TempDir, env: &[(&str, &str)]) -> Server {
+    let path = home.path().to_path_buf();
+    launch_at(&path, home, env)
+}
+
+/// `home` is only owned (deleted at the end) by the returned server; the server runs on `path`.
+fn launch_at(path: &Path, home: tempfile::TempDir, env: &[(&str, &str)]) -> Server {
+    let mut child = Command::new(server_bin())
+        .env("AGENTVM_PORT", "0")
+        .env("AGENTVM_HOME", path)
         .envs(env.iter().copied())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
         .expect("bin/agentvm-server: run scripts/build.sh");
-    (child, format!("http://127.0.0.1:{port}"))
+    let stderr = child.stderr.take().unwrap();
+    let log = Arc::new(Mutex::new(String::new()));
+    let (tx, rx) = std::sync::mpsc::channel();
+    let sink = log.clone();
+    std::thread::spawn(move || {
+        for line in std::io::BufRead::lines(std::io::BufReader::new(stderr)).map_while(Result::ok) {
+            if let Some(url) = line.strip_prefix("agentvm listening on ") {
+                let _ = tx.send(url.to_owned());
+            }
+            let mut log = sink.lock().unwrap();
+            log.push_str(&line);
+            log.push('\n');
+        }
+    });
+    let started = rx.recv_timeout(Duration::from_secs(30));
+    let server = Server { child, base: started.clone().unwrap_or_default(), home, log };
+    assert!(started.is_ok(), "the server did not start:\n{}", server.log.lock().unwrap());
+    let t0 = Instant::now();
+    while curl(&["-sf", &format!("{}/api/status", server.base)]).is_none() {
+        assert!(t0.elapsed() < Duration::from_secs(10), "the server is not responding");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    server
 }
 
 fn start_server() -> Server {
@@ -56,14 +103,7 @@ fn start_server() -> Server {
 }
 
 fn start_server_with(home: tempfile::TempDir, env: &[(&str, &str)]) -> Server {
-    let (child, base) = spawn_server_env(home.path(), env);
-    let server = Server { child, base, home };
-    let t0 = Instant::now();
-    while curl(&["-sf", &format!("{}/api/status", server.base)]).is_none() {
-        assert!(t0.elapsed() < Duration::from_secs(10), "the server is not responding");
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    server
+    launch(home, env)
 }
 
 /// No job file contains the token, and neither does the produced branch.
@@ -233,7 +273,7 @@ fn run_task(server: &Server, repo: &Path, prompt: &str) -> (String, Value) {
 #[ignore = "requires golden and bin"]
 fn second_server_on_the_same_home_refuses_to_start() {
     let server = start_server();
-    let (mut second, _) = spawn_server(server.home.path());
+    let mut second = spawn_server(server.home.path());
     let t0 = Instant::now();
     let status = loop {
         if let Some(st) = second.try_wait().unwrap() {
@@ -565,13 +605,8 @@ fn vms_survive_a_server_restart() {
     assert!(alive, "the VM died with the server");
 
     // A new server on the same home finds the VM and drives it.
-    let (child, base) = spawn_server(&home_path);
-    let again = Server { child, base, home: tempfile::tempdir().unwrap() };
-    let t0 = Instant::now();
-    while curl(&["-sf", &format!("{}/api/status", again.base)]).is_none() {
-        assert!(t0.elapsed() < Duration::from_secs(10));
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    // The first `server` still owns (and deletes) the home: this one runs on it without owning it.
+    let again = launch_at(&home_path, tempfile::tempdir().unwrap(), &[]);
     let task = wait_for_state(&again, &id, |s| s == "running", Duration::from_secs(10));
     assert_eq!(task["interactive"], true);
     std::fs::write(home_path.join("jobs").join(&id).join("share/marker.txt"), "x").ok();

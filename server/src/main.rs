@@ -10,12 +10,15 @@ use agentvm::config::Config;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = Config::from_env();
+    let mut config = Config::from_env();
     // Lock and port first: only a single instance may touch orphaned VMs.
     let _lock = InstanceLock::acquire(&config.home)
         .map_err(|_| anyhow::anyhow!("agentvm is already running on {} (AGENTVM_HOME)", config.home.display()))?;
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], config.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
+    // AGENTVM_PORT=0 lets the system pick a free port (tests); everything else uses the real one.
+    let addr = listener.local_addr()?;
+    config.port = addr.port();
     std::fs::create_dir_all(config.jobs())?;
     let ctx = Arc::new(AppCtx::new(config, Keychain::new(None)));
     // VMs survive restarts: re-attach to them first, then clean up whatever no task owns.
