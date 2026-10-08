@@ -152,7 +152,14 @@ impl JobWorkspace {
 
 impl Drop for JobWorkspace {
     fn drop(&mut self) {
-        for p in [self.disk(), self.efivars(), self.share().join(".token"), self.repo_bundle(), self.pid_path(), self.pty_socket()] {
+        for p in [
+            self.disk(),
+            self.efivars(),
+            self.share().join(".token"),
+            self.repo_bundle(),
+            self.pid_path(),
+            self.pty_socket(),
+        ] {
             let _ = fs::remove_file(p);
         }
     }

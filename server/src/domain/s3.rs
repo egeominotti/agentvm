@@ -42,13 +42,19 @@ impl S3Config {
             return Err(S3ConfigError::Region);
         }
         let b = &self.bucket;
-        if !(3..=63).contains(&b.len()) || !b.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'.' || c == b'-') {
+        if !(3..=63).contains(&b.len())
+            || !b.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'.' || c == b'-')
+        {
             return Err(S3ConfigError::Bucket);
         }
-        if !self.prefix.bytes().all(|c| c.is_ascii_alphanumeric() || b"-._/".contains(&c)) || self.prefix.contains("..") {
+        if !self.prefix.bytes().all(|c| c.is_ascii_alphanumeric() || b"-._/".contains(&c)) || self.prefix.contains("..")
+        {
             return Err(S3ConfigError::Prefix);
         }
-        if self.access_key.is_empty() || !self.access_key.bytes().all(|c| c.is_ascii_graphic()) || self.access_key.contains('"') {
+        if self.access_key.is_empty()
+            || !self.access_key.bytes().all(|c| c.is_ascii_graphic())
+            || self.access_key.contains('"')
+        {
             return Err(S3ConfigError::AccessKey);
         }
         Ok(())

@@ -50,7 +50,10 @@ pub async fn take_snapshot(ctx: &AppCtx, id: &TaskId, name: Option<String>) -> R
     let _ = std::fs::remove_file(&done);
 
     let now = SystemTime::now();
-    let title = record.prompt.as_ref().map_or_else(|| record.repo.as_path().display().to_string(), |p| p.as_str().lines().next().unwrap_or_default().to_owned());
+    let title = record.prompt.as_ref().map_or_else(
+        || record.repo.as_path().display().to_string(),
+        |p| p.as_str().lines().next().unwrap_or_default().to_owned(),
+    );
     let meta = SnapshotMeta {
         id: SnapshotId::generate(now, random_bytes()),
         name: name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty()).unwrap_or(title),
@@ -65,10 +68,12 @@ pub async fn take_snapshot(ctx: &AppCtx, id: &TaskId, name: Option<String>) -> R
     let (disk, efivars) = (JobWorkspace::disk_of(&jobs, id), JobWorkspace::efivars_of(&jobs, id));
     let store_meta = meta.clone();
     let root = ctx.config.home.join("snapshots");
-    tokio::task::spawn_blocking(move || crate::adapters::snapshots::SnapshotStore::new(root).create(&store_meta, &disk, &efivars))
-        .await
-        .map_err(|e| SnapshotError::Io(std::io::Error::other(e.to_string())))?
-        .map_err(SnapshotError::Io)
+    tokio::task::spawn_blocking(move || {
+        crate::adapters::snapshots::SnapshotStore::new(root).create(&store_meta, &disk, &efivars)
+    })
+    .await
+    .map_err(|e| SnapshotError::Io(std::io::Error::other(e.to_string())))?
+    .map_err(SnapshotError::Io)
 }
 
 /// Starts a new terminal VM from the snapshot; Claude continues its last conversation.

@@ -100,7 +100,11 @@ fn json_req(method: &str, path: &str, body: serde_json::Value) -> Request<Body> 
 #[tokio::test]
 async fn settings_can_be_read_updated_and_persisted() {
     let tmp = tempfile::tempdir().unwrap();
-    let (status, body) = send(app(tmp.path()), Request::get("/api/settings").header("host", "127.0.0.1:7777").body(Body::empty()).unwrap()).await;
+    let (status, body) = send(
+        app(tmp.path()),
+        Request::get("/api/settings").header("host", "127.0.0.1:7777").body(Body::empty()).unwrap(),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert!(body["limits"]["cpus"].as_u64().unwrap() >= 1);
     let mut s = body["settings"].clone();
@@ -109,7 +113,11 @@ async fn settings_can_be_read_updated_and_persisted() {
     let (status, body) = send(app(tmp.path()), json_req("PUT", "/api/settings", s)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     // A fresh server on the same home sees the saved settings.
-    let (_, body) = send(app(tmp.path()), Request::get("/api/settings").header("host", "127.0.0.1:7777").body(Body::empty()).unwrap()).await;
+    let (_, body) = send(
+        app(tmp.path()),
+        Request::get("/api/settings").header("host", "127.0.0.1:7777").body(Body::empty()).unwrap(),
+    )
+    .await;
     assert_eq!(body["settings"]["max_vms"], 3);
     assert_eq!(body["settings"]["model"], "opus");
 }
@@ -117,7 +125,11 @@ async fn settings_can_be_read_updated_and_persisted() {
 #[tokio::test]
 async fn invalid_settings_are_rejected_with_a_message() {
     let tmp = tempfile::tempdir().unwrap();
-    let (_, body) = send(app(tmp.path()), Request::get("/api/settings").header("host", "127.0.0.1:7777").body(Body::empty()).unwrap()).await;
+    let (_, body) = send(
+        app(tmp.path()),
+        Request::get("/api/settings").header("host", "127.0.0.1:7777").body(Body::empty()).unwrap(),
+    )
+    .await;
     let mut s = body["settings"].clone();
     s["cpus"] = 999.into();
     let (status, body) = send(app(tmp.path()), json_req("PUT", "/api/settings", s)).await;

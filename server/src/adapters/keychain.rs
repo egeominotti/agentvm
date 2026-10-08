@@ -57,7 +57,8 @@ impl Keychain {
     /// Saves (or replaces) the token. It goes to `security` on stdin, never on the command line.
     pub fn write_token(&self, token: &Secret) -> Result<(), KeychainError> {
         let t = token.expose();
-        let well_formed = t.starts_with("sk-ant-") && t.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_');
+        let well_formed =
+            t.starts_with("sk-ant-") && t.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_');
         if !well_formed {
             return Err(KeychainError::InvalidToken);
         }

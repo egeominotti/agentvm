@@ -78,9 +78,5 @@ fn tool_result_text(content: &Value) -> String {
 }
 
 fn summarize(s: &str) -> String {
-    if s.chars().count() <= SUMMARY_MAX {
-        s.to_owned()
-    } else {
-        s.chars().take(SUMMARY_MAX).chain(['…']).collect()
-    }
+    if s.chars().count() <= SUMMARY_MAX { s.to_owned() } else { s.chars().take(SUMMARY_MAX).chain(['…']).collect() }
 }

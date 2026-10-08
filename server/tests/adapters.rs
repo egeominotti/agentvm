@@ -20,8 +20,11 @@ fn sh(dir: &Path, cmd: &str) -> String {
 }
 
 fn new_repo(dir: &Path) {
-    sh(dir, "git init -q -b main && git config user.email t@t && git config user.name t \
-             && echo base > base.txt && git add . && git commit -qm base");
+    sh(
+        dir,
+        "git init -q -b main && git config user.email t@t && git config user.name t \
+             && echo base > base.txt && git add . && git commit -qm base",
+    );
 }
 
 #[test]
@@ -40,10 +43,16 @@ fn git_roundtrip_through_bundles() {
     // The "guest": clones from the bundle, works on a branch and produces out.bundle.
     let work = tmp.path().join("work");
     sh(tmp.path(), &format!("git clone -q {} work", bundle.display()));
-    sh(&work, &format!(
-        "git config user.email a@a && git config user.name a && git checkout -q -b agent/x {} \
+    sh(
+        &work,
+        &format!(
+            "git config user.email a@a && git config user.name a && git checkout -q -b agent/x {} \
          && echo new > new.txt && git add . && git commit -qm new \
-         && git bundle create -q ../out.bundle {}..agent/x", base.as_str(), base.as_str()));
+         && git bundle create -q ../out.bundle {}..agent/x",
+            base.as_str(),
+            base.as_str()
+        ),
+    );
 
     git.fetch_bundle(&tmp.path().join("out.bundle"), "agent/x").unwrap();
     assert!(git.rev_parse("agent/x").is_ok());
@@ -194,7 +203,16 @@ fn settings_file_roundtrips_and_is_absent_at_first() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("settings.json");
     assert!(settings_file::load(&path).is_none());
-    let s = Settings { max_vms: 6, cpus: 2, memory_mb: 2048, timeout_s: 900, model: Model::parse("opus").unwrap(), default_repo: Some("~/x".into()), claude_version: agentvm::domain::settings::ClaudeVersion::parse("2.1.290").unwrap(), s3: None };
+    let s = Settings {
+        max_vms: 6,
+        cpus: 2,
+        memory_mb: 2048,
+        timeout_s: 900,
+        model: Model::parse("opus").unwrap(),
+        default_repo: Some("~/x".into()),
+        claude_version: agentvm::domain::settings::ClaudeVersion::parse("2.1.290").unwrap(),
+        s3: None,
+    };
     settings_file::save(&path, &s).unwrap();
     assert_eq!(settings_file::load(&path).unwrap(), s);
 }
@@ -234,7 +252,9 @@ fn pty_socket_path_fits_the_unix_limit_even_for_a_deep_home() {
 #[ignore = "needs the network"]
 fn claude_releases_lists_real_versions() {
     let r = agentvm::adapters::releases::fetch().unwrap();
-    let semver = |v: &str| v.split('.').count() == 3 && v.split('.').all(|p| p.chars().next().is_some_and(|c| c.is_ascii_digit()));
+    let semver = |v: &str| {
+        v.split('.').count() == 3 && v.split('.').all(|p| p.chars().next().is_some_and(|c| c.is_ascii_digit()))
+    };
     assert!(semver(&r.latest) && semver(&r.stable), "{r:?}");
     assert!(r.versions.len() >= 10, "{r:?}");
     assert!(r.versions.contains(&r.latest), "{r:?}");
@@ -338,6 +358,7 @@ fn s3_client_round_trips_objects_on_a_real_server() {
 fn s3_client_reports_bad_credentials() {
     use agentvm::domain::s3::S3Config;
     let good = dev_s3();
-    let bad = agentvm::adapters::s3::S3Client::new(S3Config { ..good.config().clone() }, Secret::new("wrong-secret".into()));
+    let bad =
+        agentvm::adapters::s3::S3Client::new(S3Config { ..good.config().clone() }, Secret::new("wrong-secret".into()));
     assert!(bad.list("x/").is_err());
 }

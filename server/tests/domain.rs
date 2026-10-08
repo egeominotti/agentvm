@@ -197,8 +197,7 @@ fn guest_failed_still_fetches_commits() {
 
 #[test]
 fn guest_result_parses_guest_json() {
-    let r: GuestResult =
-        serde_json::from_str(r#"{"status":"no_changes","claude_exit":0,"commits":0}"#).unwrap();
+    let r: GuestResult = serde_json::from_str(r#"{"status":"no_changes","claude_exit":0,"commits":0}"#).unwrap();
     assert_eq!(r.status, GuestStatus::NoChanges);
     assert_eq!(r.error, None);
 }
@@ -208,9 +207,17 @@ fn guest_result_parses_guest_json() {
 #[test]
 fn parses_real_stream() {
     let events: Vec<AgentEvent> = include_str!("fixtures/stream-hello.jsonl").lines().flat_map(parse_line).collect();
-    assert!(matches!(&events[0], AgentEvent::Init { model, claude_code_version } if model == "claude-sonnet-5-5" && claude_code_version == "2.1.294"));
-    assert!(events.iter().any(|e| matches!(e, AgentEvent::ToolUse { name, summary } if name == "Bash" && summary.contains("hello.txt"))));
-    assert!(events.iter().any(|e| matches!(e, AgentEvent::ToolResult { is_error: false, summary } if summary.contains("aarch64"))));
+    assert!(
+        matches!(&events[0], AgentEvent::Init { model, claude_code_version } if model == "claude-sonnet-5-5" && claude_code_version == "2.1.294")
+    );
+    assert!(events.iter().any(
+        |e| matches!(e, AgentEvent::ToolUse { name, summary } if name == "Bash" && summary.contains("hello.txt"))
+    ));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::ToolResult { is_error: false, summary } if summary.contains("aarch64")))
+    );
     assert!(events.iter().any(|e| matches!(e, AgentEvent::Text { text } if text.contains("hello.txt"))));
     assert!(matches!(events.last().unwrap(), AgentEvent::Result { is_error: false, duration_ms: 6534, .. }));
     assert!(!events.iter().any(|e| matches!(e, AgentEvent::Unparsed { .. })));
@@ -263,13 +270,31 @@ fn limits() -> HostLimits {
 
 #[test]
 fn default_settings_are_valid() {
-    let s = Settings { max_vms: 4, cpus: 4, memory_mb: 4096, timeout_s: 1800, model: Model::default_choice(), default_repo: None, claude_version: Default::default(), s3: None };
+    let s = Settings {
+        max_vms: 4,
+        cpus: 4,
+        memory_mb: 4096,
+        timeout_s: 1800,
+        model: Model::default_choice(),
+        default_repo: None,
+        claude_version: Default::default(),
+        s3: None,
+    };
     assert!(s.validate(&limits()).is_ok());
 }
 
 #[test]
 fn settings_reject_out_of_range_values() {
-    let ok = Settings { max_vms: 4, cpus: 4, memory_mb: 4096, timeout_s: 1800, model: Model::default_choice(), default_repo: None, claude_version: Default::default(), s3: None };
+    let ok = Settings {
+        max_vms: 4,
+        cpus: 4,
+        memory_mb: 4096,
+        timeout_s: 1800,
+        model: Model::default_choice(),
+        default_repo: None,
+        claude_version: Default::default(),
+        s3: None,
+    };
     for bad in [
         Settings { max_vms: 0, ..ok.clone() },
         Settings { cpus: 0, ..ok.clone() },
@@ -339,13 +364,26 @@ fn settings_without_claude_version_default_to_latest() {
 use agentvm::domain::s3::S3Config;
 
 fn s3(endpoint: &str, path_style: bool) -> S3Config {
-    S3Config { endpoint: endpoint.into(), region: "auto".into(), bucket: "backups".into(), prefix: "agentvm".into(), access_key: "AK".into(), path_style }
+    S3Config {
+        endpoint: endpoint.into(),
+        region: "auto".into(),
+        bucket: "backups".into(),
+        prefix: "agentvm".into(),
+        access_key: "AK".into(),
+        path_style,
+    }
 }
 
 #[test]
 fn s3_urls_follow_the_addressing_style() {
-    assert_eq!(s3("https://acc.r2.cloudflarestorage.com", true).object_url("agentvm/x.json"), "https://acc.r2.cloudflarestorage.com/backups/agentvm/x.json");
-    assert_eq!(s3("https://s3.eu-central-1.amazonaws.com/", false).object_url("agentvm/x.json"), "https://backups.s3.eu-central-1.amazonaws.com/agentvm/x.json");
+    assert_eq!(
+        s3("https://acc.r2.cloudflarestorage.com", true).object_url("agentvm/x.json"),
+        "https://acc.r2.cloudflarestorage.com/backups/agentvm/x.json"
+    );
+    assert_eq!(
+        s3("https://s3.eu-central-1.amazonaws.com/", false).object_url("agentvm/x.json"),
+        "https://backups.s3.eu-central-1.amazonaws.com/agentvm/x.json"
+    );
     assert_eq!(s3("http://127.0.0.1:9100", true).bucket_url(), "http://127.0.0.1:9100/backups");
     assert_eq!(s3("http://127.0.0.1:9100", true).key("snap-1.tar.zst"), "agentvm/snap-1.tar.zst");
 }

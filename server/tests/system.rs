@@ -82,7 +82,8 @@ fn get_json(url: &str) -> Value {
 }
 
 fn post_json(url: &str, body: &Value) -> Value {
-    let out = curl(&["-s", "-X", "POST", "-H", "content-type: application/json", "-d", &body.to_string(), url]).unwrap();
+    let out =
+        curl(&["-s", "-X", "POST", "-H", "content-type: application/json", "-d", &body.to_string(), url]).unwrap();
     serde_json::from_str(&out).unwrap()
 }
 
@@ -140,7 +141,10 @@ fn task_produces_a_branch_in_the_local_repo() {
     assert!(curl(&["-sf", &format!("{}/api/tasks/{id}/diff", server.base)]).unwrap().contains("hello.txt"));
 
     // curl exits with an error when --max-time expires, but the output received is valid.
-    let out = Command::new("curl").args(["-sN", "--max-time", "2", &format!("{}/api/tasks/{id}/events", server.base)]).output().unwrap();
+    let out = Command::new("curl")
+        .args(["-sN", "--max-time", "2", &format!("{}/api/tasks/{id}/events", server.base)])
+        .output()
+        .unwrap();
     let sse = String::from_utf8_lossy(&out.stdout);
     assert!(sse.contains("event: state") && sse.contains("event: agent") && sse.contains("tool_use"), "{sse}");
     assert_no_token(&server, repo.path(), Some(&branch));
@@ -252,7 +256,8 @@ fn agent_commands_cannot_see_the_token() {
 fn stop_right_after_submit_never_leaves_the_task_hanging() {
     let server = start_server();
     let repo = temp_repo();
-    let created = post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo.path(), "prompt": "create a.txt"}));
+    let created =
+        post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo.path(), "prompt": "create a.txt"}));
     let id = created["id"].as_str().unwrap().to_owned();
     post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
     let task = wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(10));
@@ -317,7 +322,14 @@ fn a_launch_can_pin_another_claude_code_version() {
     let releases = get_json(&format!("{}/api/claude/versions", server.base));
     // An older release than the image's (the image follows "latest").
     let latest = releases["latest"].as_str().unwrap().to_owned();
-    let other = releases["versions"].as_array().unwrap().iter().filter_map(|v| v.as_str()).find(|v| *v != latest).unwrap().to_owned();
+    let other = releases["versions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str())
+        .find(|v| *v != latest)
+        .unwrap()
+        .to_owned();
     let repo = temp_repo();
     let created = post_json(
         &format!("{}/api/tasks", server.base),
@@ -326,7 +338,10 @@ fn a_launch_can_pin_another_claude_code_version() {
     let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
     let task = wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(300));
     assert_ne!(task["status"]["state"], "failed", "{task}");
-    let out = Command::new("curl").args(["-sN", "--max-time", "2", &format!("{}/api/tasks/{id}/events", server.base)]).output().unwrap();
+    let out = Command::new("curl")
+        .args(["-sN", "--max-time", "2", &format!("{}/api/tasks/{id}/events", server.base)])
+        .output()
+        .unwrap();
     let sse = String::from_utf8_lossy(&out.stdout);
     assert!(sse.contains(&format!("\"claude_code_version\":\"{other}\"")), "wanted {other}: {sse}");
 }
@@ -365,7 +380,10 @@ fn a_snapshot_restores_files_into_a_new_vm() {
 }
 
 fn delete(url: &str) -> u16 {
-    let out = Command::new("curl").args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "DELETE", url]).output().unwrap();
+    let out = Command::new("curl")
+        .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "DELETE", url])
+        .output()
+        .unwrap();
     String::from_utf8_lossy(&out.stdout).parse().unwrap_or(0)
 }
 
@@ -381,7 +399,10 @@ fn snapshots_go_to_s3_and_come_back() {
     std::fs::write(home.path().join("settings.json"), settings.to_string()).unwrap();
     let server = start_server_with(home, &[("AGENTVM_S3_SECRET", "agentvm-local-secret")]);
     let base = server.base.clone();
-    let out = Command::new("curl").args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", &format!("{base}/api/settings/s3/test")]).output().unwrap();
+    let out = Command::new("curl")
+        .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", &format!("{base}/api/settings/s3/test")])
+        .output()
+        .unwrap();
     assert_eq!(String::from_utf8_lossy(&out.stdout), "204", "S3 connection test");
 
     let repo = temp_repo();
@@ -397,7 +418,13 @@ fn snapshots_go_to_s3_and_come_back() {
     assert!(backed["archive_mb"].as_u64().unwrap_or(0) > 0, "{backed}");
     assert_eq!(delete(&format!("{base}/api/snapshots/{sid}")), 204);
     let remote = get_json(&format!("{base}/api/backups"));
-    let entry = remote.as_array().unwrap().iter().find(|b| b["snapshot"]["id"] == sid.as_str()).unwrap_or_else(|| panic!("{remote}")).clone();
+    let entry = remote
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|b| b["snapshot"]["id"] == sid.as_str())
+        .unwrap_or_else(|| panic!("{remote}"))
+        .clone();
     assert_eq!(entry["local"], false);
 
     let restored = post_json(&format!("{base}/api/backups/{sid}/restore"), &json!({}));
@@ -406,13 +433,29 @@ fn snapshots_go_to_s3_and_come_back() {
 
     let tmp = tempfile::tempdir().unwrap();
     let file = tmp.path().join("snap.tar.zst");
-    let out = Command::new("curl").args(["-sf", "-o"]).arg(&file).arg(format!("{base}/api/snapshots/{sid}/export")).output().unwrap();
+    let out = Command::new("curl")
+        .args(["-sf", "-o"])
+        .arg(&file)
+        .arg(format!("{base}/api/snapshots/{sid}/export"))
+        .output()
+        .unwrap();
     assert!(out.status.success() && std::fs::metadata(&file).unwrap().len() > 1 << 20, "export");
-    let imported = Command::new("curl").args(["-s", "-X", "POST", "--data-binary"]).arg(format!("@{}", file.display())).arg(format!("{base}/api/snapshots/import")).output().unwrap();
+    let imported = Command::new("curl")
+        .args(["-s", "-X", "POST", "--data-binary"])
+        .arg(format!("@{}", file.display()))
+        .arg(format!("{base}/api/snapshots/import"))
+        .output()
+        .unwrap();
     let imported: Value = serde_json::from_slice(&imported.stdout).unwrap();
     assert_ne!(imported["id"], sid.as_str(), "{imported}");
     assert_eq!(imported["name"], "to s3");
 
     assert_eq!(delete(&format!("{base}/api/backups/{sid}")), 204);
-    assert!(!get_json(&format!("{base}/api/backups")).as_array().unwrap().iter().any(|b| b["snapshot"]["id"] == sid.as_str()));
+    assert!(
+        !get_json(&format!("{base}/api/backups"))
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b["snapshot"]["id"] == sid.as_str())
+    );
 }

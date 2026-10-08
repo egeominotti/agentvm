@@ -15,19 +15,19 @@ use super::store::{Store, TaskRecord};
 use crate::adapters::git::{Git, GitError};
 use crate::adapters::jobdir::JobWorkspace;
 use crate::adapters::keychain::{Keychain, KeychainError};
-use crate::adapters::tail::tail_lines;
 use crate::adapters::releases::Releases;
 use crate::adapters::snapshots::SnapshotStore;
-use crate::domain::snapshot::SnapshotId;
+use crate::adapters::tail::tail_lines;
 use crate::adapters::vm::{VmConfig, VmEvent, VmProcess};
-use crate::secret::Secret;
 use crate::config::Config;
 use crate::domain::agent_event::parse_line;
 use crate::domain::ids::{IdError, Prompt, RepoPath, TaskId};
 use crate::domain::outcome::{Final, OutcomeInput, VmExit, decide};
 use crate::domain::settings::{ClaudeVersion, Model, Settings};
+use crate::domain::snapshot::SnapshotId;
 use crate::domain::spec::TaskSpec;
 use crate::domain::task::{TaskEvent, TaskState};
+use crate::secret::Secret;
 
 const KILL_GRACE: Duration = Duration::from_secs(15);
 
@@ -202,8 +202,9 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
         return apply(TaskEvent::Finished(Final::Stopped, branch));
     }
 
-    let mut vm = VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &vm_config(&settings, &ws, record.interactive))
-        .map_err(|e| e.to_string())?;
+    let mut vm =
+        VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &vm_config(&settings, &ws, record.interactive))
+            .map_err(|e| e.to_string())?;
     let _ = ws.write_pid(vm.pid());
     let follower = Follower::start(ctx.store.log(id).ok_or("task disappeared")?, ws.stream(), token);
 

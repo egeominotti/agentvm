@@ -201,7 +201,18 @@ async fn shell_keystroke_echo_is_fast() {
     let tmp = tempfile::tempdir().unwrap();
     let ws = workspace(&tmp);
     let base = repo_with_bundle(&ws);
-    ws.write_spec(&TaskSpec { id: "t".into(), prompt: String::new(), branch: "agent/t".into(), base_sha: base, timeout_s: 60, interactive: true, model: None, claude_version: None, restore: false }).unwrap();
+    ws.write_spec(&TaskSpec {
+        id: "t".into(),
+        prompt: String::new(),
+        branch: "agent/t".into(),
+        base_sha: base,
+        timeout_s: 60,
+        interactive: true,
+        model: None,
+        claude_version: None,
+        restore: false,
+    })
+    .unwrap();
     ws.write_token(&Secret::new("sk-ant-oat01-not-a-real-token".into())).unwrap();
     let mut cfg = config(&ws);
     cfg.pty_socket = Some(ws.pty_socket());

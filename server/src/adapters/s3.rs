@@ -104,7 +104,12 @@ impl S3Client {
                 let _ = std::fs::remove_file(&tmp);
                 Err(match e {
                     S3Error::Http { status, what, .. } => {
-                        let code = body.split("<Code>").nth(1).and_then(|r| r.split("</Code>").next()).map(|c| format!(": {c}")).unwrap_or_default();
+                        let code = body
+                            .split("<Code>")
+                            .nth(1)
+                            .and_then(|r| r.split("</Code>").next())
+                            .map(|c| format!(": {c}"))
+                            .unwrap_or_default();
                         S3Error::Http { status, what, detail: code }
                     }
                     other => other,
@@ -130,13 +135,28 @@ impl S3Client {
             if let Some(t) = &token {
                 url.push_str(&format!("&continuation-token={}", encode(t)));
             }
-            let body = String::from_utf8(self.curl("the bucket listing", &[url.as_ref()])?).map_err(|e| S3Error::Parse(e.to_string()))?;
+            let body = String::from_utf8(self.curl("the bucket listing", &[url.as_ref()])?)
+                .map_err(|e| S3Error::Parse(e.to_string()))?;
             for item in body.split("<Contents>").skip(1) {
-                let field = |name: &str| item.split(&format!("<{name}>")).nth(1).and_then(|r| r.split(&format!("</{name}>")).next()).unwrap_or_default().to_owned();
-                all.push(S3Object { key: xml_unescape(&field("Key")), size: field("Size").parse().unwrap_or(0), last_modified: field("LastModified") });
+                let field = |name: &str| {
+                    item.split(&format!("<{name}>"))
+                        .nth(1)
+                        .and_then(|r| r.split(&format!("</{name}>")).next())
+                        .unwrap_or_default()
+                        .to_owned()
+                };
+                all.push(S3Object {
+                    key: xml_unescape(&field("Key")),
+                    size: field("Size").parse().unwrap_or(0),
+                    last_modified: field("LastModified"),
+                });
             }
             let truncated = body.contains("<IsTruncated>true</IsTruncated>");
-            token = body.split("<NextContinuationToken>").nth(1).and_then(|r| r.split("</NextContinuationToken>").next()).map(str::to_owned);
+            token = body
+                .split("<NextContinuationToken>")
+                .nth(1)
+                .and_then(|r| r.split("</NextContinuationToken>").next())
+                .map(str::to_owned);
             if !truncated || token.is_none() {
                 return Ok(all);
             }

@@ -107,5 +107,7 @@ impl SnapshotStore {
 }
 
 fn allocated_mb(dir: &Path) -> u64 {
-    fs::read_dir(dir).map_or(0, |entries| entries.flatten().filter_map(|e| e.metadata().ok()).map(|m| m.blocks() * 512).sum::<u64>() >> 20)
+    fs::read_dir(dir).map_or(0, |entries| {
+        entries.flatten().filter_map(|e| e.metadata().ok()).map(|m| m.blocks() * 512).sum::<u64>() >> 20
+    })
 }

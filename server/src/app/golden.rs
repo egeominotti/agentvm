@@ -80,7 +80,8 @@ impl GoldenService {
             return Err(GoldenError::AlreadyRunning);
         }
         let _ = std::fs::create_dir_all(self.home.join("golden"));
-        let log = std::fs::File::create(self.log()).map_err(|e| GoldenError::Spawn(self.log().display().to_string(), e))?;
+        let log =
+            std::fs::File::create(self.log()).map_err(|e| GoldenError::Spawn(self.log().display().to_string(), e))?;
         let err = log.try_clone().map_err(|e| GoldenError::Spawn("log".into(), e))?;
         let mut child = tokio::process::Command::new(&self.script)
             .env("AGENTVM_HOME", &self.home)

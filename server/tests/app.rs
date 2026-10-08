@@ -56,7 +56,10 @@ fn store_applies_valid_transitions_and_logs_states() {
     let (history, _) = store.log(&id).unwrap().subscribe();
     let states: Vec<_> = history
         .into_iter()
-        .filter_map(|(_, i)| match i { StreamItem::State(s) => Some(s), _ => None })
+        .filter_map(|(_, i)| match i {
+            StreamItem::State(s) => Some(s),
+            _ => None,
+        })
         .collect();
     assert_eq!(states, [TaskState::Queued, TaskState::Preparing]);
 }
@@ -123,7 +126,8 @@ fn store_keeps_the_last_60_metric_samples() {
         let m: VmMetrics = serde_json::from_value(serde_json::json!({
             "uptime_s": i, "cpus": 4, "cpu_pct": i as f64, "load1": 0.0, "mem_used_mb": 100, "mem_total_mb": 4000,
             "disk_used_mb": 1, "disk_total_mb": 2, "net_rx_bps": 0, "net_tx_bps": 0, "procs": 1, "top": []
-        })).unwrap();
+        }))
+        .unwrap();
         store.record_metrics(&id, m);
     }
     let rec = store.get(&id).unwrap();

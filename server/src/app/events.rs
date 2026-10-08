@@ -55,8 +55,7 @@ impl EventLog {
     pub fn stream(&self) -> impl Stream<Item = (Seq, StreamItem)> + Send + use<> {
         let (history, rx) = self.subscribe();
         let last = history.last().map_or(0, |(s, _)| *s);
-        futures::stream::iter(history).chain(
-            BroadcastStream::new(rx).filter_map(move |r| async move { r.ok().filter(|(s, _)| *s > last) }),
-        )
+        futures::stream::iter(history)
+            .chain(BroadcastStream::new(rx).filter_map(move |r| async move { r.ok().filter(|(s, _)| *s > last) }))
     }
 }

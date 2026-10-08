@@ -37,7 +37,9 @@ pub struct RemoteBackup {
 
 const ARCHIVE: &str = "tar.zst";
 
-async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, BackupError> + Send + 'static) -> Result<T, BackupError> {
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, BackupError> + Send + 'static,
+) -> Result<T, BackupError> {
     tokio::task::spawn_blocking(f).await.map_err(|e| BackupError::Io(std::io::Error::other(e.to_string())))?
 }
 
@@ -143,10 +145,17 @@ pub async fn list(ctx: &AppCtx) -> Result<Vec<RemoteBackup>, BackupError> {
         let objects = s3.list(&s3.config().key("")).map_err(e)?;
         let mut out = Vec::new();
         for obj in objects.iter().filter(|o| o.key.ends_with(".json") && o.key.contains("snap-")) {
-            let Ok(meta) = serde_json::from_slice::<SnapshotMeta>(&s3.get_bytes(&obj.key).map_err(e)?) else { continue };
+            let Ok(meta) = serde_json::from_slice::<SnapshotMeta>(&s3.get_bytes(&obj.key).map_err(e)?) else {
+                continue;
+            };
             let archive_key = obj.key.trim_end_matches(".json").to_owned() + "." + ARCHIVE;
             let Some(archive) = objects.iter().find(|o| o.key == archive_key) else { continue };
-            out.push(RemoteBackup { archive_mb: archive.size >> 20, uploaded_at: archive.last_modified.clone(), local: false, snapshot: meta });
+            out.push(RemoteBackup {
+                archive_mb: archive.size >> 20,
+                uploaded_at: archive.last_modified.clone(),
+                local: false,
+                snapshot: meta,
+            });
         }
         Ok(out)
     })

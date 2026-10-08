@@ -4,9 +4,9 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::extract::Request;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
-use axum::extract::Request;
 use axum::http::{StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -16,15 +16,15 @@ use axum::{Json, Router};
 use futures::{SinkExt, Stream, StreamExt};
 
 use super::dto::{ApiError, CreateTask, Created, PtyQuery, Saved, SettingsView, Status, TaskDto, TokenUpdate};
-use crate::app::session::{self, SessionError, TerminalInput};
 use crate::app::events::StreamItem;
 use crate::app::golden::GoldenStatus;
 use crate::app::queries::{DiffError, StorageUsage, cleanup_finished_jobs, storage_usage, task_diff};
-use crate::domain::settings::{ClaudeVersion, Settings};
-use crate::secret::Secret;
+use crate::app::session::{self, SessionError, TerminalInput};
 use crate::app::store::TaskRecord;
 use crate::app::supervisor::{AppCtx, NewTask, SubmitError, submit};
 use crate::domain::ids::TaskId;
+use crate::domain::settings::{ClaudeVersion, Settings};
+use crate::secret::Secret;
 
 type Ctx = State<Arc<AppCtx>>;
 
@@ -281,7 +281,8 @@ async fn vendor(Path(file): Path<String>) -> Result<Response, ApiError> {
 }
 
 async fn logo() -> Response {
-    ([("content-type", "image/svg+xml"), ("cache-control", "max-age=86400")], include_str!("web/logo.svg")).into_response()
+    ([("content-type", "image/svg+xml"), ("cache-control", "max-age=86400")], include_str!("web/logo.svg"))
+        .into_response()
 }
 
 fn settings_view(ctx: &AppCtx) -> SettingsView {
@@ -344,7 +345,8 @@ fn snapshot_error(e: crate::app::snapshots::SnapshotError) -> ApiError {
 }
 
 fn snapshot_id(s: &str) -> Result<crate::domain::snapshot::SnapshotId, ApiError> {
-    crate::domain::snapshot::SnapshotId::parse(s).ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "snapshot not found".into()))
+    crate::domain::snapshot::SnapshotId::parse(s)
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "snapshot not found".into()))
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -394,7 +396,8 @@ fn backup_error(e: crate::app::backups::BackupError) -> ApiError {
 async fn export_snapshot(State(ctx): Ctx, Path(sid): Path<String>) -> Result<Response, ApiError> {
     let sid = snapshot_id(&sid)?;
     let path = crate::app::backups::export(&ctx, &sid).await.map_err(backup_error)?;
-    let file = tokio::fs::File::open(&path).await.map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let file =
+        tokio::fs::File::open(&path).await.map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let len = file.metadata().await.map(|m| m.len()).unwrap_or(0);
     let _ = std::fs::remove_file(&path);
     let body = axum::body::Body::from_stream(tokio_util::io::ReaderStream::new(file));
@@ -409,11 +412,17 @@ async fn export_snapshot(State(ctx): Ctx, Path(sid): Path<String>) -> Result<Res
         .into_response())
 }
 
-async fn import_snapshot(State(ctx): Ctx, body: axum::body::Body) -> Result<Json<crate::domain::snapshot::SnapshotMeta>, ApiError> {
+async fn import_snapshot(
+    State(ctx): Ctx,
+    body: axum::body::Body,
+) -> Result<Json<crate::domain::snapshot::SnapshotMeta>, ApiError> {
     let internal = |e: std::io::Error| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
     let dir = ctx.config.home.join("tmp");
     std::fs::create_dir_all(&dir).map_err(internal)?;
-    let path = dir.join(format!("upload-{}.tar.zst", crate::app::supervisor::random_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>()));
+    let path = dir.join(format!(
+        "upload-{}.tar.zst",
+        crate::app::supervisor::random_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>()
+    ));
     {
         use tokio::io::AsyncWriteExt;
         let mut file = tokio::fs::File::create(&path).await.map_err(internal)?;
@@ -429,7 +438,10 @@ async fn import_snapshot(State(ctx): Ctx, body: axum::body::Body) -> Result<Json
     result.map(Json).map_err(backup_error)
 }
 
-async fn backup_snapshot(State(ctx): Ctx, Path(sid): Path<String>) -> Result<Json<crate::app::backups::RemoteBackup>, ApiError> {
+async fn backup_snapshot(
+    State(ctx): Ctx,
+    Path(sid): Path<String>,
+) -> Result<Json<crate::app::backups::RemoteBackup>, ApiError> {
     let sid = snapshot_id(&sid)?;
     crate::app::backups::backup(&ctx, &sid).await.map(Json).map_err(backup_error)
 }
@@ -438,7 +450,10 @@ async fn list_backups(State(ctx): Ctx) -> Result<Json<Vec<crate::app::backups::R
     crate::app::backups::list(&ctx).await.map(Json).map_err(backup_error)
 }
 
-async fn restore_backup(State(ctx): Ctx, Path(sid): Path<String>) -> Result<Json<crate::domain::snapshot::SnapshotMeta>, ApiError> {
+async fn restore_backup(
+    State(ctx): Ctx,
+    Path(sid): Path<String>,
+) -> Result<Json<crate::domain::snapshot::SnapshotMeta>, ApiError> {
     let sid = snapshot_id(&sid)?;
     crate::app::backups::restore(&ctx, &sid).await.map(Json).map_err(backup_error)
 }

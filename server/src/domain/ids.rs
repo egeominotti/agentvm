@@ -100,11 +100,7 @@ pub struct RepoPath(PathBuf);
 
 impl RepoPath {
     pub fn new(path: PathBuf) -> Result<Self, IdError> {
-        if path.join(".git").exists() {
-            Ok(RepoPath(path))
-        } else {
-            Err(IdError::NotARepo(path.display().to_string()))
-        }
+        if path.join(".git").exists() { Ok(RepoPath(path)) } else { Err(IdError::NotARepo(path.display().to_string())) }
     }
 
     pub fn as_path(&self) -> &Path {

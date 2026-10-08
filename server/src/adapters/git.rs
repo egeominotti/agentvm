@@ -36,7 +36,8 @@ impl Git {
     /// Imports `branch` from a bundle without touching the working tree or the current branch.
     pub fn fetch_bundle(&self, bundle: &Path, branch: &str) -> Result<(), GitError> {
         // Forced: `branch` is ours alone and a later save replaces it.
-        self.run(&["fetch", "--quiet", "--no-write-fetch-head", path_str(bundle), &format!("+{branch}:{branch}")]).map(drop)
+        self.run(&["fetch", "--quiet", "--no-write-fetch-head", path_str(bundle), &format!("+{branch}:{branch}")])
+            .map(drop)
     }
 
     pub fn diff(&self, base: &CommitSha, branch: &str) -> Result<String, GitError> {

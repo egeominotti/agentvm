@@ -72,7 +72,11 @@ impl ClaudeVersion {
                 && pre.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'.')
                 && !(v.contains('-') && pre.is_empty())
         };
-        if s == "latest" || s == "stable" || semver(s) { Ok(ClaudeVersion(s.to_owned())) } else { Err(SettingsError::ClaudeVersion(s.to_owned())) }
+        if s == "latest" || s == "stable" || semver(s) {
+            Ok(ClaudeVersion(s.to_owned()))
+        } else {
+            Err(SettingsError::ClaudeVersion(s.to_owned()))
+        }
     }
 
     pub fn latest() -> Self {

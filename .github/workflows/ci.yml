@@ -1,0 +1,40 @@
+# Everything that runs without a VM: GitHub's macOS runners cannot nest Virtualization.framework,
+# so tests marked #[ignore] (real VMs, Claude, S3) run locally with `cargo test -- --ignored`.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - name: Format
+        run: cargo fmt --check
+      - name: Lint
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        run: cargo test
+      - name: Build the VM helper (Swift)
+        working-directory: .
+        run: swiftc -O vm-helper/*.swift -o /tmp/agentvm-vm
+      - name: Check dashboard scripts
+        working-directory: .
+        run: node --check server/src/http/web/app.js
+      - name: Check shell scripts
+        working-directory: .
+        run: |
+          for f in guest/agentvm-job guest/agentvm-claude guest/setup-golden.sh scripts/*.sh; do bash -n "$f"; done
+          python3 -c "import ast; [ast.parse(open(f).read()) for f in ['guest/agentvm-pty', 'guest/agentvm-metrics']]"
