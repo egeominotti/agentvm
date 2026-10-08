@@ -8,7 +8,9 @@ use axum::extract::DefaultBodyLimit;
 use axum::middleware;
 use axum::routing::{delete, get, post, put};
 
-use super::{assets, backups, events, golden, guard, session, settings, snapshots, system, tasks, terminal};
+use super::{
+    assets, backups, diagnostics, events, golden, guard, session, settings, snapshots, system, tasks, terminal,
+};
 use crate::app::supervisor::AppCtx;
 
 pub fn router(ctx: Arc<AppCtx>) -> Router {
@@ -37,6 +39,7 @@ fn task_routes() -> Routes {
         .route("/api/tasks/{id}", get(tasks::detail).delete(tasks::remove))
         .route("/api/tasks/{id}/events", get(events::events))
         .route("/api/tasks/{id}/diff", get(tasks::diff))
+        .route("/api/tasks/{id}/diagnostics", get(diagnostics::diagnostics))
         .route("/api/tasks/{id}/stop", post(tasks::stop))
         .route("/api/tasks/{id}/save", post(session::save))
         .route("/api/tasks/{id}/close", post(session::close))

@@ -7,7 +7,7 @@ use crate::domain::ids::{CommitSha, Prompt, RepoPath, TaskId};
 use crate::domain::metrics::{ForwardedPort, VmMetrics};
 use crate::domain::settings::Model;
 use crate::domain::snapshot::SnapshotId;
-use crate::domain::task::TaskState;
+use crate::domain::task::{StateAt, TaskState};
 use crate::domain::usage::AgentUsage;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -63,6 +63,9 @@ pub struct TaskRecord {
     pub created_at: SystemTime,
     #[serde(default)]
     pub finished_at: Option<SystemTime>,
+    /// Every state the task went through, with its time (empty for records from before).
+    #[serde(default)]
+    pub timeline: Vec<StateAt>,
 }
 
 /// One minute of samples at one per second.
@@ -94,6 +97,7 @@ impl TaskRecord {
             mem_history: VecDeque::with_capacity(HISTORY),
             created_at: SystemTime::now(),
             finished_at: None,
+            timeline: vec![StateAt::now(&TaskState::Queued)],
         }
     }
 

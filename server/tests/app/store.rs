@@ -177,3 +177,30 @@ fn a_finished_task_points_at_the_branch_its_work_landed_on() {
     store.apply(&id, TaskEvent::Finished(Final::Done { commits: 1 }, landed.clone())).unwrap();
     assert_eq!(store.get(&id).unwrap().branch(), landed);
 }
+
+/// Each state a task goes through is kept with its time, across a restart, for its diagnostics.
+#[test]
+fn a_task_keeps_the_timeline_of_its_states() {
+    let repo = tempfile::tempdir().unwrap();
+    let jobs = tempfile::tempdir().unwrap();
+    let rec = record(&repo);
+    let id = rec.id.clone();
+    let store = Store::persistent(jobs.path().to_path_buf());
+    store.insert(rec);
+    store.apply(&id, TaskEvent::SlotAcquired).unwrap();
+    store.apply(&id, TaskEvent::Failure("boom".into())).unwrap();
+    let timeline = Store::load(jobs.path()).remove(0).timeline;
+    let states: Vec<_> = timeline.iter().map(|s| s.state.as_str()).collect();
+    assert_eq!(states, ["queued", "preparing", "failed"]);
+    assert!(timeline.windows(2).all(|w| w[0].at <= w[1].at) && timeline[0].at > 1.7e9, "{timeline:?}");
+}
+
+/// Records written before the timeline existed still load (with an empty one).
+#[test]
+fn a_record_without_a_timeline_still_loads() {
+    let repo = tempfile::tempdir().unwrap();
+    let mut json = serde_json::to_value(record(&repo)).unwrap();
+    json.as_object_mut().unwrap().remove("timeline");
+    let back: agentvm::app::store::TaskRecord = serde_json::from_value(json).unwrap();
+    assert!(back.timeline.is_empty());
+}

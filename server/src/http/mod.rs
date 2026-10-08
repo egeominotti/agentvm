@@ -2,6 +2,7 @@
 //! request, calls an app use case and shapes its answer; `error` maps app errors to statuses.
 mod assets;
 mod backups;
+mod diagnostics;
 mod dto;
 mod error;
 mod events;

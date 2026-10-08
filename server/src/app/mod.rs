@@ -4,6 +4,7 @@ pub mod balloon;
 pub mod bundles;
 mod collect;
 pub mod context;
+pub mod diagnostics;
 pub mod events;
 pub mod golden;
 pub mod guest_channel;

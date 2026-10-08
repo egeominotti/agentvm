@@ -10,7 +10,11 @@ use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
 
 fn app(home: &std::path::Path) -> axum::Router {
-    let config = Config {
+    agentvm::http::router(Arc::new(AppCtx::new(config(home), Keychain::new(Some(home.join("none.keychain-db"))))))
+}
+
+fn config(home: &std::path::Path) -> Config {
+    Config {
         home: home.to_path_buf(),
         port: 7777,
         concurrency: 1,
@@ -20,8 +24,7 @@ fn app(home: &std::path::Path) -> axum::Router {
         vm_helper: "agentvm-vm".into(),
         scripts_dir: "scripts".into(),
         min_free_mb: 0,
-    };
-    agentvm::http::router(Arc::new(AppCtx::new(config, Keychain::new(Some(home.join("none.keychain-db"))))))
+    }
 }
 
 async fn status_of(req: Request<Body>) -> StatusCode {
@@ -255,4 +258,37 @@ async fn unknown_or_escaping_asset_paths_are_not_found() {
     for path in ["/assets/nope.js", "/assets/js/../index.html", "/assets/../Cargo.toml", "/vendor/../../build.rs"] {
         assert_eq!(fetch(path).await.status(), StatusCode::NOT_FOUND, "{path}");
     }
+}
+
+/// A known VM's diagnostics: its summary, timeline and logs.
+#[tokio::test]
+async fn diagnostics_of_a_vm_have_their_shape() {
+    let home = tempfile::tempdir().unwrap();
+    let ctx = Arc::new(AppCtx::new(config(home.path()), Keychain::new(Some(home.path().join("none.keychain-db")))));
+    std::fs::create_dir_all(home.path().join("repo/.git")).unwrap();
+    let rec = agentvm::app::store::TaskRecord::new(
+        agentvm::domain::ids::TaskId::generate(std::time::SystemTime::now(), &[1]),
+        agentvm::domain::ids::RepoPath::new(home.path().join("repo")).unwrap(),
+        None,
+        agentvm::domain::ids::CommitSha::parse(&"a".repeat(40)).unwrap(),
+        true,
+    );
+    let id = rec.id.clone();
+    ctx.store.insert(rec);
+    let req = Request::get(format!("/api/tasks/{id}/diagnostics"))
+        .header("host", "127.0.0.1:7777")
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = send(agentvm::http::router(ctx), req).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["summary"], "queued");
+    assert_eq!(body["timeline"][0]["state"], "queued");
+    assert!(body["logs"].is_array() && body["server_log"].is_array() && body["hint"].is_null(), "{body}");
+}
+
+#[tokio::test]
+async fn diagnostics_of_an_unknown_vm_are_not_found() {
+    let res = fetch("/api/tasks/0199c4b6-a2f2-7fff-bfff-ffffffffffff/diagnostics").await;
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert_eq!(fetch("/api/tasks/not-an-id/diagnostics").await.status(), StatusCode::NOT_FOUND);
 }

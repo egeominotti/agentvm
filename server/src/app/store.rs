@@ -140,6 +140,7 @@ impl Store {
                     record.finished_at = Some(SystemTime::now());
                 }
                 record.state = next.clone();
+                record.timeline.push(crate::domain::task::StateAt::now(&next));
                 log.push(StreamItem::State(next.clone()));
                 if next.is_terminal() {
                     log.compact(super::events::FINISHED_HISTORY);

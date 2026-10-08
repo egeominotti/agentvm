@@ -18,6 +18,20 @@ pub enum TaskState {
     Stopped,
 }
 
+/// When a task entered a state (`kind` of the state, seconds since the epoch).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StateAt {
+    pub state: String,
+    pub at: f64,
+}
+
+impl StateAt {
+    pub fn now(state: &TaskState) -> Self {
+        let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64());
+        StateAt { state: state.kind().to_owned(), at }
+    }
+}
+
 impl TaskState {
     /// The state's name, without its details: `queued`, `running`, `failed`…
     pub fn kind(&self) -> &'static str {
