@@ -45,9 +45,14 @@ impl Git {
     /// checked out; otherwise (your own commits on it, or it is checked out) the work lands on
     /// `<branch>-vm` (or `-vm-2`, …) and nothing of yours is overwritten.
     pub fn import_bundle(&self, bundle: &Path, branch: &str) -> Result<String, GitError> {
-        const INCOMING: &str = "refs/agentvm/incoming";
-        self.run(&["fetch", "--quiet", "--no-write-fetch-head", path_str(bundle), &format!("+{branch}:{INCOMING}")])?;
-        let result = self.rev_parse(INCOMING).and_then(|new| {
+        // One temporary ref per import: VMs finishing at once on the same repository (or a save
+        // and a close of the same VM) must never read each other's work.
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let incoming = format!("refs/agentvm/incoming/{}-{n}", std::process::id());
+        let incoming = incoming.as_str();
+        self.run(&["fetch", "--quiet", "--no-write-fetch-head", path_str(bundle), &format!("+{branch}:{incoming}")])?;
+        let result = self.rev_parse(incoming).and_then(|new| {
             let checked_out = self.run(&["worktree", "list", "--porcelain"])?;
             let candidates = std::iter::once(branch.to_owned())
                 .chain(std::iter::once(format!("{branch}-vm")))
@@ -73,7 +78,7 @@ impl Git {
             }
             Err(GitError::Failed { args: "import".into(), stderr: format!("no free branch name for {branch}") })
         });
-        let _ = self.run(&["update-ref", "-d", INCOMING]);
+        let _ = self.run(&["update-ref", "-d", incoming]);
         result
     }
 
