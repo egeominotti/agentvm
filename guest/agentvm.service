@@ -1,0 +1,11 @@
+[Unit]
+Description=agentvm job runner
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/agentvm-job
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target

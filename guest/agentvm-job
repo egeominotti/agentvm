@@ -1,0 +1,82 @@
+#!/bin/bash
+# Esegue il task descritto in /mnt/job/task.json (contratto §3.6 della spec) e spegne la VM.
+# Mai `set -x`: il token passa da questo script.
+set -euo pipefail
+
+JOB=/mnt/job
+AGENT=agent
+WORK=/home/$AGENT/work
+CLAUDE=/home/$AGENT/.local/bin/claude
+
+log() { echo "[$(cut -d' ' -f1 /proc/uptime)s] $*" >> "$JOB/job.log"; }
+as_agent() { sudo -u "$AGENT" -H "$@"; }
+
+write_result() { # status claude_exit commits [error]
+  jq -n --arg s "$1" --argjson e "$2" --argjson c "$3" --arg err "${4:-}" \
+    '{status:$s, claude_exit:$e, commits:$c} + (if $err == "" then {} else {error:$err} end)' \
+    > "$JOB/result.json"
+}
+
+finish() {
+  local rc=$?
+  if [ ! -s "$JOB/result.json" ] && mountpoint -q "$JOB"; then
+    write_result failed -1 0 "guest_error (exit $rc)"
+  fi
+  sync
+  poweroff -f
+}
+trap finish EXIT
+
+mkdir -p "$JOB"
+mount -t virtiofs job "$JOB"
+log "job start"
+
+if [ ! -s "$JOB/task.json" ]; then
+  write_result failed -1 0 no_task
+  exit 0
+fi
+
+ID=$(jq -r .id "$JOB/task.json")
+PROMPT=$(jq -r .prompt "$JOB/task.json")
+BRANCH=$(jq -r .branch "$JOB/task.json")
+BASE=$(jq -r .base_sha "$JOB/task.json")
+
+CLAUDE_CODE_OAUTH_TOKEN=$(cat "$JOB/.token")
+rm -f "$JOB/.token"
+export CLAUDE_CODE_OAUTH_TOKEN
+
+as_agent git clone -q "$JOB/repo.bundle" "$WORK"
+cd "$WORK"
+as_agent git checkout -q -b "$BRANCH" "$BASE"
+as_agent git config user.name agentvm
+as_agent git config user.email agentvm@localhost
+log "repo ready on $BRANCH"
+
+for _ in $(seq 100); do getent hosts api.anthropic.com >/dev/null && break; sleep 0.1; done
+log "network ready"
+
+set +e
+as_agent --preserve-env=CLAUDE_CODE_OAUTH_TOKEN "$CLAUDE" -p "$PROMPT" \
+  --dangerously-skip-permissions --output-format stream-json --verbose \
+  > "$JOB/stream.jsonl" 2> "$JOB/claude.err"
+CLAUDE_EXIT=$?
+set -e
+unset CLAUDE_CODE_OAUTH_TOKEN
+log "claude exit $CLAUDE_EXIT"
+
+as_agent git add -A
+as_agent git diff --cached --quiet || as_agent git commit -q -m "agentvm: $ID (auto-commit)"
+COMMITS=$(as_agent git rev-list --count "$BASE..HEAD")
+if [ "$COMMITS" -gt 0 ]; then
+  as_agent git bundle create -q "$JOB/out.bundle" "$BASE..$BRANCH"
+fi
+log "commits $COMMITS"
+
+if [ "$CLAUDE_EXIT" -ne 0 ]; then
+  write_result failed "$CLAUDE_EXIT" "$COMMITS"
+elif [ "$COMMITS" -eq 0 ]; then
+  write_result no_changes 0 0
+else
+  write_result ok 0 "$COMMITS"
+fi
+log "job done"

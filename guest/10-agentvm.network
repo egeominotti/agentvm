@@ -1,0 +1,6 @@
+# Config generica: vale per qualunque MAC, quindi per ogni clone della golden.
+[Match]
+Name=en* eth*
+
+[Network]
+DHCP=ipv4

@@ -1,0 +1,7 @@
+#cloud-config
+users:
+  - name: agent
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+runcmd:
+  - [bash, -c, "mkdir -p /mnt/job && mount -t virtiofs job /mnt/job && bash /mnt/job/setup-golden.sh > /mnt/job/setup.log 2>&1; sync; poweroff"]
