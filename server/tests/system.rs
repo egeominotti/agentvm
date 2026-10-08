@@ -536,3 +536,36 @@ fn vms_survive_a_server_restart() {
     let gone = !Command::new("kill").args(["-0", &pid.to_string()]).status().unwrap().success();
     assert!(gone, "the VM is still running after close");
 }
+
+#[test]
+#[ignore = "needs golden and token"]
+fn restore_keeps_resources_and_finished_tasks_can_be_removed() {
+    let server = start_server();
+    let repo = temp_repo();
+    let created = post_json(
+        &format!("{}/api/tasks", server.base),
+        &json!({"repo_path": repo.path(), "interactive": true, "cpus": 2, "memory_mb": 2048}),
+    );
+    let id = created["id"].as_str().unwrap().to_owned();
+    wait_for_state(&server, &id, |s| s == "running", Duration::from_secs(60));
+    std::thread::sleep(Duration::from_secs(2));
+    let snap = post_json(&format!("{}/api/tasks/{id}/snapshot", server.base), &json!({}));
+    let sid = snap["id"].as_str().unwrap_or_else(|| panic!("{snap}")).to_owned();
+    assert!(!snap["name"].as_str().unwrap().starts_with('/'), "default name is not a path: {snap}");
+    assert_eq!(snap["cpus"], 2, "{snap}");
+    post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
+    wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(30));
+
+    let restored = post_json(&format!("{}/api/snapshots/{sid}/restore", server.base), &json!({}));
+    let rid = restored["id"].as_str().unwrap().to_owned();
+    let task = get_json(&format!("{}/api/tasks/{rid}", server.base));
+    assert_eq!(task["cpus"], 2, "{task}");
+    assert_eq!(task["memory_mb"], 2048, "{task}");
+    assert!(task["label"].as_str().unwrap_or_default().starts_with("Restored: "), "{task}");
+    post_json(&format!("{}/api/tasks/{rid}/stop", server.base), &json!({}));
+    wait_for_state(&server, &rid, |s| TERMINAL.contains(&s), Duration::from_secs(30));
+
+    assert_eq!(delete(&format!("{}/api/tasks/{id}", server.base)), 204);
+    assert!(curl(&["-sf", &format!("{}/api/tasks/{id}", server.base)]).is_none(), "removed from the list");
+    assert!(!server.home.path().join("jobs").join(&id).exists(), "job folder deleted");
+}

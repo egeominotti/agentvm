@@ -37,9 +37,14 @@ pub struct PtyWriter(OwnedWriteHalf);
 impl PtyConnection {
     /// Opens session `session` (`claude` or `shell`), creating it if it does not exist yet.
     pub async fn open(socket: &Path, session: &str, cols: u16, rows: u16) -> std::io::Result<Self> {
+        Self::open_with(socket, session, cols, rows, false).await
+    }
+
+    /// `view`: read-only client that does not resize the window (wall previews).
+    pub async fn open_with(socket: &Path, session: &str, cols: u16, rows: u16, view: bool) -> std::io::Result<Self> {
         let stream = UnixStream::connect(socket).await?;
         let (read, mut write) = stream.into_split();
-        let header = json!({ "session": session, "cols": cols, "rows": rows }).to_string() + "\n";
+        let header = json!({ "session": session, "cols": cols, "rows": rows, "view": view }).to_string() + "\n";
         write.write_all(header.as_bytes()).await?;
         Ok(PtyConnection { reader: PtyReader(read), writer: PtyWriter(write) })
     }

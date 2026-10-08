@@ -282,6 +282,8 @@ fn snapshots_are_stored_listed_and_deleted() {
         claude_version: None,
         created_at: 1.0,
         size_mb: 0,
+        cpus: 2,
+        memory_mb: 2048,
     };
     store.create(&meta, &disk, &efi).unwrap();
     let list = store.list();

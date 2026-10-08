@@ -45,7 +45,7 @@ function rate(bps) {
   if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(0)} KB/s`;
   return `${(bps / 1024 / 1024).toFixed(1)} MB/s`;
 }
-const money = n => (n >= 100 ? `$${n.toFixed(0)}` : `$${n.toFixed(2)}`);
+const money = n => (!n ? "$0" : n < 0.01 ? "<$0.01" : n < 1 ? `$${n.toFixed(3)}` : n < 100 ? `$${n.toFixed(2)}` : `$${n.toFixed(0)}`);
 const tokens = n => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(n >= 1e4 ? 0 : 1)}k` : String(n));
 function duration(s) {
   s = Math.max(0, Math.round(s));
@@ -55,7 +55,7 @@ function duration(s) {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 const age = t => duration((t.finished_at ?? Date.now() / 1000) - t.created_at);
-const titleOf = t => (t.prompt ? t.prompt.split("\n")[0] : repoName(t.repo));
+const titleOf = t => (t.prompt ? t.prompt.split("\n")[0] : t.label || repoName(t.repo));
 
 /** Visual state of a machine: [css class, label]. */
 function kind(t) {
@@ -74,14 +74,23 @@ function kind(t) {
   return ["k-fail", "Failed"];
 }
 
-function sparkline(values, { width = 120, height = 26, max = 100, color = "var(--brand)" } = {}) {
+function sparkline(values, { width = 120, height = 26, max = 100, color = "var(--brand)", fluid = false } = {}) {
   const pts = values.length ? values : [0];
   const step = width / Math.max(pts.length - 1, 1);
   const y = v => height - 1 - (Math.min(v, max) / max) * (height - 2);
   const line = pts.map((v, i) => `${i ? "L" : "M"}${(i * step).toFixed(1)},${y(v).toFixed(1)}`).join("");
   const area = `${line}L${((pts.length - 1) * step).toFixed(1)},${height}L0,${height}Z`;
-  return svg("svg", { class: "spark", width, height, viewBox: `0 0 ${width} ${height}`, style: `--sc:${color}`, "aria-hidden": "true" },
+  return svg("svg", { class: "spark", width: fluid ? "100%" : width, height, viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: "none", style: `--sc:${color}`, "aria-hidden": "true" },
     svg("path", { class: "area", d: area }), svg("path", { class: "line", d: line }));
+}
+
+/** Short message in the corner: never shifts the layout. */
+function toast(text, kind = "ok") {
+  let box = $("#toasts");
+  if (!box) { box = h("div", { id: "toasts", class: "toasts", role: "status", "aria-live": "polite" }); document.body.append(box); }
+  const item = h("div", { class: `toast ${kind}` }, text);
+  box.append(item);
+  setTimeout(() => { item.classList.add("out"); setTimeout(() => item.remove(), 300); }, kind === "err" ? 6000 : 3500);
 }
 
 function copyRow(text) {
@@ -324,10 +333,11 @@ const THEME = {
   brightBlack: "#5c6577", brightRed: "#ff8a8a", brightGreen: "#74e0a5", brightYellow: "#ffc977", brightBlue: "#9cbcff", brightMagenta: "#cfc2ff", brightCyan: "#86e3e3", brightWhite: "#ffffff",
 };
 class VmTerminal {
-  constructor(id, session, { fontSize = 13, webgl = true, readOnly = false } = {}) {
+  constructor(id, session, { fontSize = 13, webgl = true, readOnly = false, fixed = null } = {}) {
     this.id = id;
     this.session = session;
-    this.el = h("div", { class: "term" });
+    this.fixed = fixed;
+    this.el = h("div", { class: fixed ? "term fixed" : "term" });
     this.xterm = new Terminal({
       fontFamily: '"Geist Mono", "SF Mono", ui-monospace, Menlo, monospace', fontSize, lineHeight: 1.15,
       cursorBlink: !readOnly, disableStdin: readOnly, macOptionIsMeta: true, macOptionClickForcesSelection: true,
@@ -343,7 +353,7 @@ class VmTerminal {
     if (!readOnly) this.xterm.onData(d => { if (this.ws?.readyState === 1) this.ws.send(enc.encode(d)); });
     this.xterm.onResize(({ cols, rows }) => { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify({ cols, rows })); });
     this.resizer = new ResizeObserver(() => this.fitSoon());
-    this.resizer.observe(this.el);
+    this.resizer.observe(fixed ? document.body : this.el);
   }
   fitSoon() {
     if (this.pending) return;
@@ -352,15 +362,26 @@ class VmTerminal {
   }
   fit() {
     if (!this.el.isConnected || !this.el.offsetWidth) return;
+    if (this.fixed) return this.scaleToParent();
     const d = this.fitter.proposeDimensions();
     if (d && (d.cols !== this.xterm.cols || d.rows !== this.xterm.rows)) this.xterm.resize(d.cols, d.rows);
   }
+  /** Previews keep the session's real size and are scaled down to fit their cell. */
+  scaleToParent() {
+    const box = this.el.parentElement;
+    const screen = this.el.querySelector(".xterm-screen");
+    if (!box || !screen || !screen.offsetWidth) return;
+    const k = Math.min(box.clientWidth / screen.offsetWidth, box.clientHeight / screen.offsetHeight, 1);
+    this.el.style.transform = `scale(${k})`;
+  }
   connect() {
     if (this.ws || this.disposed) return;
+    if (this.fixed) this.xterm.resize(this.fixed.cols, this.fixed.rows);
     this.fit();
     if (this.xterm.cols < 20) this.xterm.resize(100, 30);
     const { cols, rows } = this.xterm;
-    const ws = new WebSocket(`ws://${location.host}/api/tasks/${this.id}/pty?session=${this.session}&cols=${cols}&rows=${rows}`);
+    const view = this.fixed ? "&view=1" : "";
+    const ws = new WebSocket(`ws://${location.host}/api/tasks/${this.id}/pty?session=${this.session}&cols=${cols}&rows=${rows}${view}`);
     ws.binaryType = "arraybuffer";
     // Resizes sent while connecting are lost: send the real size once the socket is open.
     ws.onopen = () => { this.fit(); ws.send(JSON.stringify({ cols: this.xterm.cols, rows: this.xterm.rows })); };
@@ -459,7 +480,14 @@ class WallView {
     if (!this.grid.isConnected) this.root.replaceChildren(this.head, this.grid);
     const live = tasks.filter(t => !TERMINAL.has(t.status.state)).length;
     const waiting = tasks.filter(t => t.status.state === "running" && t.activity === "waiting").length;
-    this.head.replaceChildren(h("b", {}, plural(live, "machine")), h("span", {}, waiting ? `${waiting} waiting for you` : "click a machine to work in it"));
+    const finished = tasks.filter(t => TERMINAL.has(t.status.state));
+    this.head.replaceChildren(h("b", {}, plural(live, "machine")), h("span", {}, waiting ? `${waiting} waiting for you` : "click a machine to work in it"),
+      h("span", { class: "spacer" }),
+      finished.length ? h("button", { class: "btn ghost small", type: "button", onclick: async () => {
+        for (const t of finished) await api(`/api/tasks/${t.id}`, { method: "DELETE" });
+        toast(`Removed ${plural(finished.length, "finished machine")}`);
+        loadTasks();
+      } }, `Clear ${finished.length} finished`) : null);
     for (const [id, cell] of this.cells) if (!byId(id)) { cell.destroy(); this.cells.delete(id); }
     tasks.forEach((t, i) => {
       let cell = this.cells.get(t.id);
@@ -499,8 +527,9 @@ class Cell {
     if (t.status.state === "running" && t.interactive) {
       if (!this.term) {
         this.body.replaceChildren();
-        this.term = new VmTerminal(t.id, "claude", { fontSize: 10.5, webgl: false, readOnly: true });
+        this.term = new VmTerminal(t.id, "claude", { fontSize: 12, webgl: false, readOnly: true, fixed: { cols: 160, rows: 48 } });
         this.body.append(this.term.el);
+        new ResizeObserver(() => this.term?.fitSoon()).observe(this.body);
       }
       this.term.connect();
     } else {
@@ -525,7 +554,7 @@ class FocusView {
     this.rail = h("nav", { class: "rail", "aria-label": "Machines" });
     this.titleEl = h("span", { class: "title" });
     this.stateEl = h("span", { class: "status" });
-    this.note = h("span", { class: "note" });
+
     this.segBtns = ["claude", "shell"].map(s => h("button", { type: "button", "aria-pressed": String(s === "claude"), onclick: () => this.show(s) }, s === "claude" ? "Claude" : "Root shell"));
     this.saveBtn = h("button", { class: "btn", type: "button", onclick: () => this.save() }, "Save to repo");
     this.snapBtn = h("button", { class: "btn", type: "button", title: "Save a copy of this whole VM that you can restore later", onclick: () => this.snapshot() }, "Snapshot");
@@ -533,7 +562,7 @@ class FocusView {
     this.stopBtn = h("button", { class: "btn ghost danger", type: "button", title: "Power off now without saving", onclick: () => this.stop() }, "Force stop");
     this.panelBtn = h("button", { class: "btn ghost", type: "button", onclick: () => this.togglePanel() }, "Telemetry");
     this.seg = h("div", { class: "seg" }, this.segBtns);
-    this.toolbar = h("div", { class: "toolbar" }, h("span", { class: "dot" }), this.titleEl, this.seg, h("span", { class: "spacer" }), this.note, this.snapBtn, this.saveBtn, this.closeBtn, this.stopBtn, this.panelBtn);
+    this.toolbar = h("div", { class: "toolbar" }, h("span", { class: "dot" }), this.titleEl, this.seg, h("span", { class: "spacer" }), this.snapBtn, this.saveBtn, this.closeBtn, this.stopBtn, this.panelBtn);
     this.overlay = h("div", { class: "overlay" });
     this.screen = h("div", { class: "screen" }, this.overlay);
     this.result = h("div", { class: "result" });
@@ -577,12 +606,12 @@ class FocusView {
 
   renderPanel(t, label) {
     if (!this.showPanel) return;
-    const m = t.metrics;
+    const m = TERMINAL.has(t.status.state) ? null : t.metrics;
     const kids = [];
     if (m) {
       kids.push(
-        h("div", { class: "stat" }, h("h3", {}, "CPU"), h("div", { class: "big" }, `${m.cpu_pct.toFixed(0)}%`, h("small", {}, `of ${m.cpus} vCPUs`)), sparkline(t.cpu_history, { width: 250, height: 40 })),
-        h("div", { class: "stat" }, h("h3", {}, "Memory"), h("div", { class: "big" }, gb(m.mem_used_mb), h("small", {}, `of ${gb(m.mem_total_mb)}`)), sparkline(t.mem_history, { width: 250, height: 40, color: "var(--wait)" })),
+        h("div", { class: "stat" }, h("h3", {}, "CPU"), h("div", { class: "big" }, `${m.cpu_pct.toFixed(0)}%`, h("small", {}, `of ${m.cpus} vCPUs`)), sparkline(t.cpu_history, { width: 250, height: 40, fluid: true })),
+        h("div", { class: "stat" }, h("h3", {}, "Memory"), h("div", { class: "big" }, gb(m.mem_used_mb), h("small", {}, `of ${gb(m.mem_total_mb)}`)), sparkline(t.mem_history, { width: 250, height: 40, color: "var(--wait)", fluid: true })),
         h("div", { class: "stat" }, h("h3", {}, "Disk"), h("div", {}, `${gb(m.disk_used_mb)} of ${gb(m.disk_total_mb)}`),
           h("div", { class: "bar-line" }, h("i", { style: `width:${(100 * m.disk_used_mb) / Math.max(m.disk_total_mb, 1)}%` }))),
         h("div", {}, h("h3", {}, "Busiest processes"), m.top.length
@@ -605,6 +634,7 @@ class FocusView {
           h("dt", {}, "Lines changed"), h("dd", {}, h("span", { class: "plus" }, `+${u.lines_added}`), " ", h("span", { class: "minus" }, `−${u.lines_removed}`)),
           u.context_pct != null && h("dt", {}, "Context used"), u.context_pct != null && h("dd", {}, `${Math.round(u.context_pct)}%`))));
     }
+    if (TERMINAL.has(t.status.state)) kids.unshift(h("p", { class: "closed-note" }, "This VM is closed: its disk is gone, the work is on the branch."));
     kids.push(h("dl", { class: "kv" },
       h("dt", {}, "State"), h("dd", {}, label),
       h("dt", {}, "Model"), h("dd", {}, modelLabel(t.model)),
@@ -654,21 +684,15 @@ class FocusView {
 
   async save() {
     this.saveBtn.disabled = true;
-    this.note.style.color = "";
-    this.note.textContent = "Saving…";
     const r = await api(`/api/tasks/${this.id}/save`, { method: "POST" });
-    this.note.textContent = r.ok ? (r.data.commits ? `Saved: ${plural(r.data.commits, "commit")} on agent/${this.id}` : "Nothing to save yet") : r.data?.error || "Save failed";
-    if (!r.ok) this.note.style.color = "var(--fail)";
+    toast(r.ok ? (r.data.commits ? `Saved ${plural(r.data.commits, "commit")} to agent/${this.id}` : "Nothing to save yet") : r.data?.error || "Save failed", r.ok ? "ok" : "err");
     this.saveBtn.disabled = false;
     this.terms[this.session]?.xterm.focus();
   }
   async snapshot() {
     this.snapBtn.disabled = true;
-    this.note.style.color = "";
-    this.note.textContent = "Taking a snapshot…";
     const r = await api(`/api/tasks/${this.id}/snapshot`, { method: "POST", body: {} });
-    this.note.textContent = r.ok ? `Snapshot saved: ${r.data.name}` : r.data?.error || "Snapshot failed";
-    if (!r.ok) this.note.style.color = "var(--fail)";
+    toast(r.ok ? `Snapshot saved: ${r.data.name}` : r.data?.error || "Snapshot failed", r.ok ? "ok" : "err");
     this.snapBtn.disabled = false;
     this.terms[this.session]?.xterm.focus();
   }
@@ -688,11 +712,14 @@ class FocusView {
     for (const term of Object.values(this.terms)) term.dispose();
     this.terms = {};
     this.screen.hidden = true;
-    this.note.textContent = "";
     if (this.resultFor === t.status.state) return;
     this.resultFor = t.status.state;
     this.result.hidden = false;
-    this.result.replaceChildren(outcome(t));
+    this.result.replaceChildren(outcome(t), h("div", { class: "row-actions" },
+      h("button", { class: "btn ghost small", type: "button", onclick: async () => {
+        const r = await api(`/api/tasks/${t.id}`, { method: "DELETE" });
+        if (r.ok) { toast("Removed from the list"); location.hash = "#/wall"; loadTasks(); } else toast(r.data?.error || "Could not remove", "err");
+      } }, "Remove from the list")));
     if (t.status.state === "done") appendDiff(t, this.result);
   }
 
@@ -720,8 +747,8 @@ class SettingsView {
       ["account", "Claude account", this.account()],
       ["notifications", "Notifications", this.notifications()],
       ["image", "VM image", this.image()],
-      ["backups", "Backups to S3", this.backups()],
       ["storage", "Storage", this.storage()],
+      ["backups", "Backups to S3", this.backups()],
     ];
     this.navLinks = sections.map(([id, label]) => h("a", { href: `#/settings`, "data-target": id, onclick: e => { e.preventDefault(); this.scrollTo(id); } }, label));
     this.content = h("div", { class: "settings-content" },
@@ -975,7 +1002,7 @@ class SettingsView {
       if (d.last_result && !d.rebuilding) { this.goldenMsg.className = `msg ${d.last_result === "ok" ? "ok" : "err"}`; this.goldenMsg.textContent = d.last_result === "ok" ? "Image rebuilt." : `Rebuild ${d.last_result}.`; }
       if (d.rebuilding) setTimeout(() => current === this && this.refreshLive(), 1500);
     }
-    if (st.ok) this.storageFacts.replaceChildren(fact("Job folders", String(st.data.jobs)), fact("Job logs", gb(st.data.jobs_mb)), fact("VM image", gb(st.data.golden_mb)));
+    if (st.ok) this.storageFacts.replaceChildren(fact("Job logs", gb(st.data.jobs_mb)), fact("Running VM disks", gb(st.data.vm_disks_mb)), fact("Snapshots", gb(st.data.snapshots_mb)), fact("VM image", gb(st.data.golden_mb)));
   }
 
   destroy() { clearTimeout(this.saveTimer); }
@@ -1038,7 +1065,8 @@ class SnapshotsView {
         h("div", { class: "snap-meta" },
           h("span", {}, repoName(sn.repo)),
           h("span", {}, new Date(sn.created_at * 1000).toLocaleString()),
-          h("span", {}, `${gb(sn.size_mb)} on disk`),
+          h("span", {}, `disk image ${gb(sn.size_mb)}`),
+          sn.cpus ? h("span", {}, `${sn.cpus} vCPUs, ${gb(sn.memory_mb)}`) : null,
           h("span", {}, modelLabel(sn.model)))),
       msg, download, backup, del, restore);
   }

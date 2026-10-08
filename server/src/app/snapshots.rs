@@ -50,10 +50,13 @@ pub async fn take_snapshot(ctx: &AppCtx, id: &TaskId, name: Option<String>) -> R
     let _ = std::fs::remove_file(&done);
 
     let now = SystemTime::now();
-    let title = record.prompt.as_ref().map_or_else(
-        || record.repo.as_path().display().to_string(),
-        |p| p.as_str().lines().next().unwrap_or_default().to_owned(),
-    );
+    let repo_name =
+        record.repo.as_path().file_name().map_or_else(|| "repository".into(), |n| n.to_string_lossy().into_owned());
+    let title = match (&record.prompt, &record.label) {
+        (Some(p), _) => p.as_str().lines().next().unwrap_or_default().to_owned(),
+        (None, Some(label)) => label.trim_start_matches("Restored: ").to_owned(),
+        (None, None) => format!("{repo_name}, {}", clock(now)),
+    };
     let meta = SnapshotMeta {
         id: SnapshotId::generate(now, random_bytes()),
         name: name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty()).unwrap_or(title),
@@ -64,6 +67,8 @@ pub async fn take_snapshot(ctx: &AppCtx, id: &TaskId, name: Option<String>) -> R
         claude_version: record.claude_version.clone(),
         created_at: now.duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0),
         size_mb: 0,
+        cpus: record.cpus,
+        memory_mb: record.memory_mb,
     };
     let (disk, efivars) = (JobWorkspace::disk_of(&jobs, id), JobWorkspace::efivars_of(&jobs, id));
     let store_meta = meta.clone();
@@ -89,8 +94,9 @@ pub fn restore(ctx: &Arc<AppCtx>, snap: &SnapshotId) -> Result<TaskId, SnapshotE
             model: Model::parse(&meta.model).ok(),
             claude_version: None,
             restore_from: Some(snap.clone()),
-            cpus: None,
-            memory_mb: None,
+            cpus: (meta.cpus > 0).then_some(meta.cpus),
+            memory_mb: (meta.memory_mb > 0).then_some(meta.memory_mb),
+            label: Some(format!("Restored: {}", meta.name)),
         },
     )?;
     Ok(id)
@@ -105,4 +111,22 @@ pub fn delete(ctx: &AppCtx, snap: &SnapshotId) -> Result<(), SnapshotError> {
         return Err(SnapshotError::NoSnapshot);
     }
     Ok(ctx.snapshots.delete(snap)?)
+}
+
+/// Local wall-clock time `HH:MM` (UTC offset from the system's `date`), for default names.
+fn clock(now: SystemTime) -> String {
+    let secs = now.duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let offset = std::process::Command::new("date")
+        .arg("+%z")
+        .output()
+        .ok()
+        .and_then(|o| {
+            let z = String::from_utf8_lossy(&o.stdout).trim().to_owned();
+            let sign = if z.starts_with('-') { -1 } else { 1 };
+            let digits: i64 = z.trim_start_matches(['+', '-']).parse().ok()?;
+            Some(sign * ((digits / 100) * 3600 + (digits % 100) * 60))
+        })
+        .unwrap_or(0);
+    let local = (secs as i64 + offset).rem_euclid(86_400);
+    format!("{:02}:{:02}", local / 3600, local / 60 % 60)
 }

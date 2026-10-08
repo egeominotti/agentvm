@@ -124,6 +124,8 @@ pub struct NewTask<'a> {
     /// vCPUs and memory for this VM; `None` uses the settings.
     pub cpus: Option<u32>,
     pub memory_mb: Option<u64>,
+    /// Display name when there is no first task.
+    pub label: Option<String>,
 }
 
 /// Validates the request, queues the task and starts its supervisor.
@@ -151,6 +153,7 @@ pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError
     record.restore_from = req.restore_from;
     record.cpus = cpus;
     record.memory_mb = memory_mb;
+    record.label = req.label;
     ctx.store.insert(record);
     tokio::spawn(run(ctx.clone(), id.clone()));
     Ok(id)

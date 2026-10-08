@@ -43,6 +43,11 @@ pub struct SnapshotMeta {
     pub model: String,
     pub claude_version: Option<String>,
     pub created_at: f64,
-    /// Space actually used on disk (copy-on-write: grows as the source VM diverges).
+    /// Size of the disk image (copy-on-write: blocks shared with the golden image count too).
     pub size_mb: u64,
+    /// Resources of the source VM, reused on restore (0 = use the settings).
+    #[serde(default)]
+    pub cpus: u32,
+    #[serde(default)]
+    pub memory_mb: u64,
 }

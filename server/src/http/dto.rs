@@ -57,6 +57,9 @@ pub struct PtyQuery {
     pub cols: u16,
     #[serde(default = "default_rows")]
     pub rows: u16,
+    /// Read-only preview that does not resize the session.
+    #[serde(default)]
+    pub view: bool,
 }
 
 fn default_session() -> String {
@@ -99,6 +102,7 @@ pub struct TaskDto {
     pub claude_version: Option<String>,
     pub cpus: u32,
     pub memory_mb: u64,
+    pub label: Option<String>,
     pub usage: Option<crate::domain::usage::AgentUsage>,
     pub metrics: Option<VmMetrics>,
     pub cpu_history: Vec<f32>,
@@ -122,6 +126,7 @@ impl From<TaskRecord> for TaskDto {
             claude_version: r.claude_version,
             cpus: r.cpus,
             memory_mb: r.memory_mb,
+            label: r.label,
             usage: r.usage,
             metrics: r.metrics,
             cpu_history: r.cpu_history.into(),

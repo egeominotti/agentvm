@@ -51,9 +51,13 @@ def set_size(fd, cols, rows):
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
 
-def spawn(session, cols, rows):
+def spawn(session, cols, rows, view=False):
     pw = pwd.getpwnam(USER)
-    cmd = ["tmux", "-f", TMUX_CONF, "new-session", "-A", "-s", session, "-c", WORK] + SESSIONS[session]
+    if view:
+        # Previews watch without typing and without resizing the window for real clients.
+        cmd = ["tmux", "-f", TMUX_CONF, "attach-session", "-f", "ignore-size,read-only", "-t", session]
+    else:
+        cmd = ["tmux", "-f", TMUX_CONF, "new-session", "-A", "-s", session, "-c", WORK] + SESSIONS[session]
     pid, fd = pty.fork()
     if pid == 0:
         env = {
@@ -74,7 +78,7 @@ def serve(conn):
         header = read_header(conn)
         if not header or header.get("session") not in SESSIONS:
             return
-        pid, fd = spawn(header["session"], int(header.get("cols", 120)), int(header.get("rows", 36)))
+        pid, fd = spawn(header["session"], int(header.get("cols", 120)), int(header.get("rows", 36)), bool(header.get("view")))
 
         def to_client():
             try:

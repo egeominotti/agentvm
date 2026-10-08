@@ -31,17 +31,46 @@ pub async fn task_diff(ctx: &AppCtx, id: &TaskId) -> Result<String, DiffError> {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct StorageUsage {
     pub jobs: usize,
+    /// Logs and results of jobs (VM disks excluded).
     pub jobs_mb: u64,
+    /// Disks of the VMs that are running now.
+    pub vm_disks_mb: u64,
     pub golden_mb: u64,
+    pub snapshots_mb: u64,
 }
 
 pub fn storage_usage(ctx: &AppCtx) -> StorageUsage {
-    let jobs = std::fs::read_dir(ctx.config.jobs()).map_or(0, |d| d.flatten().count());
+    use crate::adapters::host::disk_usage;
+    let jobs = ctx.config.jobs();
+    let dirs: Vec<std::path::PathBuf> =
+        std::fs::read_dir(&jobs).map_or(Vec::new(), |d| d.flatten().map(|e| e.path()).collect());
+    let disks: u64 = dirs.iter().map(|d| disk_usage(&d.join("disk.raw")) + disk_usage(&d.join("efivars"))).sum();
     StorageUsage {
-        jobs,
-        jobs_mb: crate::adapters::host::disk_usage(&ctx.config.jobs()) >> 20,
-        golden_mb: crate::adapters::host::disk_usage(&ctx.config.home.join("golden")) >> 20,
+        jobs: dirs.len(),
+        jobs_mb: disk_usage(&jobs).saturating_sub(disks) >> 20,
+        vm_disks_mb: disks >> 20,
+        golden_mb: disk_usage(&ctx.config.home.join("golden")) >> 20,
+        snapshots_mb: disk_usage(&ctx.config.home.join("snapshots")) >> 20,
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum RemoveError {
+    #[error("task not found")]
+    NotFound,
+    #[error("the VM is still running: close or stop it first")]
+    StillRunning,
+}
+
+/// Forgets a finished task and deletes its job folder (logs included).
+pub fn remove_task(ctx: &AppCtx, id: &TaskId) -> Result<(), RemoveError> {
+    let record = ctx.store.get(id).ok_or(RemoveError::NotFound)?;
+    if !record.state.is_terminal() {
+        return Err(RemoveError::StillRunning);
+    }
+    ctx.store.remove(id);
+    let _ = crate::adapters::jobdir::JobWorkspace::remove_job(&ctx.config.jobs(), id.as_str());
+    Ok(())
 }
 
 /// Deletes the folders of jobs that are not live; returns how many were removed.

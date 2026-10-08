@@ -32,6 +32,9 @@ pub struct TaskRecord {
     pub claude_version: Option<String>,
     /// Snapshot this machine was restored from.
     pub restore_from: Option<SnapshotId>,
+    /// Display name when there is no first task (e.g. "Restored: …").
+    #[serde(default)]
+    pub label: Option<String>,
     /// Resources of this VM (from the launch, or the settings at launch time).
     pub cpus: u32,
     pub memory_mb: u64,
@@ -65,6 +68,7 @@ impl TaskRecord {
             model: Model::default_choice(),
             claude_version: None,
             restore_from: None,
+            label: None,
             cpus: 0,
             memory_mb: 0,
             usage: None,
@@ -206,6 +210,11 @@ impl Store {
             drop(tasks);
             self.persist(&record);
         }
+    }
+
+    /// Forgets a task (the caller deletes its files).
+    pub fn remove(&self, id: &TaskId) -> Option<TaskRecord> {
+        self.tasks.lock().unwrap().remove(id).map(|e| e.record)
     }
 
     pub fn running_count(&self) -> usize {

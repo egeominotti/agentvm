@@ -46,10 +46,13 @@ pub async fn open_terminal(
     session: &str,
     cols: u16,
     rows: u16,
+    view: bool,
 ) -> Result<PtyConnection, SessionError> {
     running_terminal(ctx, id)?;
     let socket = JobWorkspace::pty_socket_of(&ctx.config.jobs(), id);
-    PtyConnection::open(&socket, session, cols, rows).await.map_err(|e| SessionError::Unreachable(e.to_string()))
+    PtyConnection::open_with(&socket, session, cols, rows, view)
+        .await
+        .map_err(|e| SessionError::Unreachable(e.to_string()))
 }
 
 /// Asks the guest to commit and bundle, then updates `agent/<id>` in the repo. Returns the commit count.

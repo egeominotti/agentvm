@@ -33,7 +33,7 @@ pub fn router(ctx: Arc<AppCtx>) -> Router {
         .route("/", get(dashboard))
         .route("/api/status", get(status))
         .route("/api/tasks", get(list).post(create))
-        .route("/api/tasks/{id}", get(detail))
+        .route("/api/tasks/{id}", get(detail).delete(remove_task))
         .route("/api/tasks/{id}/events", get(events))
         .route("/api/tasks/{id}/diff", get(diff))
         .route("/api/tasks/{id}/stop", post(stop))
@@ -116,6 +116,7 @@ async fn create(State(ctx): Ctx, Json(req): Json<CreateTask>) -> Result<(StatusC
         restore_from: None,
         cpus: req.cpus,
         memory_mb: req.memory_mb,
+        label: None,
     };
     let id = submit(&ctx, new).map_err(|e| {
         let code = match e {
@@ -213,7 +214,7 @@ async fn pty(
     if q.session != "claude" && q.session != "shell" {
         return Err(ApiError(StatusCode::BAD_REQUEST, "unknown session".into()));
     }
-    let conn = session::open_terminal(&ctx, &id, &q.session, q.cols, q.rows).await.map_err(session_error)?;
+    let conn = session::open_terminal(&ctx, &id, &q.session, q.cols, q.rows, q.view).await.map_err(session_error)?;
     Ok(ws.on_upgrade(move |socket| bridge(socket, conn)))
 }
 
@@ -487,5 +488,18 @@ async fn put_s3(State(ctx): Ctx, Json(req): Json<S3Update>) -> Result<StatusCode
 
 async fn test_s3(State(ctx): Ctx) -> Result<StatusCode, ApiError> {
     crate::app::backups::test_s3(&ctx).await.map_err(backup_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn remove_task(State(ctx): Ctx, Path(id): Path<String>) -> Result<StatusCode, ApiError> {
+    use crate::app::queries::RemoveError;
+    let (id, _) = find(&ctx, &id)?;
+    crate::app::queries::remove_task(&ctx, &id).map_err(|e| {
+        let code = match e {
+            RemoveError::NotFound => StatusCode::NOT_FOUND,
+            RemoveError::StillRunning => StatusCode::CONFLICT,
+        };
+        ApiError(code, e.to_string())
+    })?;
     Ok(StatusCode::NO_CONTENT)
 }
