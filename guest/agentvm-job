@@ -27,10 +27,23 @@ finish() {
 }
 trap finish EXIT
 
+# Keeps a guest service running for the VM's whole life: restarted a second after it exits,
+# whatever the reason (a crash, the out-of-memory killer). The power-off ends it.
+keep_running() { # command...
+  (
+    set +e
+    while true; do
+      "$@"
+      log "$(basename "$1") exited ($?): restarting"
+      sleep 1
+    done
+  ) &
+}
+
 mkdir -p "$JOB"
 mountpoint -q "$JOB" || mount -t virtiofs job "$JOB"
 # Telemetry for the dashboard, once per second, in every mode.
-/usr/local/bin/agentvm-metrics &
+keep_running /usr/local/bin/agentvm-metrics
 log "job start"
 
 if [ ! -s "$JOB/task.json" ]; then
@@ -166,7 +179,7 @@ if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
   [ "$RESTORE" = "true" ] && touch /run/agentvm/continue
   [ -s /run/agentvm/prompt ] && [ "$(tr -d '[:space:]' < /run/agentvm/prompt)" != "" ] || rm -f /run/agentvm/prompt
   if [ -n "$MODEL" ]; then printf '%s' "$MODEL" > /run/agentvm/model; fi
-  /usr/local/bin/agentvm-pty &
+  keep_running /usr/local/bin/agentvm-pty
   env -i HOME=/root USER=root LANG=C.UTF-8 TERM=xterm-256color PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     tmux -f /etc/agentvm/tmux.conf new-session -d -s claude -c "$WORK" -x 160 -y 48 /usr/local/bin/agentvm-claude
   log "terminal ready"

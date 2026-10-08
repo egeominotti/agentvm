@@ -116,3 +116,25 @@ fn files_dropped_on_a_terminal_reach_the_vm() {
     post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
     wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(30));
 }
+
+/// The VM's terminal and telemetry services come back by themselves when they die (a crash,
+/// the guest's out-of-memory killer): the terminals and the dashboard's numbers keep working.
+#[test]
+#[ignore = "needs golden and token"]
+fn guest_services_come_back_after_dying() {
+    let server = start_server();
+    let repo = temp_repo();
+    let created =
+        post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo.path(), "interactive": true}));
+    let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    wait_for_state(&server, &id, |s| s == "running", Duration::from_secs(60));
+    run_in_shell(&server, &id, "echo up");
+    // Our own connection goes down with the terminal server: whatever it prints is lost.
+    run_in_shell(&server, &id, "pkill -9 -f agentvm-metrics; pkill -9 -f agentvm-pty");
+    assert!(run_in_shell(&server, &id, "echo back-$((2+3))").contains("back-5"), "the terminals never came back");
+    let uptime = || get_json(&format!("{}/api/tasks/{id}", server.base))["metrics"]["uptime_s"].as_u64().unwrap_or(0);
+    let before = uptime();
+    std::thread::sleep(Duration::from_secs(5));
+    assert!(uptime() > before, "the VM's numbers stopped at {before}");
+    post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
+}
