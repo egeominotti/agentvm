@@ -107,6 +107,11 @@ impl JobWorkspace {
         self.dir.join("memory.target")
     }
 
+    /// The memory the VM was last told it may keep, if it was told anything.
+    pub fn memory_target(&self) -> Option<u64> {
+        fs::read_to_string(self.balloon()).ok()?.trim().parse().ok()
+    }
+
     pub fn set_memory_target(&self, mb: u64) -> io::Result<()> {
         let tmp = self.dir.join("memory.target.tmp");
         fs::write(&tmp, mb.to_string())?;

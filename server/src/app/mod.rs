@@ -1,5 +1,6 @@
 //! Use cases and task orchestration.
 pub mod backups;
+pub mod balloon;
 pub mod bundles;
 mod collect;
 pub mod context;

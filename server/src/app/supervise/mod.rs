@@ -1,7 +1,6 @@
 //! Supervising a running VM: one supervisor (tokio task) per task, from boot to the result.
 
 mod backstop;
-mod balloon;
 mod follower;
 mod tick;
 mod wait;

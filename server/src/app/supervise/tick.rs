@@ -1,7 +1,7 @@
 //! The once-a-second refresh of a running VM: boot log, activity, memory, ports, metrics, usage.
 
-use super::balloon::Balloon;
 use crate::adapters::jobdir::JobWorkspace;
+use crate::app::balloon::Balloon;
 use crate::app::context::AppCtx;
 use crate::app::proxy::vm_name;
 use crate::app::record::TaskRecord;
@@ -19,7 +19,7 @@ pub(super) struct Ticker<'a> {
 
 impl<'a> Ticker<'a> {
     pub(super) fn new(ctx: &'a AppCtx, id: &'a TaskId, record: &'a TaskRecord, ws: &'a JobWorkspace) -> Self {
-        Ticker { ctx, id, record, ws, balloon: Balloon::new(record.memory_mb) }
+        Ticker { ctx, id, record, ws, balloon: Balloon::new(record.memory_mb, ws.memory_target()) }
     }
 
     pub(super) fn tick(&mut self) {

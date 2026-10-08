@@ -9,7 +9,7 @@ use crate::domain::metrics::VmMetrics;
 /// A VM using more CPU than this (in %) counts as busy and keeps all its memory.
 const BUSY_CPU_PCT: f64 = 10.0;
 
-pub(super) struct Balloon {
+pub struct Balloon {
     /// Memory the VM was launched with.
     memory_mb: u64,
     /// Last moment the VM was busy.
@@ -19,12 +19,15 @@ pub(super) struct Balloon {
 }
 
 impl Balloon {
-    pub(super) fn new(memory_mb: u64) -> Self {
-        Balloon { memory_mb, idle_since: Instant::now(), target_mb: memory_mb }
+    /// `applied`: what the VM was last told it may keep (`memory.target`), if anything. A VM
+    /// found after a restart may still be shrunk: starting from "all of it" would never give
+    /// it back its memory once busy, as nothing would seem to change.
+    pub fn new(memory_mb: u64, applied: Option<u64>) -> Self {
+        Balloon { memory_mb, idle_since: Instant::now(), target_mb: applied.unwrap_or(memory_mb) }
     }
 
     /// Moves the balloon to the target for the latest sample, if that target changed.
-    pub(super) fn adjust(&mut self, ws: &JobWorkspace, m: &VmMetrics, working: bool) {
+    pub fn adjust(&mut self, ws: &JobWorkspace, m: &VmMetrics, working: bool) {
         let busy = working || m.cpu_pct > BUSY_CPU_PCT;
         if busy {
             self.idle_since = Instant::now();
