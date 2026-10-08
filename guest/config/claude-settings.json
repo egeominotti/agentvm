@@ -4,11 +4,39 @@
   },
   "skipDangerousModePermissionPrompt": true,
   "env": {
-    "IS_SANDBOX": "1"
+    "IS_SANDBOX": "1",
+    "DISABLE_AUTOUPDATER": "1"
   },
   "hooks": {
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "echo working > /mnt/job/activity 2>/dev/null || true" }] }],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "echo waiting > /mnt/job/activity 2>/dev/null || true" }] }],
-    "Notification": [{ "hooks": [{ "type": "command", "command": "echo waiting > /mnt/job/activity 2>/dev/null || true" }] }]
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo working > /mnt/job/activity 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo waiting > /mnt/job/activity 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo waiting > /mnt/job/activity 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
   }
 }

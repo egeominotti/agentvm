@@ -194,7 +194,7 @@ fn settings_file_roundtrips_and_is_absent_at_first() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("settings.json");
     assert!(settings_file::load(&path).is_none());
-    let s = Settings { max_vms: 6, cpus: 2, memory_mb: 2048, timeout_s: 900, model: Model::Opus, default_repo: Some("~/x".into()) };
+    let s = Settings { max_vms: 6, cpus: 2, memory_mb: 2048, timeout_s: 900, model: Model::parse("opus").unwrap(), default_repo: Some("~/x".into()), claude_version: agentvm::domain::settings::ClaudeVersion::parse("2.1.290").unwrap() };
     settings_file::save(&path, &s).unwrap();
     assert_eq!(settings_file::load(&path).unwrap(), s);
 }
@@ -228,4 +228,15 @@ fn pty_socket_path_fits_the_unix_limit_even_for_a_deep_home() {
     assert_eq!(path, JobWorkspace::pty_socket_of(&deep, &id));
     let dir = path.parent().unwrap();
     assert_eq!(std::fs::metadata(dir).unwrap().permissions().mode() & 0o777, 0o700);
+}
+
+#[test]
+#[ignore = "needs the network"]
+fn claude_releases_lists_real_versions() {
+    let r = agentvm::adapters::releases::fetch().unwrap();
+    let semver = |v: &str| v.split('.').count() == 3 && v.split('.').all(|p| p.chars().next().is_some_and(|c| c.is_ascii_digit()));
+    assert!(semver(&r.latest) && semver(&r.stable), "{r:?}");
+    assert!(r.versions.len() >= 10, "{r:?}");
+    assert!(r.versions.contains(&r.latest), "{r:?}");
+    assert!(semver(&r.versions[0]));
 }

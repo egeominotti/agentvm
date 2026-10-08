@@ -16,17 +16,21 @@ use crate::adapters::git::{Git, GitError};
 use crate::adapters::jobdir::JobWorkspace;
 use crate::adapters::keychain::{Keychain, KeychainError};
 use crate::adapters::tail::tail_lines;
+use crate::adapters::releases::Releases;
 use crate::adapters::vm::{VmConfig, VmEvent, VmProcess};
 use crate::secret::Secret;
 use crate::config::Config;
 use crate::domain::agent_event::parse_line;
 use crate::domain::ids::{IdError, Prompt, RepoPath, TaskId};
 use crate::domain::outcome::{Final, OutcomeInput, VmExit, decide};
-use crate::domain::settings::{Model, Settings};
+use crate::domain::settings::{ClaudeVersion, Model, Settings};
 use crate::domain::spec::TaskSpec;
 use crate::domain::task::{TaskEvent, TaskState};
 
 const KILL_GRACE: Duration = Duration::from_secs(15);
+
+/// Claude Code releases as served to the dashboard.
+pub type ClaudeReleases = Releases;
 
 pub struct AppCtx {
     pub config: Config,
@@ -35,6 +39,7 @@ pub struct AppCtx {
     pub keychain: Keychain,
     pub settings: SettingsService,
     pub golden: GoldenService,
+    releases: tokio::sync::Mutex<Option<(std::time::Instant, Releases)>>,
 }
 
 impl AppCtx {
@@ -46,8 +51,9 @@ impl AppCtx {
             cpus: config.cpus.min(limits.cpus),
             memory_mb: config.memory_mb,
             timeout_s: config.timeout_s,
-            model: Model::Default,
+            model: Model::default_choice(),
             default_repo: None,
+            claude_version: Default::default(),
         };
         let settings = SettingsService::load(config.home.join("settings.json"), defaults, limits);
         AppCtx {
@@ -57,7 +63,24 @@ impl AppCtx {
             keychain,
             settings,
             config,
+            releases: tokio::sync::Mutex::new(None),
         }
+    }
+
+    /// Published Claude Code versions, cached for 10 minutes.
+    pub async fn claude_releases(&self) -> Result<Releases, String> {
+        let mut cache = self.releases.lock().await;
+        if let Some((at, r)) = cache.as_ref()
+            && at.elapsed() < Duration::from_secs(600)
+        {
+            return Ok(r.clone());
+        }
+        let fresh = tokio::task::spawn_blocking(crate::adapters::releases::fetch)
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+        *cache = Some((std::time::Instant::now(), fresh.clone()));
+        Ok(fresh)
     }
 
     pub fn update_settings(&self, new: Settings) -> Result<Settings, UpdateError> {
@@ -87,6 +110,8 @@ pub struct NewTask<'a> {
     pub interactive: bool,
     /// `None` uses the model from the settings.
     pub model: Option<Model>,
+    /// `None` keeps the Claude Code version of the VM image.
+    pub claude_version: Option<ClaudeVersion>,
 }
 
 /// Validates the request, queues the task and starts its supervisor.
@@ -106,7 +131,9 @@ pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError
 
     let id = TaskId::generate(SystemTime::now(), random_bytes());
     let model = req.model.unwrap_or(ctx.settings.get().model);
-    ctx.store.insert(TaskRecord::new(id.clone(), repo, prompt, base_sha, req.interactive).with_model(model));
+    let mut record = TaskRecord::new(id.clone(), repo, prompt, base_sha, req.interactive).with_model(model);
+    record.claude_version = req.claude_version.map(|v| v.as_str().to_owned());
+    ctx.store.insert(record);
     tokio::spawn(run(ctx.clone(), id.clone()));
     Ok(id)
 }
@@ -144,6 +171,7 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
         timeout_s: settings.timeout_s,
         interactive: record.interactive,
         model: record.model.cli_name().map(str::to_owned),
+        claude_version: record.claude_version.clone(),
     })
     .map_err(|e| format!("task.json: {e}"))?;
     let token = ctx.keychain.read_token().map_err(|e| e.to_string())?;

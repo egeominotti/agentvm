@@ -24,6 +24,8 @@ pub struct TaskRecord {
     /// Last activity reported by the Claude Code hooks (`working`, `waiting`).
     pub activity: Option<String>,
     pub model: Model,
+    /// Claude Code version installed at boot instead of the image's one.
+    pub claude_version: Option<String>,
     /// Latest telemetry sample and the last `HISTORY` CPU and memory percentages.
     pub metrics: Option<VmMetrics>,
     pub cpu_history: VecDeque<f32>,
@@ -45,7 +47,8 @@ impl TaskRecord {
             interactive,
             state: TaskState::Queued,
             activity: None,
-            model: Model::Default,
+            model: Model::default_choice(),
+            claude_version: None,
             metrics: None,
             cpu_history: VecDeque::with_capacity(HISTORY),
             mem_history: VecDeque::with_capacity(HISTORY),

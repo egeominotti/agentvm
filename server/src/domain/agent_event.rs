@@ -8,7 +8,7 @@ const SUMMARY_MAX: usize = 300;
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AgentEvent {
-    Init { model: String },
+    Init { model: String, claude_code_version: String },
     Text { text: String },
     ToolUse { name: String, summary: String },
     ToolResult { is_error: bool, summary: String },
@@ -25,7 +25,9 @@ pub fn parse_line(line: &str) -> Vec<AgentEvent> {
     };
     let s = |v: &Value| v.as_str().unwrap_or_default().to_owned();
     match (v["type"].as_str(), v["subtype"].as_str()) {
-        (Some("system"), Some("init")) => vec![AgentEvent::Init { model: s(&v["model"]) }],
+        (Some("system"), Some("init")) => {
+            vec![AgentEvent::Init { model: s(&v["model"]), claude_code_version: s(&v["claude_code_version"]) }]
+        }
         (Some("system"), Some("api_retry")) => {
             vec![AgentEvent::Retry { attempt: v["attempt"].as_u64().unwrap_or(0) as u32 }]
         }

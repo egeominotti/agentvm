@@ -56,6 +56,17 @@ log "repo ready on $BRANCH"
 for _ in $(seq 100); do getent hosts api.anthropic.com >/dev/null && break; sleep 0.1; done
 log "network ready"
 
+# A launch can pin another Claude Code release than the image's (the version is validated by the server).
+CLAUDE_VERSION=$(jq -r '.claude_version // empty' "$JOB/task.json")
+if [ -n "$CLAUDE_VERSION" ]; then
+  log "installing Claude Code $CLAUDE_VERSION"
+  if ! env -i HOME=/root PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin "$CLAUDE" install "$CLAUDE_VERSION" >> "$JOB/job.log" 2>&1; then
+    write_result failed -1 0 "claude_install_failed: $CLAUDE_VERSION"
+    exit 0
+  fi
+  log "Claude Code $("$CLAUDE" --version 2>/dev/null)"
+fi
+
 # Commits whatever is left and bundles the commits since $BASE; sets COMMITS.
 save_work() {
   # If the agent switched branches, the work that matters is on HEAD: bring it back to $BRANCH.

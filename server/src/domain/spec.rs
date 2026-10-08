@@ -15,4 +15,7 @@ pub struct TaskSpec {
     /// Value for `claude --model`; absent to let Claude Code decide.
     #[serde(default)]
     pub model: Option<String>,
+    /// Claude Code version to install at boot (`latest`, `stable` or `x.y.z`); absent keeps the image's.
+    #[serde(default)]
+    pub claude_version: Option<String>,
 }

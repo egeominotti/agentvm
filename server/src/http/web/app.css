@@ -81,7 +81,9 @@ kbd { font-family: var(--ui); font-size: 11px; opacity: .7; margin-left: 6px; }
 .field .opt { color: var(--ink-3); font-weight: 400; opacity: .7; }
 .field.repo { flex: 1; min-width: 240px; }
 .field.task { flex-basis: 100%; }
-.field.model { width: 150px; }
+.field.model { width: 190px; }
+.field.version { width: 170px; }
+#model-custom { margin-top: 6px; }
 .launcher input, .launcher textarea, .launcher select, .settings input, .settings select {
   background: var(--raised); border: 1px solid var(--line-2); border-radius: 8px; padding: 7px 10px; width: 100%;
 }
@@ -254,6 +256,8 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .field-error:empty { display: none; }
 .set { display: grid; gap: 7px; }
 .set > label, .slider-head label { font-size: 12.5px; color: var(--ink-2); font-weight: 540; }
+.settings select { background: var(--raised); border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 11px; width: 100%; }
+.set.narrow { max-width: 360px; }
 .settings input:not([type="range"]) { background: var(--raised); border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 11px; width: 100%; }
 .settings input:not([type="range"]):focus { border-color: var(--brand); outline: none; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
@@ -282,6 +286,7 @@ input[type="range"] { width: 100%; accent-color: var(--brand); height: 22px; }
 .budget.over .budget-legend .fit { color: var(--fail); }
 
 .choices { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.choices + input { max-width: 420px; }
 .choices button { display: grid; gap: 3px; text-align: left; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--raised); cursor: pointer; }
 .choices button:hover { border-color: var(--ink-3); }
 .choices button b { font-weight: 600; }

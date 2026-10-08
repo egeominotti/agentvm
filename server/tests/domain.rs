@@ -50,6 +50,7 @@ fn task_spec_roundtrips_hostile_prompt() {
         timeout_s: 1800,
         interactive: false,
         model: None,
+        claude_version: None,
     };
     let json = serde_json::to_string(&spec).unwrap();
     let back: TaskSpec = serde_json::from_str(&json).unwrap();
@@ -206,7 +207,7 @@ fn guest_result_parses_guest_json() {
 #[test]
 fn parses_real_stream() {
     let events: Vec<AgentEvent> = include_str!("fixtures/stream-hello.jsonl").lines().flat_map(parse_line).collect();
-    assert!(matches!(&events[0], AgentEvent::Init { model } if model == "claude-sonnet-5-5"));
+    assert!(matches!(&events[0], AgentEvent::Init { model, claude_code_version } if model == "claude-sonnet-5-5" && claude_code_version == "2.1.294"));
     assert!(events.iter().any(|e| matches!(e, AgentEvent::ToolUse { name, summary } if name == "Bash" && summary.contains("hello.txt"))));
     assert!(events.iter().any(|e| matches!(e, AgentEvent::ToolResult { is_error: false, summary } if summary.contains("aarch64"))));
     assert!(events.iter().any(|e| matches!(e, AgentEvent::Text { text } if text.contains("hello.txt"))));
@@ -261,13 +262,13 @@ fn limits() -> HostLimits {
 
 #[test]
 fn default_settings_are_valid() {
-    let s = Settings { max_vms: 4, cpus: 4, memory_mb: 4096, timeout_s: 1800, model: Model::Default, default_repo: None };
+    let s = Settings { max_vms: 4, cpus: 4, memory_mb: 4096, timeout_s: 1800, model: Model::default_choice(), default_repo: None, claude_version: Default::default() };
     assert!(s.validate(&limits()).is_ok());
 }
 
 #[test]
 fn settings_reject_out_of_range_values() {
-    let ok = Settings { max_vms: 4, cpus: 4, memory_mb: 4096, timeout_s: 1800, model: Model::Default, default_repo: None };
+    let ok = Settings { max_vms: 4, cpus: 4, memory_mb: 4096, timeout_s: 1800, model: Model::default_choice(), default_repo: None, claude_version: Default::default() };
     for bad in [
         Settings { max_vms: 0, ..ok.clone() },
         Settings { cpus: 0, ..ok.clone() },
@@ -288,10 +289,15 @@ fn recommended_vms_fit_in_ram() {
 
 #[test]
 fn model_maps_to_cli_flag() {
-    assert_eq!(Model::Default.cli_name(), None);
-    assert_eq!(Model::Opus.cli_name(), Some("opus"));
+    assert_eq!(Model::default_choice().cli_name(), None);
+    for ok in ["opus", "sonnet[1m]", "opusplan", "fable", "claude-opus-5-5", "claude-haiku-5-5"] {
+        assert_eq!(Model::parse(ok).unwrap().cli_name(), Some(ok));
+    }
+    for bad in ["", "Opus", "opus; rm -rf /", "--dangerous", "a b"] {
+        assert!(Model::parse(bad).is_err(), "{bad}");
+    }
     let m: Model = serde_json::from_str("\"haiku\"").unwrap();
-    assert_eq!(m, Model::Haiku);
+    assert_eq!(m.as_str(), "haiku");
 }
 
 #[test]
@@ -305,4 +311,24 @@ fn vm_metrics_parse_guest_json() {
     .unwrap();
     assert_eq!(m.top[0].name, "cargo");
     assert_eq!(m.cpus, 4);
+}
+
+#[test]
+fn claude_version_accepts_channels_and_semver_only() {
+    use agentvm::domain::settings::ClaudeVersion;
+    for ok in ["latest", "stable", "2.1.294", "2.2.0-beta.1"] {
+        assert_eq!(ClaudeVersion::parse(ok).unwrap().as_str(), ok);
+    }
+    for bad in ["", "2.1", "v2.1.0", "latest; rm -rf /", "2.1.0 --evil", "../../x"] {
+        assert!(ClaudeVersion::parse(bad).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn settings_without_claude_version_default_to_latest() {
+    let s: Settings = serde_json::from_str(
+        r#"{"max_vms":4,"cpus":4,"memory_mb":4096,"timeout_s":1800,"model":"default","default_repo":null}"#,
+    )
+    .unwrap();
+    assert_eq!(s.claude_version.as_str(), "latest");
 }

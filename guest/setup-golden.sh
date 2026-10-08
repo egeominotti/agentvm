@@ -7,7 +7,8 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq git curl ca-certificates ripgrep jq build-essential tmux python3-pip python3-venv >/dev/null
 # Claude Code for root: inside the VM the agent has full permissions (the VM is the sandbox).
-HOME=/root bash -c 'curl -fsSL https://claude.ai/install.sh | bash'
+VERSION=$(cat "$SRC/claude-version" 2>/dev/null || echo latest)
+HOME=/root bash -c "curl -fsSL https://claude.ai/install.sh | bash -s '$VERSION'"
 /root/.local/bin/claude --version
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> /root/.bashrc
 

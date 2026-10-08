@@ -74,7 +74,7 @@ impl GoldenService {
     }
 
     /// Runs `scripts/build-golden.sh` in the background; new VMs use the new image once it is done.
-    pub fn rebuild(&self) -> Result<(), GoldenError> {
+    pub fn rebuild(&self, claude_version: &str) -> Result<(), GoldenError> {
         let mut state = self.state.lock().unwrap();
         if state.running {
             return Err(GoldenError::AlreadyRunning);
@@ -84,6 +84,7 @@ impl GoldenService {
         let err = log.try_clone().map_err(|e| GoldenError::Spawn("log".into(), e))?;
         let mut child = tokio::process::Command::new(&self.script)
             .env("AGENTVM_HOME", &self.home)
+            .env("AGENTVM_CLAUDE_VERSION", claude_version)
             .stdin(Stdio::null())
             .stdout(log)
             .stderr(err)

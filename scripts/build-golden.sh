@@ -26,6 +26,10 @@ rm -rf "${BUILD:?}"
 mkdir -p "$BUILD/share" "$BUILD/seed"
 chmod 777 "$BUILD/share"
 cp -R guest/agentvm-job guest/agentvm-pty guest/agentvm-metrics guest/agentvm-claude guest/config guest/agentvm.service guest/10-agentvm.network guest/setup-golden.sh "$BUILD/share/"
+CLAUDE_VERSION=${AGENTVM_CLAUDE_VERSION:-latest}
+[[ "$CLAUDE_VERSION" =~ ^(latest|stable|[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?)$ ]] || { echo "invalid AGENTVM_CLAUDE_VERSION: $CLAUDE_VERSION" >&2; exit 1; }
+printf '%s' "$CLAUDE_VERSION" > "$BUILD/share/claude-version"
+echo "Claude Code version for the image: $CLAUDE_VERSION"
 cp guest/golden-user-data.yaml "$BUILD/seed/user-data"
 printf 'instance-id: agentvm-golden-%s\nlocal-hostname: agentvm\n' "$(date +%s)" > "$BUILD/seed/meta-data"
 hdiutil makehybrid -quiet -iso -joliet -default-volume-name cidata -o "$BUILD/seed.iso" "$BUILD/seed"

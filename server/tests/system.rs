@@ -301,3 +301,24 @@ fn claude_runs_as_root_with_full_permissions() {
     assert_eq!(lines.next(), Some("0"), "{perm}");
     assert!(perm.contains("install ok installed"), "{perm}");
 }
+
+#[test]
+#[ignore = "needs golden, token, Claude and the network"]
+fn a_launch_can_pin_another_claude_code_version() {
+    let server = start_server();
+    let releases = get_json(&format!("{}/api/claude/versions", server.base));
+    // An older release than the image's (the image follows "latest").
+    let latest = releases["latest"].as_str().unwrap().to_owned();
+    let other = releases["versions"].as_array().unwrap().iter().filter_map(|v| v.as_str()).find(|v| *v != latest).unwrap().to_owned();
+    let repo = temp_repo();
+    let created = post_json(
+        &format!("{}/api/tasks", server.base),
+        &json!({"repo_path": repo.path(), "claude_version": other, "prompt": "Reply with the single word ok."}),
+    );
+    let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    let task = wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(300));
+    assert_ne!(task["status"]["state"], "failed", "{task}");
+    let out = Command::new("curl").args(["-sN", "--max-time", "2", &format!("{}/api/tasks/{id}/events", server.base)]).output().unwrap();
+    let sse = String::from_utf8_lossy(&out.stdout);
+    assert!(sse.contains(&format!("\"claude_code_version\":\"{other}\"")), "wanted {other}: {sse}");
+}

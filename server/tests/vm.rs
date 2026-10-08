@@ -17,8 +17,15 @@ fn golden() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap()).join("AgentVMs/golden/disk.raw")
 }
 
+/// Unique per test: tests run in parallel and sockets share one folder.
+fn unique_id() -> TaskId {
+    static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(1);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst).to_be_bytes();
+    TaskId::generate(SystemTime::now(), [n[0] ^ 0x5a, n[1]])
+}
+
 fn workspace(tmp: &tempfile::TempDir) -> JobWorkspace {
-    let ws = JobWorkspace::create(tmp.path(), &TaskId::generate(SystemTime::now(), [1, 2])).unwrap();
+    let ws = JobWorkspace::create(tmp.path(), &unique_id()).unwrap();
     ws.clone_disk(&golden()).unwrap();
     ws
 }
@@ -40,7 +47,7 @@ fn config(ws: &JobWorkspace) -> VmConfig {
 #[ignore = "requires bin/agentvm-vm"]
 async fn helper_reports_invalid_config() {
     let tmp = tempfile::tempdir().unwrap();
-    let ws = JobWorkspace::create(tmp.path(), &TaskId::generate(SystemTime::now(), [3, 4])).unwrap();
+    let ws = JobWorkspace::create(tmp.path(), &unique_id()).unwrap();
     let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws)).unwrap();
     assert!(matches!(vm.next_event().await, Some(VmEvent::Error(m)) if m.contains("disk missing")));
     assert!(matches!(vm.wait().await, VmExit::Error(m) if m.contains("disk missing")));
@@ -104,6 +111,7 @@ async fn interactive_vm_serves_a_shell_over_vsock_and_closes_on_request() {
         timeout_s: 60,
         interactive: true,
         model: None,
+        claude_version: None,
     })
     .unwrap();
     ws.write_token(&Secret::new("sk-ant-oat01-not-a-real-token".into())).unwrap();
@@ -192,7 +200,7 @@ async fn shell_keystroke_echo_is_fast() {
     let tmp = tempfile::tempdir().unwrap();
     let ws = workspace(&tmp);
     let base = repo_with_bundle(&ws);
-    ws.write_spec(&TaskSpec { id: "t".into(), prompt: String::new(), branch: "agent/t".into(), base_sha: base, timeout_s: 60, interactive: true, model: None }).unwrap();
+    ws.write_spec(&TaskSpec { id: "t".into(), prompt: String::new(), branch: "agent/t".into(), base_sha: base, timeout_s: 60, interactive: true, model: None, claude_version: None }).unwrap();
     ws.write_token(&Secret::new("sk-ant-oat01-not-a-real-token".into())).unwrap();
     let mut cfg = config(&ws);
     cfg.pty_socket = Some(ws.pty_socket());

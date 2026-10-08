@@ -150,6 +150,56 @@ function renderHost() {
   box.replaceChildren(...kids);
 }
 
+// ---------- models and Claude Code versions ----------
+const MODELS = [
+  ["default", "Account default", "Whatever Claude Code picks"],
+  ["opus", "Opus", "Most capable"],
+  ["sonnet", "Sonnet", "Fast, great for most work"],
+  ["haiku", "Haiku", "Fastest and lightest"],
+  ["fable", "Fable", "Fable family"],
+  ["opusplan", "Opus plans, Sonnet builds", "Opus in plan mode, Sonnet otherwise"],
+  ["opus[1m]", "Opus, 1M context", "Long context window"],
+  ["sonnet[1m]", "Sonnet, 1M context", "Long context window"],
+];
+const modelLabel = id => (MODELS.find(m => m[0] === id)?.[1]) ?? id;
+function fillModelSelect(select, current) {
+  const known = MODELS.some(m => m[0] === current);
+  select.replaceChildren(
+    ...MODELS.map(([v, l]) => h("option", { value: v, selected: v === current }, l)),
+    h("option", { value: "__custom", selected: !known && !!current }, "Other model ID…"));
+}
+let releases = null;
+async function loadReleases() {
+  if (releases) return releases;
+  const r = await api("/api/claude/versions");
+  if (r.ok) releases = r.data;
+  return releases;
+}
+function versionOptions(includeImage, imageVersion, current) {
+  const opts = [];
+  if (includeImage) opts.push(h("option", { value: "" }, imageVersion ? `Image version (${imageVersion})` : "Image version"));
+  if (releases) {
+    opts.push(h("option", { value: "latest", selected: current === "latest" }, `Latest (${releases.latest})`));
+    opts.push(h("option", { value: "stable", selected: current === "stable" }, `Stable (${releases.stable})`));
+    opts.push(h("optgroup", { label: "Exact version" }, releases.versions.map(v => h("option", { value: v, selected: current === v }, v))));
+  } else {
+    for (const v of ["latest", "stable"]) opts.push(h("option", { value: v, selected: current === v }, v[0].toUpperCase() + v.slice(1)));
+    if (current && !["latest", "stable", ""].includes(current)) opts.push(h("option", { value: current, selected: true }, current));
+  }
+  return opts;
+}
+async function fillLauncherChoices() {
+  fillModelSelect($("#model"), state.settings?.settings.model ?? "default");
+  const [g] = await Promise.all([api("/api/golden"), loadReleases()]);
+  $("#claude-version").replaceChildren(...versionOptions(true, g.ok ? g.data.claude_version : null, ""));
+}
+$("#model").addEventListener("change", e => {
+  const custom = e.target.value === "__custom";
+  $("#model-custom").hidden = !custom;
+  if (custom) $("#model-custom").focus();
+});
+const chosenModel = () => ($("#model").value === "__custom" ? $("#model-custom").value.trim() : $("#model").value) || null;
+
 // ---------- launcher ----------
 const RECENT_KEY = "agentvm.recentRepos";
 const repoEl = $("#repo"), promptEl = $("#prompt");
@@ -195,6 +245,7 @@ function autosize() {
 const dialog = $("#launch-dialog");
 function openLauncher() {
   if (dialog.open) return;
+  fillLauncherChoices();
   dialog.showModal();
   (repoEl.value ? promptEl : repoEl).focus();
 }
@@ -211,13 +262,14 @@ $("#launcher").addEventListener("keydown", e => {
 $("#launcher").addEventListener("submit", async e => {
   e.preventDefault();
   const repo_path = repoEl.value.trim();
-  const model = $("#model").value || null;
+  const model = chosenModel();
+  const claude_version = $("#claude-version").value || null;
   const err = $("#form-error");
   err.hidden = true;
   $("#launch").disabled = true;
   const ids = [];
   for (const prompt of prompts()) {
-    const r = await api("/api/tasks", { method: "POST", body: { repo_path, prompt, interactive: true, model } });
+    const r = await api("/api/tasks", { method: "POST", body: { repo_path, prompt, interactive: true, model, claude_version } });
     if (!r.ok) { err.textContent = r.data?.error || "Could not launch the VM."; err.hidden = false; break; }
     ids.push(r.data.id);
   }
@@ -510,7 +562,8 @@ class FocusView {
     }
     kids.push(h("dl", { class: "kv" },
       h("dt", {}, "State"), h("dd", {}, label),
-      h("dt", {}, "Model"), h("dd", {}, t.model === "default" ? "Default" : t.model[0].toUpperCase() + t.model.slice(1)),
+      h("dt", {}, "Model"), h("dd", {}, modelLabel(t.model)),
+      h("dt", {}, "Claude Code"), h("dd", {}, t.claude_version ?? "image version"),
       h("dt", {}, "Repository"), h("dd", { title: t.repo }, repoName(t.repo)),
       h("dt", {}, "Branch"), h("dd", { title: t.branch }, t.branch),
       h("dt", {}, "From commit"), h("dd", {}, t.base_sha.slice(0, 10)),
@@ -676,14 +729,15 @@ class SettingsView {
 
   agent() {
     const s = this.draft;
-    const models = [["default", "Account default", "Whatever Claude Code picks"], ["sonnet", "Sonnet", "Fast, great for most work"], ["opus", "Opus", "Most capable, slower"], ["haiku", "Haiku", "Fastest and lightest"]];
     this.modelCards = h("div", { class: "choices", role: "radiogroup", "aria-label": "Default model" },
-      models.map(([v, name, desc]) => h("button", { type: "button", role: "radio", "data-value": v, "aria-checked": String(s.model === v), onclick: () => this.set("model", v) }, h("b", {}, name), h("span", {}, desc))));
+      MODELS.map(([v, name, desc]) => h("button", { type: "button", role: "radio", "data-value": v, "aria-checked": String(s.model === v), onclick: () => { this.customModel.value = ""; this.set("model", v); } }, h("b", {}, name), h("span", {}, desc))));
+    this.customModel = h("input", { placeholder: "Or a model ID, e.g. claude-opus-5-5", spellcheck: "false", value: MODELS.some(m => m[0] === s.model) ? "" : s.model,
+      oninput: e => { const v = e.target.value.trim(); if (v) this.set("model", v); } });
     this.timeoutIn = h("input", { type: "number", min: "1", max: "1440", value: String(Math.round(s.timeout_s / 60)), oninput: e => this.set("timeout_s", Number(e.target.value) * 60) });
     this.repoIn = h("input", { value: s.default_repo ?? "", placeholder: "~/code/my-app", spellcheck: "false", oninput: e => this.set("default_repo", e.target.value.trim() || null) });
     this.agentErr = h("p", { class: "field-error", role: "alert" });
     return [
-      h("div", { class: "set" }, h("label", {}, "Default model"), this.modelCards, h("p", { class: "hint" }, "Every launch can pick a different one.")),
+      h("div", { class: "set" }, h("label", {}, "Default model"), this.modelCards, this.customModel, h("p", { class: "hint" }, "Every launch can pick a different one. Aliases always point to the newest model of the family.")),
       h("div", { class: "pair" },
         h("div", { class: "set" }, h("label", {}, "Time limit for automatic tasks"), h("div", { class: "unit" }, this.timeoutIn, h("span", {}, "minutes")), h("p", { class: "hint" }, "Terminals never time out: you close them.")),
         h("div", { class: "set" }, h("label", {}, "Default repository"), this.repoIn, h("p", { class: "hint" }, "Prefilled in New VM."))),
@@ -714,8 +768,13 @@ class SettingsView {
     this.goldenLog = h("pre", { class: "log", hidden: true });
     this.rebuildBtn = h("button", { class: "btn", type: "button", onclick: () => this.rebuild() }, "Rebuild image");
     this.goldenMsg = h("span", { class: "msg" });
+    this.versionSelect = h("select", { onchange: e => this.set("claude_version", e.target.value) }, versionOptions(false, null, this.draft.claude_version));
+    loadReleases().then(() => this.versionSelect.replaceChildren(...versionOptions(false, null, this.draft.claude_version)));
     return [h("p", { class: "lede" }, "Every VM starts as an instant copy of this Debian 13 image with Claude Code preinstalled. Rebuild it to update Claude Code and the system packages; running VMs are not affected."),
-      this.goldenFacts, h("div", { class: "row-actions" }, this.rebuildBtn, this.goldenMsg), this.goldenLog];
+      this.goldenFacts,
+      h("div", { class: "set narrow" }, h("label", {}, "Claude Code version for the image"), this.versionSelect,
+        h("p", { class: "hint" }, "Used by the next rebuild. A single launch can still pick another version; auto-update is off inside the VMs.")),
+      h("div", { class: "row-actions" }, this.rebuildBtn, this.goldenMsg), this.goldenLog];
   }
 
   storage() {
@@ -729,6 +788,7 @@ class SettingsView {
   set(key, value) {
     this.draft[key] = value;
     if (key === "model") for (const b of this.modelCards.children) b.setAttribute("aria-checked", String(b.dataset.value === value));
+    if (key === "claude_version") this.goldenMsg.textContent = "Rebuild the image to apply the new version.";
     this.paintResources();
     this.saveState.className = "save-state pending";
     this.saveState.textContent = "Saving…";
@@ -738,7 +798,7 @@ class SettingsView {
   async save() {
     const r = await api("/api/settings", { method: "PUT", body: this.draft });
     const err = r.ok ? "" : r.data?.error || "Could not save.";
-    const resourceError = /VM|vCPU|memory/i.test(err);
+    const resourceError = /VMs|vCPU|memory/i.test(err) && !/model|Claude Code version/i.test(err);
     this.resErr.textContent = resourceError ? err : "";
     this.agentErr.textContent = err && !resourceError ? err : "";
     this.saveState.className = `save-state ${r.ok ? "ok" : "err"}`;
@@ -827,7 +887,6 @@ window.addEventListener("hashchange", route);
   await Promise.all([loadSettings(), loadStatus()]);
   await loadTasks();
   repoEl.value = recentRepos()[0] ?? "";
-  if (state.settings?.settings.model && state.settings.settings.model !== "default") $("#model").value = state.settings.settings.model;
   updateLaunch();
   route();
   setInterval(loadTasks, 1000);

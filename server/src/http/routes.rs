@@ -20,7 +20,7 @@ use crate::app::session::{self, SessionError, TerminalInput};
 use crate::app::events::StreamItem;
 use crate::app::golden::GoldenStatus;
 use crate::app::queries::{DiffError, StorageUsage, cleanup_finished_jobs, storage_usage, task_diff};
-use crate::domain::settings::Settings;
+use crate::domain::settings::{ClaudeVersion, Settings};
 use crate::secret::Secret;
 use crate::app::store::TaskRecord;
 use crate::app::supervisor::{AppCtx, NewTask, SubmitError, submit};
@@ -46,6 +46,7 @@ pub fn router(ctx: Arc<AppCtx>) -> Router {
         .route("/api/settings", get(get_settings).put(put_settings))
         .route("/api/settings/token", put(put_token))
         .route("/api/golden", get(golden_status))
+        .route("/api/claude/versions", get(claude_versions))
         .route("/api/golden/rebuild", post(golden_rebuild))
         .route("/api/storage", get(storage))
         .route("/api/storage/cleanup", post(storage_cleanup))
@@ -89,12 +90,17 @@ async fn status(State(ctx): Ctx) -> Json<Status> {
 }
 
 async fn create(State(ctx): Ctx, Json(req): Json<CreateTask>) -> Result<(StatusCode, Json<Created>), ApiError> {
+    let claude_version = match req.claude_version.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        Some(v) => Some(ClaudeVersion::parse(v).map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?),
+        None => None,
+    };
     let new = NewTask {
         repo: &req.repo_path,
         prompt: req.prompt,
         base_ref: req.base_ref.as_deref(),
         interactive: req.interactive,
         model: req.model,
+        claude_version,
     };
     let id = submit(&ctx, new).map_err(|e| {
         let code = match e {
@@ -295,7 +301,8 @@ async fn golden_status(State(ctx): Ctx) -> Json<GoldenStatus> {
 }
 
 async fn golden_rebuild(State(ctx): Ctx) -> Result<Json<GoldenStatus>, ApiError> {
-    ctx.golden.rebuild().map_err(|e| ApiError(StatusCode::CONFLICT, e.to_string()))?;
+    let version = ctx.settings.get().claude_version;
+    ctx.golden.rebuild(version.as_str()).map_err(|e| ApiError(StatusCode::CONFLICT, e.to_string()))?;
     Ok(Json(ctx.golden.status()))
 }
 
@@ -306,4 +313,8 @@ async fn storage(State(ctx): Ctx) -> Json<StorageUsage> {
 async fn storage_cleanup(State(ctx): Ctx) -> Json<serde_json::Value> {
     let removed = tokio::task::spawn_blocking(move || cleanup_finished_jobs(&ctx)).await.expect("cleanup");
     Json(serde_json::json!({ "removed": removed }))
+}
+
+async fn claude_versions(State(ctx): Ctx) -> Result<Json<crate::app::supervisor::ClaudeReleases>, ApiError> {
+    ctx.claude_releases().await.map(Json).map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e))
 }

@@ -31,12 +31,12 @@
   </div>
   <div class="field model">
     <label for="model">Model</label>
-    <select id="model" name="model">
-      <option value="">Default</option>
-      <option value="sonnet">Sonnet</option>
-      <option value="opus">Opus</option>
-      <option value="haiku">Haiku</option>
-    </select>
+    <select id="model" name="model"></select>
+    <input id="model-custom" placeholder="claude-opus-5-5" spellcheck="false" hidden>
+  </div>
+  <div class="field version">
+    <label for="claude-version">Claude Code</label>
+    <select id="claude-version" name="claude_version"><option value="">Image version</option></select>
   </div>
   <div class="field task">
     <label for="prompt">First task <span class="opt">optional</span></label>
