@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::context::AppCtx;
+use super::guest_channel::{Answer, AskError};
 use super::random::random_bytes;
 use super::record::TaskRecord;
 use super::submission::{NewTask, SubmitError, submit};
@@ -13,7 +14,12 @@ use crate::domain::settings::Model;
 use crate::domain::snapshot::{AutoSnapshots, SnapshotId, SnapshotMeta};
 use crate::domain::task::TaskState;
 
-const SYNC_TIMEOUT: Duration = Duration::from_secs(15);
+/// The guest writes its whole page cache out: tens of seconds while many VMs share the disk.
+/// Longest wait before trying a failed automatic snapshot again.
+const RETRY_MAX: Duration = Duration::from_secs(300);
+
+/// The guest writes its whole page cache out: tens of seconds while many VMs share the disk.
+const SYNC_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Debug, thiserror::Error)]
 pub enum SnapshotError {
@@ -51,6 +57,9 @@ pub async fn take_auto(ctx: &AppCtx, id: &TaskId, why: &str) -> Result<SnapshotM
 
 /// Every 15 seconds: snapshots the running terminals whose interval has elapsed.
 pub async fn run_schedule(ctx: Arc<AppCtx>) {
+    // A VM whose last automatic snapshot failed (busy, slow to flush) is left alone for a while,
+    // instead of being asked again every 15 seconds.
+    let mut failed: std::collections::HashMap<TaskId, tokio::time::Instant> = Default::default();
     loop {
         tokio::time::sleep(Duration::from_secs(15)).await;
         let policy = ctx.settings.get().auto_snapshots;
@@ -67,10 +76,16 @@ pub async fn run_schedule(ctx: Arc<AppCtx>) {
                 .fold(None, |m: Option<f64>, t| Some(m.map_or(t, |m| m.max(t))));
             let started = record.created_at.duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(now);
             let policy = AutoSnapshots { every_min: record.auto_snapshot_min.unwrap_or(policy.every_min), ..policy };
-            if policy.due(last, started, now) {
-                let _ = take_auto(&ctx, &record.id, "auto").await;
+            let retry_after = Duration::from_secs(u64::from(policy.every_min) * 60).min(RETRY_MAX);
+            let resting = failed.get(&record.id).is_some_and(|at| at.elapsed() < retry_after);
+            if policy.due(last, started, now) && !resting {
+                match take_auto(&ctx, &record.id, "auto").await {
+                    Ok(_) => failed.remove(&record.id),
+                    Err(_) => failed.insert(record.id.clone(), tokio::time::Instant::now()),
+                };
             }
         }
+        failed.retain(|id, _| ctx.store.get(id).is_some_and(|r| r.state == TaskState::Running));
     }
 }
 
@@ -86,18 +101,13 @@ async fn take(
         return Err(SnapshotError::NotRunning);
     }
     let jobs = ctx.config.jobs();
-    let share = JobWorkspace::share_of(&jobs, id);
-    let done = share.join("sync.done");
-    let _ = std::fs::remove_file(&done);
-    crate::adapters::jobdir::write_request(&share, "sync.request")?;
-    let t0 = tokio::time::Instant::now();
-    while !done.exists() {
-        if t0.elapsed() > SYNC_TIMEOUT {
-            return Err(SnapshotError::SyncTimeout);
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
+    let not_running = || ctx.store.get(id).is_none_or(|r| r.state != TaskState::Running);
+    match ctx.guest.ask(&jobs, id, "sync", &["sync.done"], SYNC_TIMEOUT, not_running).await {
+        Ok(Answer::Reply { .. }) => {}
+        Ok(Answer::Gone) => return Err(SnapshotError::NotRunning),
+        Err(AskError::Timeout) => return Err(SnapshotError::SyncTimeout),
+        Err(AskError::Io(e)) => return Err(SnapshotError::Io(e)),
     }
-    let _ = std::fs::remove_file(&done);
 
     let now = SystemTime::now();
     let title = title(&record, now);

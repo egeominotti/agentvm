@@ -6,8 +6,9 @@ use std::time::Duration;
 use serde_json::Value;
 
 use super::context::AppCtx;
+use super::guest_channel::{Answer, AskError};
 use crate::adapters::git::Git;
-use crate::adapters::jobdir::{JobWorkspace, write_request};
+use crate::adapters::jobdir::JobWorkspace;
 use crate::adapters::pty::PtyConnection;
 
 /// Terminal types exposed to HTTP through `app`.
@@ -17,7 +18,8 @@ use crate::domain::save::SaveReply;
 use crate::domain::task::TaskState;
 use crate::guestfs;
 
-const SAVE_TIMEOUT: Duration = Duration::from_secs(60);
+/// A save commits and bundles the whole checkout: minutes on a big repository on a busy Mac.
+const SAVE_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
@@ -66,25 +68,19 @@ pub async fn open_terminal(
 pub async fn save(ctx: &AppCtx, id: &TaskId) -> Result<Saved, SessionError> {
     let record = running_terminal(ctx, id)?;
     let jobs = ctx.config.jobs();
-    let share = JobWorkspace::share_of(&jobs, id);
-    let done = share.join("save.done");
-    let _ = std::fs::remove_file(&done);
-    write_request(&share, "save.request").map_err(|e| SessionError::SaveFailed(e.to_string()))?;
-
-    let t0 = tokio::time::Instant::now();
-    let commits = loop {
-        // Partial JSON means the guest is still writing: look again on the next round.
-        if let Some(reply) = guestfs::read(&done, 4096).and_then(|b| SaveReply::parse(&b)) {
-            let _ = std::fs::remove_file(&done);
-            match reply {
-                SaveReply::Saved { commits } => break commits,
-                SaveReply::Failed(e) => return Err(SessionError::SaveFailed(e)),
-            }
+    let not_running = || ctx.store.get(id).is_none_or(|r| r.state != TaskState::Running);
+    let answer = ctx.guest.ask(&jobs, id, "save", &["save.done"], SAVE_TIMEOUT, not_running).await;
+    let reply = match answer {
+        Ok(Answer::Reply { bytes, .. }) => {
+            SaveReply::parse(&bytes).ok_or_else(|| SessionError::SaveFailed("unreadable reply".into()))?
         }
-        if t0.elapsed() > SAVE_TIMEOUT {
-            return Err(SessionError::SaveFailed("the VM did not respond in time".into()));
-        }
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        Ok(Answer::Gone) => return Err(SessionError::NotRunning),
+        Err(AskError::Timeout) => return Err(SessionError::SaveFailed("the VM did not respond in time".into())),
+        Err(e) => return Err(SessionError::SaveFailed(e.to_string())),
+    };
+    let commits = match reply {
+        SaveReply::Saved { commits } => commits,
+        SaveReply::Failed(e) => return Err(SessionError::SaveFailed(e)),
     };
     let mut branch = id.branch();
     if commits > 0 {
@@ -111,7 +107,7 @@ pub struct Saved {
 }
 
 /// Longest wait for the guest's final save before telling the user the VM is still closing.
-const CLOSE_TIMEOUT: Duration = Duration::from_secs(120);
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Final save and shutdown. Returns once the VM is going away (the supervisor then collects the
 /// outcome as for any task), or why it stays up: its final save failed and nothing is lost. Runs
@@ -129,26 +125,19 @@ async fn close_and_wait(ctx: &AppCtx, id: &TaskId) -> Result<(), SessionError> {
     if ctx.settings.get().auto_snapshots.before_close {
         let _ = super::snapshots::take_auto(ctx, id, "before close").await;
     }
-    let share = JobWorkspace::share_of(&ctx.config.jobs(), id);
-    let failed = share.join("close.failed");
-    let _ = std::fs::remove_file(&failed);
-    write_request(&share, "close.request").map_err(|e| SessionError::Unreachable(e.to_string()))?;
-    let t0 = tokio::time::Instant::now();
-    loop {
-        // Partial JSON means the guest is still writing: look again on the next round.
-        if let Some(reply) = guestfs::read(&failed, 4096).and_then(|b| serde_json::from_slice::<Value>(&b).ok()) {
-            let _ = std::fs::remove_file(&failed);
-            let reason = reply["error"].as_str().unwrap_or("unknown error").to_owned();
-            return Err(SessionError::CloseFailed(reason));
+    let not_running = || ctx.store.get(id).is_none_or(|r| r.state != TaskState::Running);
+    // Success has no reply: the guest saves, then powers off.
+    let answer = ctx.guest.ask(&ctx.config.jobs(), id, "close", &["close.failed"], CLOSE_TIMEOUT, not_running).await;
+    match answer {
+        Ok(Answer::Gone) => Ok(()),
+        Ok(Answer::Reply { bytes, .. }) => {
+            let reply: Value = serde_json::from_slice(&bytes).unwrap_or_default();
+            Err(SessionError::CloseFailed(reply["error"].as_str().unwrap_or("unknown error").to_owned()))
         }
-        if ctx.store.get(id).is_none_or(|r| r.state != TaskState::Running) {
-            return Ok(());
+        Err(AskError::Timeout) => {
+            Err(SessionError::Unreachable("the VM has not finished its final save yet; it closes when it does".into()))
         }
-        if t0.elapsed() > CLOSE_TIMEOUT {
-            let late = "the VM has not finished its final save yet; it closes when it does";
-            return Err(SessionError::Unreachable(late.into()));
-        }
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        Err(e) => Err(SessionError::Unreachable(e.to_string())),
     }
 }
 

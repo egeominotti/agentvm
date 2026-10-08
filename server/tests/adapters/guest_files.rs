@@ -18,7 +18,7 @@ fn host_requests_never_follow_symlinks_planted_by_the_guest() {
     std::fs::write(&victim, "precious").unwrap();
     for name in ["save.request", "sync.request", "close.request"] {
         std::os::unix::fs::symlink(&victim, ws.share().join(name)).unwrap();
-        agentvm::adapters::jobdir::write_request(&ws.share(), name).unwrap();
+        agentvm::adapters::jobdir::write_request(&ws.share(), name, "t1").unwrap();
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "precious", "{name} followed the symlink");
         assert!(std::fs::symlink_metadata(ws.share().join(name)).unwrap().is_file());
     }

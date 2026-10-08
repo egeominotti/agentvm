@@ -5,6 +5,7 @@ mod collect;
 pub mod context;
 pub mod events;
 pub mod golden;
+pub mod guest_channel;
 mod launch;
 pub mod ports;
 pub mod proxy;

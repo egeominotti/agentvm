@@ -39,14 +39,20 @@ pub fn read_prefix(path: &Path, max: u64) -> Option<Vec<u8>> {
     Some(buf)
 }
 
-/// Creates an empty `path` for the guest to see. Whatever the guest left there is removed first
-/// (a symlink goes away itself, its target is untouched), and the new file is never followed.
+/// Creates an empty `path` for the guest to see (see `create_with`).
 pub fn create_empty(path: &Path) -> io::Result<()> {
+    create_with(path, b"")
+}
+
+/// Creates `path` holding `bytes` for the guest to see. Whatever the guest left there is removed
+/// first (a symlink goes away itself, its target is untouched), and the new file is never followed.
+pub fn create_with(path: &Path, bytes: &[u8]) -> io::Result<()> {
     match fs::remove_file(path) {
         Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
         _ => {}
     }
-    OpenOptions::new().write(true).create_new(true).custom_flags(O_NOFOLLOW).open(path).map(drop)
+    let mut file = OpenOptions::new().write(true).create_new(true).custom_flags(O_NOFOLLOW).open(path)?;
+    std::io::Write::write_all(&mut file, bytes)
 }
 
 /// Copies a regular file the guest produced to a place only the host controls.

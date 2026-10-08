@@ -47,7 +47,7 @@ async fn guest_disk_flushes_are_cheap() {
         .and_then(|n| n.parse().ok())
         .unwrap_or_else(|| panic!("{out:?}"));
     eprintln!("2000 synchronous writes: {ms} ms");
-    agentvm::adapters::jobdir::write_request(&ws.share(), "close.request").unwrap();
+    agentvm::adapters::jobdir::write_request(&ws.share(), "close.request", "t1").unwrap();
     let _ = tokio::time::timeout(Duration::from_secs(30), vm.wait()).await;
     assert!(ms < 3000, "2000 synchronous 4 KB writes took {ms} ms");
 }
@@ -107,6 +107,6 @@ async fn idle_memory_goes_back_to_the_mac_and_returns_on_demand() {
         assert!(t0.elapsed() < Duration::from_secs(30), "the memory never came back");
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    agentvm::adapters::jobdir::write_request(&ws.share(), "close.request").unwrap();
+    agentvm::adapters::jobdir::write_request(&ws.share(), "close.request", "t1").unwrap();
     let _ = tokio::time::timeout(Duration::from_secs(30), vm.wait()).await;
 }

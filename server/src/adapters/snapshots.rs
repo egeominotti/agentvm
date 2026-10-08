@@ -48,8 +48,9 @@ impl SnapshotStore {
         // and the cleanup below only ever removes the folder this call created.
         fs::create_dir(&dir)?;
         let result = (|| {
-            // The guest flushed its cache; make sure the host has written it to the file too.
-            fs::File::open(disk)?.sync_all()?;
+            // The guest flushed its cache; make sure the host has written it to the file too
+            // (what the clone sees), without a full-drive flush that would stall every VM.
+            crate::atomic_file::sync_file(&fs::File::open(disk)?)?;
             clone(disk, &self.disk(&meta.id))?;
             fs::copy(efivars, self.efivars(&meta.id))?;
             let saved = SnapshotMeta { size_mb: allocated_mb(&dir), ..meta.clone() };

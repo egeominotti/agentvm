@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 use super::golden::GoldenService;
+use super::guest_channel::GuestChannel;
 use super::ports::PortForwards;
 use super::scheduler::Scheduler;
 use super::settings::{SettingsService, UpdateError};
@@ -30,6 +31,8 @@ pub struct AppCtx {
     pub golden: GoldenService,
     pub snapshots: SnapshotStore,
     pub forwards: PortForwards,
+    /// Requests to running VMs (save, flush, close), one at a time per VM.
+    pub guest: GuestChannel,
     releases: Mutex<Option<(Instant, Releases)>>,
 }
 
@@ -57,6 +60,7 @@ impl AppCtx {
             settings,
             snapshots: SnapshotStore::new(config.home.join("snapshots")),
             forwards: Default::default(),
+            guest: Default::default(),
             releases: Mutex::new(None),
             config,
         }

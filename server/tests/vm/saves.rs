@@ -11,7 +11,7 @@ use crate::helpers::{KillVms, config, helper, repo_with_bundle, shell, workspace
 async fn save_reply(ws: &JobWorkspace) -> agentvm::domain::save::SaveReply {
     let done = ws.share().join("save.done");
     let _ = std::fs::remove_file(&done);
-    agentvm::adapters::jobdir::write_request(&ws.share(), "save.request").unwrap();
+    agentvm::adapters::jobdir::write_request(&ws.share(), "save.request", "t1").unwrap();
     let t0 = Instant::now();
     loop {
         if let Some(r) = agentvm::guestfs::read(&done, 4096).and_then(|b| agentvm::domain::save::SaveReply::parse(&b)) {
@@ -77,7 +77,7 @@ async fn saves_survive_git_failures_in_the_guest() {
     );
 
     shell(&sock, "rm -f /root/work/.git/index.lock").await;
-    agentvm::adapters::jobdir::write_request(&ws.share(), "close.request").unwrap();
+    agentvm::adapters::jobdir::write_request(&ws.share(), "close.request", "t1").unwrap();
     assert_eq!(tokio::time::timeout(Duration::from_secs(40), vm.wait()).await.unwrap(), VmExit::Clean);
     assert_eq!(ws.read_result().expect("result.json").commits, 2);
 }

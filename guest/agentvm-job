@@ -141,6 +141,10 @@ save_work() {
   log "commits $COMMITS${SAVE_ERROR:+ ($SAVE_ERROR)}"
 }
 
+# The id the host put in a request (letters, digits, dashes), echoed in the reply so the host
+# never takes a late answer to an earlier request for the current one.
+request_id() { tr -cd 'a-zA-Z0-9-' < "$JOB/$1" 2>/dev/null | head -c 64; }
+
 # Atomic: the host must never read a half-written answer.
 reply() { # file json
   printf '%s' "$2" > "$JOB/$1.tmp" && mv -f "$JOB/$1.tmp" "$JOB/$1"
@@ -166,22 +170,26 @@ if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
   while true; do
     if [ -e "$JOB/sync.request" ]; then
       # Snapshot: flush everything to the disk image before the host clones it.
+      REQ=$(request_id sync.request)
       rm -f "$JOB/sync.request"
       sync
-      touch "$JOB/sync.done"
+      reply sync.done "$(jq -nc --arg id "$REQ" '{id:$id}')"
     fi
     if [ -e "$JOB/save.request" ]; then
+      REQ=$(request_id save.request)
       rm -f "$JOB/save.request"
       save_work
-      reply save.done "$(jq -nc --argjson c "$COMMITS" --arg e "$SAVE_ERROR" '{commits:$c} + (if $e == "" then {} else {error:$e} end)')"
+      reply save.done "$(jq -nc --arg id "$REQ" --argjson c "$COMMITS" --arg e "$SAVE_ERROR" \
+        '{id:$id, commits:$c} + (if $e == "" then {} else {error:$e} end)')"
     fi
     if [ -e "$JOB/close.request" ]; then
       log "close requested"
+      REQ=$(request_id close.request)
       save_work
       if [ -z "$SAVE_ERROR" ]; then break; fi
       # The final save failed: stay up so nothing is lost, and tell the host why.
       rm -f "$JOB/close.request"
-      reply close.failed "$(jq -nc --arg e "$SAVE_ERROR" '{error:$e}')"
+      reply close.failed "$(jq -nc --arg id "$REQ" --arg e "$SAVE_ERROR" '{id:$id, error:$e}')"
     fi
     sleep 0.3
   done

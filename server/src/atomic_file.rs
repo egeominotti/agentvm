@@ -10,9 +10,9 @@ unsafe extern "C" {
     fn fsync(fd: std::ffi::c_int) -> std::ffi::c_int;
 }
 
-/// Plain fsync: the data reaches the drive before the rename makes it visible. (Rust's
-/// `sync_all` is a full-drive flush on macOS: far slower, and it stalls every VM's disk.)
-fn flush(file: &std::fs::File) -> std::io::Result<()> {
+/// Plain fsync: the file's data reaches the drive. (Rust's `sync_all` is a full-drive flush on
+/// macOS, F_FULLFSYNC: far slower, and it stalls the disk of every VM on the Mac meanwhile.)
+pub fn sync_file(file: &std::fs::File) -> std::io::Result<()> {
     // SAFETY: a valid open descriptor for the duration of the call.
     if unsafe { fsync(file.as_raw_fd()) } == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
 }
@@ -28,10 +28,10 @@ pub fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let result = (|| {
         let mut file = std::fs::File::create(&tmp)?;
         file.write_all(bytes)?;
-        flush(&file)?;
+        sync_file(&file)?;
         std::fs::rename(&tmp, path)?;
         // The rename itself is in the folder: flush it too, so it survives a crash.
-        std::fs::File::open(dir).and_then(|d| flush(&d))
+        std::fs::File::open(dir).and_then(|d| sync_file(&d))
     })();
     if result.is_err() {
         let _ = std::fs::remove_file(&tmp);
