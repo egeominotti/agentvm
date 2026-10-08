@@ -138,7 +138,7 @@ pub struct TaskDto {
 impl From<TaskRecord> for TaskDto {
     fn from(r: TaskRecord) -> Self {
         TaskDto {
-            branch: r.id.branch(),
+            branch: r.branch(),
             id: r.id.to_string(),
             repo: r.repo.as_path().display().to_string(),
             prompt: r.prompt.map(|p| p.as_str().to_owned()).unwrap_or_default(),

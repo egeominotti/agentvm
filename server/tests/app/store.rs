@@ -158,3 +158,22 @@ fn a_task_id_already_in_use_is_refused() {
     assert!(store.try_insert(second).is_err());
     assert_eq!(store.get(&first.id).unwrap().label, None);
 }
+
+/// Work that landed on `agent/<id>-vm` (the user had commits on `agent/<id>`) is shown, diffed
+/// and merged from there, never from the branch it did not reach.
+#[test]
+fn a_finished_task_points_at_the_branch_its_work_landed_on() {
+    use agentvm::domain::outcome::Final;
+    let repo = tempfile::tempdir().unwrap();
+    let store = Store::new();
+    let rec = record(&repo);
+    let id = rec.id.clone();
+    store.insert(rec);
+    assert_eq!(store.get(&id).unwrap().branch(), id.branch(), "before it ends: its own branch");
+    for e in [TaskEvent::SlotAcquired, TaskEvent::Prepared, TaskEvent::VmStarted, TaskEvent::VmExited] {
+        store.apply(&id, e).unwrap();
+    }
+    let landed = format!("{}-vm", id.branch());
+    store.apply(&id, TaskEvent::Finished(Final::Done { commits: 1 }, landed.clone())).unwrap();
+    assert_eq!(store.get(&id).unwrap().branch(), landed);
+}

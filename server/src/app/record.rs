@@ -103,6 +103,15 @@ impl TaskRecord {
     }
 
     /// The task holds a VM slot (queued and finished tasks do not).
+    /// Where the task's work is: the branch it landed on once done (`agent/<id>-vm` when the
+    /// user had commits on `agent/<id>`), its own branch until then.
+    pub fn branch(&self) -> String {
+        match &self.state {
+            crate::domain::task::TaskState::Done { branch, .. } => branch.clone(),
+            _ => self.id.branch(),
+        }
+    }
+
     pub fn holds_vm(&self) -> bool {
         matches!(self.state, TaskState::Preparing | TaskState::Booting | TaskState::Running | TaskState::Collecting)
     }

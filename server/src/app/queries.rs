@@ -21,7 +21,7 @@ pub async fn task_diff(ctx: &AppCtx, id: &TaskId) -> Result<String, DiffError> {
     if !matches!(record.state, TaskState::Done { .. }) {
         return Err(DiffError::NoBranch);
     }
-    let branch = id.branch();
+    let branch = record.branch();
     tokio::task::spawn_blocking(move || Git::new(record.repo).diff(&record.base_sha, &branch))
         .await
         .map_err(|e| DiffError::Git(e.to_string()))?
