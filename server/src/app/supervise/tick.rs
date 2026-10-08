@@ -54,7 +54,7 @@ impl<'a> Ticker<'a> {
         self.ctx.store.record_sample(self.id, sample.clone(), self.balloon.target_mb());
         if let Some(line) = self.history.push(sample) {
             let file = crate::app::telemetry::history_file(self.ctx, self.id);
-            if let Err(e) = crate::adapters::telemetry_file::append(&file, &line) {
+            if let Err(e) = crate::jsonl::append(&file, &line) {
                 tracing::warn!(task = %self.id, error = %e, "telemetry history not written");
             }
         }

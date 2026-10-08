@@ -16,3 +16,4 @@ mod snapshot;
 mod spec;
 mod task;
 mod telemetry;
+mod transcript;

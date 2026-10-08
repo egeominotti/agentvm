@@ -84,7 +84,7 @@ fn summarize(s: &str) -> String {
 /// Longest text an event keeps (in bytes): the server holds every task's events in memory.
 pub const MAX_TEXT: usize = 16 * 1024;
 
-fn clip(s: &str) -> String {
+pub fn clip(s: &str) -> String {
     if s.len() <= MAX_TEXT {
         return s.to_owned();
     }

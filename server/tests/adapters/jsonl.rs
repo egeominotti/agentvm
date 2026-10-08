@@ -1,22 +1,22 @@
-//! A VM's telemetry history on disk, next to its job (never in the folder the guest shares).
+//! Histories next to a job: JSON lines appended and read back, never through a symlink.
 
-use agentvm::adapters::telemetry_file::{append, read};
 use agentvm::domain::telemetry::TelemetrySample;
+use agentvm::jsonl::{append, read};
 
 fn at(t: f64) -> TelemetrySample {
     TelemetrySample { at: t, cpu_pct: 1.0, ..Default::default() }
 }
 
 #[test]
-fn lines_are_appended_and_read_back_from_a_time() {
+fn lines_are_appended_and_read_back() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("telemetry.jsonl");
     for t in [10.0, 20.0, 30.0] {
         append(&path, &at(t)).unwrap();
     }
-    assert_eq!(read(&path, None).iter().map(|s| s.at).collect::<Vec<_>>(), [10.0, 20.0, 30.0]);
-    assert_eq!(read(&path, Some(15.0)).len(), 2);
-    assert!(read(&dir.path().join("none.jsonl"), None).is_empty());
+    let back: Vec<TelemetrySample> = read(&path);
+    assert_eq!(back.iter().map(|s| s.at).collect::<Vec<_>>(), [10.0, 20.0, 30.0]);
+    assert!(read::<TelemetrySample>(&dir.path().join("none.jsonl")).is_empty());
 }
 
 #[test]

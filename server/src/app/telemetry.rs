@@ -2,7 +2,6 @@
 //! life thinned to what a chart can draw.
 
 use super::context::AppCtx;
-use crate::adapters::telemetry_file;
 use crate::domain::ids::TaskId;
 use crate::domain::telemetry::{TelemetrySample, thin};
 
@@ -41,7 +40,11 @@ pub fn series(ctx: &AppCtx, id: &TaskId, range: Range) -> Result<Vec<TelemetrySa
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64());
     Ok(match range {
         Range::FiveMinutes => record.live.into_iter().collect(),
-        Range::Hour => telemetry_file::read(&history_file(ctx, id), Some(now - 3600.0)),
-        Range::All => thin(&telemetry_file::read(&history_file(ctx, id), None), MAX_POINTS),
+        Range::Hour => read(ctx, id).into_iter().filter(|s| s.at >= now - 3600.0).collect(),
+        Range::All => thin(&read(ctx, id), MAX_POINTS),
     })
+}
+
+fn read(ctx: &AppCtx, id: &TaskId) -> Vec<TelemetrySample> {
+    crate::jsonl::read(&history_file(ctx, id))
 }

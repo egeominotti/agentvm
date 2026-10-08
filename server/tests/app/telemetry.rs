@@ -42,7 +42,7 @@ fn the_history_is_served_per_range() {
     let file = home.path().join("jobs").join(id.as_str()).join("telemetry.jsonl");
     for i in 0..3000 {
         let s = TelemetrySample { at: now - 30_000.0 + f64::from(i) * 10.0, ..Default::default() };
-        agentvm::adapters::telemetry_file::append(&file, &s).unwrap();
+        agentvm::jsonl::append(&file, &s).unwrap();
     }
     let hour = series(&ctx, &id, Range::Hour).unwrap();
     assert!(hour.iter().all(|s| s.at >= now - 3600.0) && hour.len() >= 300, "{}", hour.len());

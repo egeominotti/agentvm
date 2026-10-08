@@ -14,5 +14,4 @@ pub mod server_log;
 pub mod settings_file;
 pub mod snapshots;
 pub mod tail;
-pub mod telemetry_file;
 pub mod vm;

@@ -5,6 +5,7 @@ pub mod config;
 pub mod domain;
 pub mod guestfs;
 pub mod http;
+pub mod jsonl;
 pub mod logging;
 pub mod process;
 pub mod secret;
