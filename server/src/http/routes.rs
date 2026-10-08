@@ -97,7 +97,7 @@ async fn status(State(ctx): Ctx) -> Json<Status> {
         concurrency: ctx.scheduler.concurrency(),
         running: ctx.store.running_count(),
         host: ctx.settings.limits(),
-        ram_committed_mb: ctx.store.running_count() as u64 * ctx.settings.get().memory_mb,
+        ram_committed_mb: ctx.store.committed_memory_mb(),
     })
 }
 
@@ -114,6 +114,8 @@ async fn create(State(ctx): Ctx, Json(req): Json<CreateTask>) -> Result<(StatusC
         model: req.model,
         claude_version,
         restore_from: None,
+        cpus: req.cpus,
+        memory_mb: req.memory_mb,
     };
     let id = submit(&ctx, new).map_err(|e| {
         let code = match e {

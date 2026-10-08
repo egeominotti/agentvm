@@ -39,6 +39,15 @@
     <label for="claude-version">Claude Code</label>
     <select id="claude-version" name="claude_version"><option value="">Image version</option></select>
   </div>
+  <div class="field res-cpu">
+    <label for="vm-cpus">vCPUs</label>
+    <select id="vm-cpus" name="cpus"></select>
+  </div>
+  <div class="field res-mem">
+    <label for="vm-mem">Memory</label>
+    <select id="vm-mem" name="memory_mb"></select>
+  </div>
+  <p class="res-hint" id="res-hint"></p>
   <div class="field task">
     <label for="prompt">First task <span class="opt">optional</span></label>
     <textarea id="prompt" name="prompt" rows="3" placeholder="Fix the failing test in parser.rs and commit"></textarea>

@@ -83,6 +83,10 @@ kbd { font-family: var(--ui); font-size: 11px; opacity: .7; margin-left: 6px; }
 .field.task { flex-basis: 100%; }
 .field.model { width: 190px; }
 .field.version { width: 170px; }
+.field.res-cpu { width: 110px; }
+.field.res-mem { width: 130px; }
+.res-hint { flex: 1; min-width: 200px; margin: 0 0 9px; font-size: 12px; color: var(--ink-3); align-self: flex-end; }
+.res-hint.over { color: var(--wait); }
 #model-custom { margin-top: 6px; }
 .launcher input, .launcher textarea, .launcher select, .settings input, .settings select {
   background: var(--raised); border: 1px solid var(--line-2); border-radius: 8px; padding: 7px 10px; width: 100%;

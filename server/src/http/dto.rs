@@ -25,6 +25,10 @@ pub struct CreateTask {
     pub model: Option<Model>,
     #[serde(default)]
     pub claude_version: Option<String>,
+    #[serde(default)]
+    pub cpus: Option<u32>,
+    #[serde(default)]
+    pub memory_mb: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -93,6 +97,8 @@ pub struct TaskDto {
     pub activity: Option<String>,
     pub model: Model,
     pub claude_version: Option<String>,
+    pub cpus: u32,
+    pub memory_mb: u64,
     pub metrics: Option<VmMetrics>,
     pub cpu_history: Vec<f32>,
     pub mem_history: Vec<f32>,
@@ -113,6 +119,8 @@ impl From<TaskRecord> for TaskDto {
             activity: r.activity,
             model: r.model,
             claude_version: r.claude_version,
+            cpus: r.cpus,
+            memory_mb: r.memory_mb,
             metrics: r.metrics,
             cpu_history: r.cpu_history.into(),
             mem_history: r.mem_history.into(),

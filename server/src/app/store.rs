@@ -29,6 +29,9 @@ pub struct TaskRecord {
     pub claude_version: Option<String>,
     /// Snapshot this machine was restored from.
     pub restore_from: Option<SnapshotId>,
+    /// Resources of this VM (from the launch, or the settings at launch time).
+    pub cpus: u32,
+    pub memory_mb: u64,
     /// Latest telemetry sample and the last `HISTORY` CPU and memory percentages.
     pub metrics: Option<VmMetrics>,
     pub cpu_history: VecDeque<f32>,
@@ -53,6 +56,8 @@ impl TaskRecord {
             model: Model::default_choice(),
             claude_version: None,
             restore_from: None,
+            cpus: 0,
+            memory_mb: 0,
             metrics: None,
             cpu_history: VecDeque::with_capacity(HISTORY),
             mem_history: VecDeque::with_capacity(HISTORY),
@@ -143,6 +148,11 @@ impl Store {
             }
             r.metrics = Some(m);
         }
+    }
+
+    /// Memory reserved by the VMs that hold a slot.
+    pub fn committed_memory_mb(&self) -> u64 {
+        self.tasks.lock().unwrap().values().filter(|e| e.record.holds_vm()).map(|e| e.record.memory_mb).sum()
     }
 
     pub fn running_count(&self) -> usize {

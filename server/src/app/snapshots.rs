@@ -89,6 +89,8 @@ pub fn restore(ctx: &Arc<AppCtx>, snap: &SnapshotId) -> Result<TaskId, SnapshotE
             model: Model::parse(&meta.model).ok(),
             claude_version: None,
             restore_from: Some(snap.clone()),
+            cpus: None,
+            memory_mb: None,
         },
     )?;
     Ok(id)

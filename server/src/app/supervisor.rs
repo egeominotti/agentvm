@@ -105,6 +105,8 @@ pub enum SubmitError {
     NoGolden(String),
     #[error(transparent)]
     Token(#[from] KeychainError),
+    #[error(transparent)]
+    Resources(#[from] crate::domain::settings::SettingsError),
 }
 
 pub struct NewTask<'a> {
@@ -119,10 +121,16 @@ pub struct NewTask<'a> {
     pub claude_version: Option<ClaudeVersion>,
     /// Boot from this snapshot instead of the golden image.
     pub restore_from: Option<SnapshotId>,
+    /// vCPUs and memory for this VM; `None` uses the settings.
+    pub cpus: Option<u32>,
+    pub memory_mb: Option<u64>,
 }
 
 /// Validates the request, queues the task and starts its supervisor.
 pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError> {
+    let settings = ctx.settings.get();
+    let (cpus, memory_mb) = (req.cpus.unwrap_or(settings.cpus), req.memory_mb.unwrap_or(settings.memory_mb));
+    ctx.settings.limits().check_vm(cpus, memory_mb)?;
     let repo = RepoPath::new(expand_home(req.repo))?;
     let prompt = match Prompt::new(req.prompt) {
         Ok(p) => Some(p),
@@ -141,6 +149,8 @@ pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError
     let mut record = TaskRecord::new(id.clone(), repo, prompt, base_sha, req.interactive).with_model(model);
     record.claude_version = req.claude_version.map(|v| v.as_str().to_owned());
     record.restore_from = req.restore_from;
+    record.cpus = cpus;
+    record.memory_mb = memory_mb;
     ctx.store.insert(record);
     tokio::spawn(run(ctx.clone(), id.clone()));
     Ok(id)
@@ -202,9 +212,8 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
         return apply(TaskEvent::Finished(Final::Stopped, branch));
     }
 
-    let mut vm =
-        VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &vm_config(&settings, &ws, record.interactive))
-            .map_err(|e| e.to_string())?;
+    let mut vm = VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &vm_config(&record, &ws))
+        .map_err(|e| e.to_string())?;
     let _ = ws.write_pid(vm.pid());
     let follower = Follower::start(ctx.store.log(id).ok_or("task disappeared")?, ws.stream(), token);
 
@@ -310,16 +319,16 @@ async fn wait_for_vm(
     (vm.wait().await, stop_requested, timed_out)
 }
 
-fn vm_config(settings: &Settings, ws: &JobWorkspace, interactive: bool) -> VmConfig {
+fn vm_config(record: &TaskRecord, ws: &JobWorkspace) -> VmConfig {
     VmConfig {
         disk: ws.disk(),
         efivars: ws.efivars(),
         share: ws.share(),
         console: ws.console(),
-        cpus: settings.cpus,
-        memory_mb: settings.memory_mb,
+        cpus: record.cpus,
+        memory_mb: record.memory_mb,
         seed_iso: None,
-        pty_socket: interactive.then(|| ws.pty_socket()),
+        pty_socket: record.interactive.then(|| ws.pty_socket()),
     }
 }
 

@@ -136,3 +136,19 @@ async fn invalid_settings_are_rejected_with_a_message() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().unwrap().contains("vCPU"), "{body}");
 }
+
+#[tokio::test]
+async fn launch_rejects_resources_beyond_the_mac() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir(&repo).unwrap();
+    let git = |args: &[&str]| {
+        assert!(std::process::Command::new("git").arg("-C").arg(&repo).args(args).status().unwrap().success())
+    };
+    git(&["init", "-q"]);
+    git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "i"]);
+    let body = serde_json::json!({"repo_path": repo, "interactive": true, "cpus": 999, "memory_mb": 4096});
+    let (status, body) = send(app(tmp.path()), json_req("POST", "/api/tasks", body)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"].as_str().unwrap().contains("vCPU"), "{body}");
+}

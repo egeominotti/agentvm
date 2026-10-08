@@ -459,3 +459,28 @@ fn snapshots_go_to_s3_and_come_back() {
             .any(|b| b["snapshot"]["id"] == sid.as_str())
     );
 }
+
+#[test]
+#[ignore = "needs golden and token"]
+fn launch_resources_reach_the_vm() {
+    let server = start_server();
+    let repo = temp_repo();
+    let created = post_json(
+        &format!("{}/api/tasks", server.base),
+        &json!({"repo_path": repo.path(), "interactive": true, "cpus": 2, "memory_mb": 2048}),
+    );
+    let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    let t0 = Instant::now();
+    let metrics = loop {
+        let task = get_json(&format!("{}/api/tasks/{id}", server.base));
+        if task["metrics"].is_object() {
+            break task["metrics"].clone();
+        }
+        assert!(t0.elapsed() < Duration::from_secs(60), "no telemetry: {task}");
+        std::thread::sleep(Duration::from_millis(500));
+    };
+    assert_eq!(metrics["cpus"], 2, "{metrics}");
+    let mem = metrics["mem_total_mb"].as_u64().unwrap();
+    assert!((1700..=2048).contains(&mem), "{metrics}");
+    post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
+}

@@ -188,7 +188,33 @@ function versionOptions(includeImage, imageVersion, current) {
   }
   return opts;
 }
+function fillResourceSelects() {
+  const set = state.settings;
+  if (!set) return;
+  const { cpus: hostCpus, ram_mb: hostRam } = set.limits;
+  const cpuChoices = [...new Set([1, 2, 4, 6, 8, 12, 16, hostCpus].filter(n => n <= hostCpus))].sort((a, b) => a - b);
+  const memChoices = [1024, 2048, 4096, 6144, 8192, 12288, 16384, 24576, 32768].filter(v => v <= hostRam - 8192);
+  $("#vm-cpus").replaceChildren(...cpuChoices.map(n => h("option", { value: String(n), selected: n === set.settings.cpus }, String(n))));
+  $("#vm-mem").replaceChildren(...memChoices.map(v => h("option", { value: String(v), selected: v === set.settings.memory_mb }, gb(v))));
+  updateResourceHint();
+}
+function updateResourceHint() {
+  const s = state.status, set = state.settings;
+  if (!s || !set) return;
+  const mem = Number($("#vm-mem").value || set.settings.memory_mb);
+  const free = s.host.ram_mb - 8192 - s.ram_committed_mb;
+  const n = prompts().length;
+  const fits = Math.floor(free / mem);
+  const hint = $("#res-hint");
+  hint.className = `res-hint${fits < n ? " over" : ""}`;
+  hint.textContent = fits < n
+    ? `Only ${Math.max(fits, 0)} more VM${fits === 1 ? "" : "s"} of ${gb(mem)} fit in free memory; the rest will wait or swap.`
+    : `${gb(Math.max(free, 0))} free for VMs: room for ${fits} like this.`;
+}
+$("#vm-mem").addEventListener("change", updateResourceHint);
+
 async function fillLauncherChoices() {
+  fillResourceSelects();
   fillModelSelect($("#model"), state.settings?.settings.model ?? "default");
   const [g] = await Promise.all([api("/api/golden"), loadReleases()]);
   $("#claude-version").replaceChildren(...versionOptions(true, g.ok ? g.data.claude_version : null, ""));
@@ -254,8 +280,8 @@ document.addEventListener("keydown", e => {
   if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); openLauncher(); }
 });
 dialog.addEventListener("click", e => { if (e.target === dialog) dialog.close(); });
-promptEl.addEventListener("input", () => { autosize(); updateLaunch(); });
-$("#batch").addEventListener("change", updateLaunch);
+promptEl.addEventListener("input", () => { autosize(); updateLaunch(); updateResourceHint(); });
+$("#batch").addEventListener("change", () => { updateLaunch(); updateResourceHint(); });
 $("#launcher").addEventListener("keydown", e => {
   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $("#launcher").requestSubmit(); }
 });
@@ -264,12 +290,14 @@ $("#launcher").addEventListener("submit", async e => {
   const repo_path = repoEl.value.trim();
   const model = chosenModel();
   const claude_version = $("#claude-version").value || null;
+  const cpus = Number($("#vm-cpus").value) || null;
+  const memory_mb = Number($("#vm-mem").value) || null;
   const err = $("#form-error");
   err.hidden = true;
   $("#launch").disabled = true;
   const ids = [];
   for (const prompt of prompts()) {
-    const r = await api("/api/tasks", { method: "POST", body: { repo_path, prompt, interactive: true, model, claude_version } });
+    const r = await api("/api/tasks", { method: "POST", body: { repo_path, prompt, interactive: true, model, claude_version, cpus, memory_mb } });
     if (!r.ok) { err.textContent = r.data?.error || "Could not launch the VM."; err.hidden = false; break; }
     ids.push(r.data.id);
   }
@@ -565,6 +593,7 @@ class FocusView {
       h("dt", {}, "State"), h("dd", {}, label),
       h("dt", {}, "Model"), h("dd", {}, modelLabel(t.model)),
       h("dt", {}, "Claude Code"), h("dd", {}, t.claude_version ?? "image version"),
+      h("dt", {}, "Resources"), h("dd", {}, `${t.cpus} vCPUs, ${gb(t.memory_mb)}`),
       h("dt", {}, "Repository"), h("dd", { title: t.repo }, repoName(t.repo)),
       h("dt", {}, "Branch"), h("dd", { title: t.branch }, t.branch),
       h("dt", {}, "From commit"), h("dd", {}, t.base_sha.slice(0, 10)),

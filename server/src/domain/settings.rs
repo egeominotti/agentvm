@@ -141,6 +141,17 @@ impl HostLimits {
         ((self.ram_mb.saturating_sub(HOST_RESERVE_MB)) / memory_mb.max(MIN_MEMORY_MB)).max(1) as usize
     }
 
+    /// Resources for one VM must fit this Mac.
+    pub fn check_vm(&self, cpus: u32, memory_mb: u64) -> Result<(), SettingsError> {
+        if !(1..=self.cpus).contains(&cpus) {
+            return Err(SettingsError::Cpus(self.cpus));
+        }
+        if !(MIN_MEMORY_MB..=self.max_memory_mb()).contains(&memory_mb) {
+            return Err(SettingsError::Memory(self.max_memory_mb()));
+        }
+        Ok(())
+    }
+
     pub fn max_memory_mb(&self) -> u64 {
         self.ram_mb.saturating_sub(HOST_RESERVE_MB).max(MIN_MEMORY_MB)
     }
@@ -169,12 +180,7 @@ impl Settings {
         if !(1..=MAX_VMS).contains(&self.max_vms) {
             return Err(SettingsError::MaxVms);
         }
-        if !(1..=host.cpus).contains(&self.cpus) {
-            return Err(SettingsError::Cpus(host.cpus));
-        }
-        if !(MIN_MEMORY_MB..=host.max_memory_mb()).contains(&self.memory_mb) {
-            return Err(SettingsError::Memory(host.max_memory_mb()));
-        }
+        host.check_vm(self.cpus, self.memory_mb)?;
         if !(60..=86_400).contains(&self.timeout_s) {
             return Err(SettingsError::Timeout);
         }

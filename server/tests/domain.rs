@@ -396,3 +396,14 @@ fn s3_config_is_validated() {
     assert!(S3Config { region: "".into(), ..s3("https://x.com", true) }.validate().is_err());
     assert!(S3Config { access_key: "a b".into(), ..s3("https://x.com", true) }.validate().is_err());
 }
+
+#[test]
+fn per_vm_resources_are_checked_against_the_mac() {
+    let host = limits();
+    assert!(host.check_vm(4, 4096).is_ok());
+    assert!(host.check_vm(18, 8192).is_ok());
+    assert!(host.check_vm(0, 4096).is_err());
+    assert!(host.check_vm(19, 4096).is_err());
+    assert!(host.check_vm(4, 512).is_err());
+    assert!(host.check_vm(4, 65536).is_err());
+}
