@@ -21,7 +21,7 @@ pub enum AgentEvent {
 /// (e.g. `rate_limit_event`) produce no events.
 pub fn parse_line(line: &str) -> Vec<AgentEvent> {
     let Ok(v) = serde_json::from_str::<Value>(line) else {
-        return vec![AgentEvent::Unparsed { raw: line.to_owned() }];
+        return vec![AgentEvent::Unparsed { raw: clip(line) }];
     };
     let s = |v: &Value| v.as_str().unwrap_or_default().to_owned();
     match (v["type"].as_str(), v["subtype"].as_str()) {
@@ -36,7 +36,7 @@ pub fn parse_line(line: &str) -> Vec<AgentEvent> {
             is_error: v["is_error"].as_bool().unwrap_or(true),
             duration_ms: v["duration_ms"].as_u64().unwrap_or(0),
             cost_usd: v["total_cost_usd"].as_f64().unwrap_or(0.0),
-            text: s(&v["result"]),
+            text: clip(&s(&v["result"])),
         }],
         _ => Vec::new(),
     }
@@ -47,7 +47,7 @@ fn content_blocks(content: &Value) -> Vec<AgentEvent> {
     blocks
         .iter()
         .filter_map(|b| match b["type"].as_str()? {
-            "text" => Some(AgentEvent::Text { text: b["text"].as_str()?.to_owned() }),
+            "text" => Some(AgentEvent::Text { text: clip(b["text"].as_str()?) }),
             "tool_use" => Some(AgentEvent::ToolUse {
                 name: b["name"].as_str()?.to_owned(),
                 summary: summarize(&tool_input_text(&b["input"])),
@@ -79,4 +79,18 @@ fn tool_result_text(content: &Value) -> String {
 
 fn summarize(s: &str) -> String {
     if s.chars().count() <= SUMMARY_MAX { s.to_owned() } else { s.chars().take(SUMMARY_MAX).chain(['…']).collect() }
+}
+
+/// Longest text an event keeps (in bytes): the server holds every task's events in memory.
+pub const MAX_TEXT: usize = 16 * 1024;
+
+fn clip(s: &str) -> String {
+    if s.len() <= MAX_TEXT {
+        return s.to_owned();
+    }
+    let mut end = MAX_TEXT;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &s[..end])
 }

@@ -14,6 +14,8 @@ use crate::domain::task::TaskState;
 const LIVE_CAPACITY: usize = 256;
 /// Events kept for clients that connect later; older ones are dropped.
 const HISTORY_MAX: usize = 10_000;
+/// Events a finished task keeps: enough to read how it ended, cheap for hundreds of tasks.
+pub const FINISHED_HISTORY: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
@@ -55,6 +57,14 @@ impl EventLog {
         history.push_back((seq, item.clone()));
         // Sent under the lock: a subscriber sees each event either in the history or live, never both.
         let _ = self.live.send((seq, item));
+    }
+
+    /// Keeps only the newest `keep` events (a finished task does not need them all).
+    pub fn compact(&self, keep: usize) {
+        let mut history = self.history.lock().unwrap();
+        let drop = history.len().saturating_sub(keep);
+        history.drain(..drop);
+        history.shrink_to_fit();
     }
 
     pub fn subscribe(&self) -> Snapshot {

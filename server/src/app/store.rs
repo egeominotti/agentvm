@@ -134,6 +134,9 @@ impl Store {
                 }
                 record.state = next.clone();
                 log.push(StreamItem::State(next.clone()));
+                if next.is_terminal() {
+                    log.compact(super::events::FINISHED_HISTORY);
+                }
                 (Ok(next), true)
             }
         });

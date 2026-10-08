@@ -48,3 +48,20 @@ fn agent_event_serializes_with_kind() {
     let v = serde_json::to_value(AgentEvent::Retry { attempt: 1 }).unwrap();
     assert_eq!(v, serde_json::json!({"kind": "retry", "attempt": 1}));
 }
+
+/// A tool that prints megabytes (a log, a minified file) becomes one bounded event: the server
+/// keeps events in memory for every task.
+#[test]
+fn huge_texts_are_clipped() {
+    use agentvm::domain::agent_event::{AgentEvent, MAX_TEXT, parse_line};
+    let big = "x".repeat(5 * MAX_TEXT);
+    let line = serde_json::json!({"type": "assistant", "message": {"content": [{"type": "text", "text": big}]}});
+    match &parse_line(&line.to_string())[..] {
+        [AgentEvent::Text { text }] => assert!(text.len() <= MAX_TEXT + 64 && text.ends_with('…'), "{}", text.len()),
+        other => panic!("{other:?}"),
+    }
+    match &parse_line(&"y".repeat(5 * MAX_TEXT))[..] {
+        [AgentEvent::Unparsed { raw }] => assert!(raw.len() <= MAX_TEXT + 64),
+        other => panic!("{other:?}"),
+    }
+}
