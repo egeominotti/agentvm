@@ -2,6 +2,7 @@
 //! Run with `cargo test --test system -- --ignored`.
 
 mod claude;
+mod diagnostics;
 mod helpers;
 mod ports;
 mod s3;
