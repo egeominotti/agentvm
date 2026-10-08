@@ -1,279 +1,279 @@
-# agentvm — Design dell'MVP
+# agentvm — MVP Design
 
-Data: 2026-10-08 · Stato: bozza da approvare
+Date: 2026-10-08 · Status: draft pending approval
 
-## 1. Obiettivo
+## 1. Goal
 
-Lanciare da una dashboard web locale più task per **Claude Code**, ognuno eseguito in autonomia
-completa dentro una **VM Debian 13 arm64 reale** su Apple Silicon. Il risultato di ogni task
-torna nel repo locale come branch `agent/<id>`, pronto da rivedere.
+Launch multiple **Claude Code** tasks from a local web dashboard, each running fully
+autonomously inside a **real Debian 13 arm64 VM** on Apple Silicon. The result of each task
+comes back to the local repo as an `agent/<id>` branch, ready for review.
 
-**Utente**: un solo sviluppatore, sul proprio Mac (M5 Max, 18 core, 64 GB).
+**User**: a single developer, on their own Mac (M5 Max, 18 cores, 64 GB).
 
-**Criteri di successo dell'MVP**
-1. Dalla dashboard inserisco repo locale + prompt e premo "Avvia": parte una VM e l'agente lavora.
-2. Vedo i log dell'agente dal vivo (messaggi, comandi eseguiti) nel browser.
-3. A fine task trovo `agent/<id>` nel mio repo, con il diff visibile nella dashboard.
-4. Posso lanciare almeno 4 task in parallelo senza interferenze.
-5. Posso fermare un task in corso.
-6. Il token Claude non compare mai in log, file di job o output.
-7. Nulla viene installato sull'host macOS (solo i binari del progetto e i file in `~/AgentVMs`).
+**MVP success criteria**
+1. From the dashboard I enter a local repo + prompt and press "Start": a VM boots and the agent gets to work.
+2. I see the agent's logs live (messages, commands run) in the browser.
+3. When the task finishes I find `agent/<id>` in my repo, with the diff visible in the dashboard.
+4. I can launch at least 4 tasks in parallel without interference.
+5. I can stop a running task.
+6. The Claude token never appears in logs, job files or output.
+7. Nothing is installed on the macOS host (only the project binaries and the files in `~/AgentVMs`).
 
-## 2. Cosa ha dimostrato il prototipo (2026-10-08)
+## 2. What the prototype proved (2026-10-08)
 
-| Verifica | Esito |
+| Check | Result |
 |---|---|
-| Debian 13.7 arm64 (`genericcloud`, `.raw`) avviata con Virtualization.framework, EFI | ✅ |
-| Binario firmato ad-hoc con entitlement `com.apple.security.virtualization` (nessun account Apple) | ✅ |
-| virtiofs nel kernel `6.12-cloud-arm64`, lettura/scrittura dal Mac | ✅ |
-| Claude Code 2.1.294 (installer nativo) + `claude -p` con `CLAUDE_CODE_OAUTH_TOKEN` | ✅ |
-| Immagine golden + clone APFS: clone 0,01 s, VM pronta col job 2,9 s, ciclo completo 12 s (di cui 8 s Claude) | ✅ |
+| Debian 13.7 arm64 (`genericcloud`, `.raw`) booted with Virtualization.framework, EFI | ✅ |
+| Ad-hoc signed binary with the `com.apple.security.virtualization` entitlement (no Apple account) | ✅ |
+| virtiofs in the `6.12-cloud-arm64` kernel, read/write from the Mac | ✅ |
+| Claude Code 2.1.294 (native installer) + `claude -p` with `CLAUDE_CODE_OAUTH_TOKEN` | ✅ |
+| Golden image + APFS clone: clone 0.01 s, VM ready with the job 2.9 s, full cycle 12 s (8 s of which Claude) | ✅ |
 
-**Lezioni incorporate nel design**
-- cloud-init scrive una config di rete legata al MAC della golden → i cloni restano senza rete.
-  La golden usa una config systemd-networkd generica (`Name=en*`, DHCP) e niente cloud-init a runtime.
-- `/etc/machine-id` va svuotato nella golden, altrimenti i cloni chiedono lo stesso lease DHCP.
-- `set -x` ha stampato il token in un log: gli script guest non usano mai tracing e leggono il token
-  da file, cancellandolo subito.
-- Il tempo era dominato da apt e installer: tutto va nella golden, mai a runtime.
+**Lessons built into the design**
+- cloud-init writes a network config tied to the golden's MAC → the clones end up without network.
+  The golden uses a generic systemd-networkd config (`Name=en*`, DHCP) and no cloud-init at runtime.
+- `/etc/machine-id` must be emptied in the golden, otherwise the clones request the same DHCP lease.
+- `set -x` printed the token into a log: guest scripts never use tracing and read the token
+  from a file, deleting it immediately.
+- Time was dominated by apt and installers: everything goes into the golden, never at runtime.
 
-## 3. Architettura
+## 3. Architecture
 
 ```
 Browser ──HTTP + SSE──> agentvm-server (Rust: axum + tokio)          127.0.0.1:7777
-                          ├── API REST + dashboard statica (HTML/JS incorporati, nessuna build frontend)
-                          ├── coda task + limite di concorrenza (default 4)
-                          ├── git: bundle in ingresso, fetch del bundle in uscita, diff
-                          ├── tail di stream.jsonl → eventi SSE verso il browser
-                          └── avvia 1 processo per VM ─┐
+                          ├── REST API + static dashboard (embedded HTML/JS, no frontend build)
+                          ├── task queue + concurrency limit (default 4)
+                          ├── git: inbound bundle, outbound bundle fetch, diff
+                          ├── tail of stream.jsonl → SSE events to the browser
+                          └── starts 1 process per VM ─┐
                                                        ▼
-                          agentvm-vm (Swift, ~200 righe, derivato dal prototipo)
+                          agentvm-vm (Swift, ~200 lines, derived from the prototype)
                              input : --config job.json
-                             output: eventi JSON su stdout, una riga per evento
-                             stop  : SIGTERM → stop forzato della VM
+                             output: JSON events on stdout, one line per event
+                             stop  : SIGTERM → forced VM stop
                                                        │ Virtualization.framework
                                                        ▼
-                          VM Debian 13 (clone APFS della golden)
+                          Debian 13 VM (APFS clone of the golden)
                              agentvm.service → /usr/local/bin/agentvm-job
                              /mnt/job (virtiofs) = ~/AgentVMs/jobs/<id>/share
 ```
 
-**Perché due linguaggi**: Virtualization.framework è un'API Swift/Objective-C. Il codice delle VM resta
-nativo e già verificato; Rust gestisce server, concorrenza e git. Ogni VM è un processo separato,
-quindi il crash di una VM non ferma il server né le altre VM. Solo `agentvm-vm` richiede l'entitlement.
+**Why two languages**: Virtualization.framework is a Swift/Objective-C API. The VM code stays
+native and already verified; Rust handles the server, concurrency and git. Each VM is a separate process,
+so a VM crash stops neither the server nor the other VMs. Only `agentvm-vm` needs the entitlement.
 
-### 3.1 Componenti
+### 3.1 Components
 
-| Unità | Linguaggio | Responsabilità | Dipende da |
+| Unit | Language | Responsibility | Depends on |
 |---|---|---|---|
-| `vm-helper/` → `agentvm-vm` | Swift | Avvia e ferma una VM dato un config JSON; emette eventi | Virtualization.framework |
-| `server/` → `agentvm-server` | Rust | API, dashboard, coda, ciclo di vita del task, git | `agentvm-vm`, `git` CLI, `security` CLI |
-| `guest/` | Bash + systemd | Script e unit installati nella golden: esegue il job nella VM | Claude Code, git |
-| `scripts/build.sh` | Bash | Compila Rust + Swift, firma `agentvm-vm` | cargo, swiftc, codesign |
-| `scripts/build-golden.sh` | Bash | Scarica Debian, verifica SHA512, crea la golden con cloud-init (una volta) | `agentvm-vm`, `hdiutil`, curl |
+| `vm-helper/` → `agentvm-vm` | Swift | Starts and stops a VM given a JSON config; emits events | Virtualization.framework |
+| `server/` → `agentvm-server` | Rust | API, dashboard, queue, task lifecycle, git | `agentvm-vm`, `git` CLI, `security` CLI |
+| `guest/` | Bash + systemd | Scripts and units installed in the golden: runs the job in the VM | Claude Code, git |
+| `scripts/build.sh` | Bash | Compiles Rust + Swift, signs `agentvm-vm` | cargo, swiftc, codesign |
+| `scripts/build-golden.sh` | Bash | Downloads Debian, verifies SHA512, creates the golden with cloud-init (once) | `agentvm-vm`, `hdiutil`, curl |
 
-### 3.2 Principi architetturali
+### 3.2 Architectural principles
 
-1. **Functional core, imperative shell.** Le decisioni (transizioni di stato, interpretazione di
-   `result.json`, parsing degli eventi di Claude, costruzione dei comandi git) sono funzioni pure su
-   dati. L'I/O (processi, file, git, rete) sta in un guscio sottile che esegue le decisioni prese
-   dal core. Il core si testa con dati reali, senza sostituti.
-2. **Dipendenze in una sola direzione**: `http → app → domain`. Gli adapter (`vm`, `git`,
-   `keychain`, `jobdir`) sono usati da `app` e non conoscono né HTTP né gli altri adapter.
-   `domain` non dipende da nulla del progetto e non fa I/O.
-3. **Nessuna astrazione per il solo testing.** Un trait esiste solo se ci sono davvero due
-   implementazioni in produzione. Gli adapter sono `struct` concrete. I test usano le implementazioni
-   vere (vedi §10).
-4. **Stati invalidi non rappresentabili.** Newtype per `TaskId`, `CommitSha`, `RepoPath` (validato
-   alla costruzione: è un repo git) e `Prompt` (non vuoto). Lo stato del task è un `enum` con i dati
-   propri di ogni stato (es. `Running { started_at }`, `Failed { reason }`). Le transizioni passano da
-   un'unica funzione `transition(state, event) -> Result<State, InvalidTransition>`.
-5. **Segreti tipizzati.** `Secret<String>` non implementa `Display`; il suo `Debug` stampa `[REDACTED]`.
-   Il valore si legge solo con `expose()`, usato in un unico punto: la scrittura di `.token`.
-6. **Una responsabilità per modulo, file piccoli.** Se un file supera ~300 righe o mescola livelli
-   diversi, va diviso.
-7. **Errori tipizzati ai confini.** Ogni modulo ha il suo `enum Error` (`thiserror`). `anyhow` solo
-   in `main`. Ogni errore che arriva all'utente ha un messaggio azionabile.
-8. **Pulizia garantita da RAII.** `JobWorkspace` possiede la cartella del job e il disco clonato:
-   `Drop` cancella il disco anche in caso di panic o errore. `VmProcess` termina il processo figlio in
+1. **Functional core, imperative shell.** Decisions (state transitions, interpretation of
+   `result.json`, parsing of Claude events, construction of git commands) are pure functions over
+   data. I/O (processes, files, git, network) lives in a thin shell that executes the decisions made
+   by the core. The core is tested with real data, without substitutes.
+2. **One-way dependencies**: `http → app → domain`. The adapters (`vm`, `git`,
+   `keychain`, `jobdir`) are used by `app` and know neither HTTP nor the other adapters.
+   `domain` depends on nothing in the project and does no I/O.
+3. **No abstraction just for testing.** A trait exists only if there really are two
+   production implementations. Adapters are concrete `struct`s. Tests use the real
+   implementations (see §10).
+4. **Invalid states unrepresentable.** Newtypes for `TaskId`, `CommitSha`, `RepoPath` (validated
+   at construction: it is a git repo) and `Prompt` (non-empty). The task state is an `enum` carrying
+   each state's own data (e.g. `Running { started_at }`, `Failed { reason }`). Transitions go through
+   a single function `transition(state, event) -> Result<State, InvalidTransition>`.
+5. **Typed secrets.** `Secret<String>` does not implement `Display`; its `Debug` prints `[REDACTED]`.
+   The value is read only via `expose()`, used in a single place: writing `.token`.
+6. **One responsibility per module, small files.** If a file exceeds ~300 lines or mixes different
+   levels, it gets split.
+7. **Typed errors at the boundaries.** Each module has its own `enum Error` (`thiserror`). `anyhow` only
+   in `main`. Every error that reaches the user has an actionable message.
+8. **Cleanup guaranteed by RAII.** `JobWorkspace` owns the job folder and the cloned disk:
+   `Drop` deletes the disk even on panic or error. `VmProcess` terminates the child process in
    `Drop`.
-9. **Nessuno stato globale.** La configurazione (`Config`: percorsi, porta, concorrenza, CPU/RAM,
-   timeout) si legge una volta in `main` e passa per costruttore.
+9. **No global state.** The configuration (`Config`: paths, port, concurrency, CPU/RAM,
+   timeout) is read once in `main` and passed via constructors.
 
-### 3.3 Pattern adottati (e dove)
+### 3.3 Patterns adopted (and where)
 
-| Pattern | Dove | Perché |
+| Pattern | Where | Why |
 |---|---|---|
-| **State machine** | `domain::task` | Ciclo di vita esplicito, transizioni verificate in un unico punto |
-| **Supervisor (actor)** | `app::supervisor` | Una task tokio per ogni task possiede tutto il suo ciclo di vita; nessun lock condiviso sul flusso |
-| **Publish/subscribe** | `app::events` (`tokio::sync::broadcast`) | Più client SSE seguono lo stesso task senza accoppiarsi al supervisor |
-| **Bounded scheduler** | `app::scheduler` (`Semaphore`) | Limite di concorrenza in un solo posto |
-| **Repository** | `app::store` | Unico proprietario dello stato dei task (in memoria per l'MVP; sostituibile con SQLite senza toccare il resto) |
-| **Adapter** | `vm`, `git`, `keychain`, `jobdir` | Isolano un sistema esterno dietro un'API piccola e tipizzata |
-| **RAII guard** | `JobWorkspace`, `VmProcess` | Pulizia certa delle risorse |
-| **Newtype** | `domain::ids` | Validazione al confine, tipi espressivi |
+| **State machine** | `domain::task` | Explicit lifecycle, transitions checked in a single place |
+| **Supervisor (actor)** | `app::supervisor` | One tokio task per task owns its whole lifecycle; no shared lock on the flow |
+| **Publish/subscribe** | `app::events` (`tokio::sync::broadcast`) | Multiple SSE clients follow the same task without coupling to the supervisor |
+| **Bounded scheduler** | `app::scheduler` (`Semaphore`) | Concurrency limit in a single place |
+| **Repository** | `app::store` | Sole owner of task state (in memory for the MVP; replaceable with SQLite without touching the rest) |
+| **Adapter** | `vm`, `git`, `keychain`, `jobdir` | Isolate an external system behind a small, typed API |
+| **RAII guard** | `JobWorkspace`, `VmProcess` | Guaranteed resource cleanup |
+| **Newtype** | `domain::ids` | Validation at the boundary, expressive types |
 
-### 3.4 Moduli del server Rust
+### 3.4 Rust server modules
 
 ```
 server/src/
-├── main.rs              legge Config, costruisce i componenti, avvia axum (solo wiring)
-├── config.rs            Config + caricamento da env/flag
-├── domain/              puro, senza I/O
+├── main.rs              reads Config, builds the components, starts axum (wiring only)
+├── config.rs            Config + loading from env/flags
+├── domain/              pure, no I/O
 │   ├── ids.rs           TaskId, CommitSha, RepoPath, Prompt
 │   ├── task.rs          Task, TaskState, Event, transition()
-│   ├── agent_event.rs   parsing di una riga di stream.jsonl → AgentEvent (testo, tool_use, result…)
-│   └── outcome.rs       interpretazione di result.json + esito del processo → stato finale
-├── app/                 casi d'uso, orchestrazione
-│   ├── store.rs         repository dei task
-│   ├── scheduler.rs     coda + semaforo
-│   ├── supervisor.rs    ciclo di vita di un task (prepare → boot → follow → collect → cleanup)
-│   └── events.rs        broadcast per task
-├── adapters/            I/O verso sistemi esterni
-│   ├── vm.rs            VmProcess: spawn di agentvm-vm, eventi da stdout, SIGTERM
-│   ├── git.rs           rev-parse, bundle create, fetch da bundle, diff (CLI git)
-│   ├── jobdir.rs        JobWorkspace: cartella del job, clonefile, file del contratto §3.6
-│   ├── keychain.rs      lettura del token → Secret
-│   └── tail.rs          tail di un file che cresce → Stream di righe
-└── http/                axum: route, DTO, SSE, asset statici
+│   ├── agent_event.rs   parsing of a stream.jsonl line → AgentEvent (text, tool_use, result…)
+│   └── outcome.rs       interpretation of result.json + process exit → final state
+├── app/                 use cases, orchestration
+│   ├── store.rs         task repository
+│   ├── scheduler.rs     queue + semaphore
+│   ├── supervisor.rs    lifecycle of a task (prepare → boot → follow → collect → cleanup)
+│   └── events.rs        per-task broadcast
+├── adapters/            I/O to external systems
+│   ├── vm.rs            VmProcess: spawn of agentvm-vm, events from stdout, SIGTERM
+│   ├── git.rs           rev-parse, bundle create, fetch from bundle, diff (git CLI)
+│   ├── jobdir.rs        JobWorkspace: job folder, clonefile, §3.6 contract files
+│   ├── keychain.rs      token read → Secret
+│   └── tail.rs          tail of a growing file → Stream of lines
+└── http/                axum: routes, DTOs, SSE, static assets
     ├── routes.rs
     ├── dto.rs
     └── web/index.html
 ```
 
-Il codice Swift (`vm-helper/`) segue la stessa divisione: `Config.swift` (Codable + validazione),
-`MachineFactory.swift` (configurazione VZ), `Runner.swift` (ciclo di vita ed eventi), `main.swift`
-(solo wiring). Gli script guest usano `set -euo pipefail` e non usano mai `set -x`.
+The Swift code (`vm-helper/`) follows the same split: `Config.swift` (Codable + validation),
+`MachineFactory.swift` (VZ configuration), `Runner.swift` (lifecycle and events), `main.swift`
+(wiring only). Guest scripts use `set -euo pipefail` and never use `set -x`.
 
-### 3.5 Protocollo `agentvm-vm`
+### 3.5 `agentvm-vm` protocol
 
-Config (`job.json`, scritto dal server):
+Config (`job.json`, written by the server):
 ```json
 { "disk": ".../disk.raw", "efivars": ".../efivars", "share": ".../share",
   "console": ".../console.log", "cpus": 4, "memory_mb": 4096, "seed_iso": null }
 ```
-Eventi su stdout (JSON Lines): `{"event":"started"}`, `{"event":"stopped","seconds":12.1}`,
-`{"event":"error","message":"..."}`. Codice di uscita: 0 se la VM si è spenta da sola, 1 se c'è stato un errore, 130 se è stata fermata.
-`seed_iso` serve solo a `build-golden.sh`.
+Events on stdout (JSON Lines): `{"event":"started"}`, `{"event":"stopped","seconds":12.1}`,
+`{"event":"error","message":"..."}`. Exit code: 0 if the VM shut down on its own, 1 if there was an error, 130 if it was stopped.
+`seed_iso` is only used by `build-golden.sh`.
 
-### 3.6 Contratto della cartella condivisa (`/mnt/job`)
+### 3.6 Shared folder contract (`/mnt/job`)
 
-| File | Chi scrive | Contenuto |
+| File | Written by | Content |
 |---|---|---|
 | `task.json` | server | `{id, prompt, branch, base_sha, timeout_s}` |
-| `repo.bundle` | server | `git bundle create --all` del repo locale |
-| `.token` | server | token OAuth; l'agente lo legge e lo cancella subito |
-| `stream.jsonl` | guest | output `claude -p --output-format stream-json --verbose` |
-| `out.bundle` | guest | `git bundle create out.bundle <base_sha>..<branch>` (assente se non ci sono commit) |
+| `repo.bundle` | server | `git bundle create --all` of the local repo |
+| `.token` | server | OAuth token; the agent reads it and deletes it immediately |
+| `stream.jsonl` | guest | output of `claude -p --output-format stream-json --verbose` |
+| `out.bundle` | guest | `git bundle create out.bundle <base_sha>..<branch>` (absent if there are no commits) |
 | `result.json` | guest | `{status: "ok"\|"no_changes"\|"failed", claude_exit, commits, error?}` |
-| `job.log` | guest | log dello script guest (senza tracing, senza token) |
+| `job.log` | guest | guest script log (no tracing, no token) |
 
-## 4. Ciclo di vita di un task
+## 4. Task lifecycle
 
 ```
 queued → preparing → booting → running → collecting → done | no_changes | failed | stopped
 ```
 
-1. **queued**: `POST /api/tasks {repo_path, prompt, base_ref?}`. Il server valida che `repo_path`
-   sia un repo git e risolve `base_ref` (default `HEAD`) in `base_sha`. Le modifiche non committate
-   del working tree non vengono incluse: l'agente parte sempre da un commit.
-2. **preparing** (quando c'è uno slot libero): crea `~/AgentVMs/jobs/<id>/`, scrive `repo.bundle` e
-   `task.json`, legge il token dal Portachiavi (`security find-generic-password -s agentvm -w`) o dalla
-   variabile `CLAUDE_CODE_OAUTH_TOKEN` e scrive `.token`, poi `clonefile(golden/disk.raw → disk.raw)`.
-3. **booting**: avvia `agentvm-vm`, `started` → **running**.
-4. **running**: nella VM `agentvm-job` clona `repo.bundle` in `/home/agent/work`, fa checkout di
-   `base_sha` su un nuovo branch `agent/<id>`, attende il DNS (max 10 s) e lancia
+1. **queued**: `POST /api/tasks {repo_path, prompt, base_ref?}`. The server validates that `repo_path`
+   is a git repo and resolves `base_ref` (default `HEAD`) to `base_sha`. Uncommitted changes
+   in the working tree are not included: the agent always starts from a commit.
+2. **preparing** (when a slot is free): creates `~/AgentVMs/jobs/<id>/`, writes `repo.bundle` and
+   `task.json`, reads the token from the Keychain (`security find-generic-password -s agentvm -w`) or from the
+   `CLAUDE_CODE_OAUTH_TOKEN` variable and writes `.token`, then `clonefile(golden/disk.raw → disk.raw)`.
+3. **booting**: starts `agentvm-vm`, `started` → **running**.
+4. **running**: inside the VM `agentvm-job` clones `repo.bundle` into `/home/agent/work`, checks out
+   `base_sha` on a new branch `agent/<id>`, waits for DNS (max 10 s) and runs
    `claude -p "$prompt" --dangerously-skip-permissions --output-format stream-json --verbose`
-   come utente `agent`. Il server segue `stream.jsonl` e inoltra ogni riga via SSE.
-5. **collecting**: l'agente fa `git add -A && git commit` se restano modifiche non committate, crea
-   `out.bundle` e `result.json`, poi `sync; poweroff -f`. Quando il server riceve `stopped`, esegue
-   `git fetch <out.bundle> agent/<id>:agent/<id>` nel repo locale.
-6. **Fine**: `done` (branch creato), `no_changes`, `failed` o `stopped`. Il disco della VM viene
-   cancellato; `stream.jsonl`, `result.json` e `job.log` restano per la consultazione.
+   as user `agent`. The server follows `stream.jsonl` and forwards each line over SSE.
+5. **collecting**: the agent runs `git add -A && git commit` if uncommitted changes remain, creates
+   `out.bundle` and `result.json`, then `sync; poweroff -f`. When the server receives `stopped`, it runs
+   `git fetch <out.bundle> agent/<id>:agent/<id>` in the local repo.
+6. **End**: `done` (branch created), `no_changes`, `failed` or `stopped`. The VM disk is
+   deleted; `stream.jsonl`, `result.json` and `job.log` are kept for reference.
 
-### 4.1 Gestione degli errori
+### 4.1 Error handling
 
-| Caso | Comportamento |
+| Case | Behavior |
 |---|---|
-| Timeout del task (default 30 min) | SIGTERM a `agentvm-vm` → `failed` con motivo `timeout` |
-| Stop dall'utente | SIGTERM → `stopped`; nessun fetch |
-| `agentvm-vm` esce con errore o crash | `failed`, ultime righe di `console.log` nell'errore |
-| Nessun `result.json` dopo lo spegnimento | `failed` con motivo `guest_no_result` |
-| `claude` esce ≠ 0 | `failed` con l'evento `result` di Claude, ma si fa comunque il fetch se ci sono commit |
-| Branch `agent/<id>` già esistente | impossibile: `<id>` è univoco (timestamp + suffisso casuale) |
-| Token assente | il task non parte: errore chiaro nella dashboard con le istruzioni per il Portachiavi |
-| Riavvio del server | lo stato è in memoria: i task in corso vengono persi. Ogni job scrive `vm.pid`; all'avvio il server termina i PID ancora vivi e cancella i dischi rimasti in `~/AgentVMs/jobs/` |
+| Task timeout (default 30 min) | SIGTERM to `agentvm-vm` → `failed` with reason `timeout` |
+| User stop | SIGTERM → `stopped`; no fetch |
+| `agentvm-vm` exits with an error or crashes | `failed`, last lines of `console.log` in the error |
+| No `result.json` after shutdown | `failed` with reason `guest_no_result` |
+| `claude` exits ≠ 0 | `failed` with Claude's `result` event, but the fetch still happens if there are commits |
+| Branch `agent/<id>` already exists | impossible: `<id>` is unique (timestamp + random suffix) |
+| Token missing | the task does not start: clear error in the dashboard with Keychain instructions |
+| Server restart | state is in memory: running tasks are lost. Each job writes `vm.pid`; on startup the server kills PIDs still alive and deletes the disks left in `~/AgentVMs/jobs/` |
 
 ## 5. API
 
-| Metodo | Percorso | Descrizione |
+| Method | Path | Description |
 |---|---|---|
 | `GET` | `/` | Dashboard |
-| `POST` | `/api/tasks` | Crea un task `{repo_path, prompt, base_ref?}` → `{id}` |
-| `GET` | `/api/tasks` | Elenco task con stato e durata |
-| `GET` | `/api/tasks/:id` | Dettaglio, `result.json`, nome del branch |
-| `GET` | `/api/tasks/:id/events` | SSE: righe di `stream.jsonl` + cambi di stato (replay dall'inizio) |
+| `POST` | `/api/tasks` | Creates a task `{repo_path, prompt, base_ref?}` → `{id}` |
+| `GET` | `/api/tasks` | Task list with state and duration |
+| `GET` | `/api/tasks/:id` | Details, `result.json`, branch name |
+| `GET` | `/api/tasks/:id/events` | SSE: `stream.jsonl` lines + state changes (replay from the start) |
 | `GET` | `/api/tasks/:id/diff` | `git diff base_sha..agent/<id>` |
-| `POST` | `/api/tasks/:id/stop` | Ferma il task |
+| `POST` | `/api/tasks/:id/stop` | Stops the task |
 
 ## 6. Dashboard (MVP)
 
-Una sola pagina HTML con JS vanilla, incorporata nel binario:
-- form "Nuovo task": percorso del repo, prompt, ref base opzionale;
-- elenco dei task: stato, repo, inizio del prompt, durata, pulsante Stop;
-- dettaglio: log dal vivo resi leggibili (testo dell'assistente, nome e input dei tool, esito finale),
-  diff del branch prodotto.
+A single HTML page with vanilla JS, embedded in the binary:
+- "New task" form: repo path, prompt, optional base ref;
+- task list: state, repo, start of the prompt, duration, Stop button;
+- details: live logs rendered readable (assistant text, tool names and inputs, final result),
+  diff of the produced branch.
 
-## 7. Immagine golden
+## 7. Golden image
 
-`scripts/build-golden.sh` (una tantum, ~2 min):
-1. scarica `debian-13-genericcloud-arm64.tar.xz` e verifica lo SHA512 da `SHA512SUMS`;
-2. clona il disco, lo porta a 20 GB e lo avvia con un seed cloud-init (`hdiutil makehybrid`);
-3. il seed installa `git curl ca-certificates ripgrep jq build-essential`, Claude Code come utente
-   `agent`, `agentvm-job` e `agentvm.service`, la config di rete generica; disattiva cloud-init,
-   ssh, timer apt e attesa di GRUB; pulisce la cache apt e svuota `machine-id`;
-4. risultato: `~/AgentVMs/golden/disk.raw`.
+`scripts/build-golden.sh` (one-off, ~2 min):
+1. downloads `debian-13-genericcloud-arm64.tar.xz` and verifies the SHA512 from `SHA512SUMS`;
+2. clones the disk, grows it to 20 GB and boots it with a cloud-init seed (`hdiutil makehybrid`);
+3. the seed installs `git curl ca-certificates ripgrep jq build-essential`, Claude Code as user
+   `agent`, `agentvm-job` and `agentvm.service`, the generic network config; disables cloud-init,
+   ssh, apt timers and the GRUB wait; cleans the apt cache and empties `machine-id`;
+4. result: `~/AgentVMs/golden/disk.raw`.
 
-## 8. Sicurezza
+## 8. Security
 
-- Il server ascolta solo su `127.0.0.1`.
-- Ogni VM vede solo la propria cartella `share/`, mai il repo vero: il codice entra e esce tramite bundle.
-- Il token è letto dal Portachiavi, scritto in `.token` con permessi `600`, letto e cancellato dal guest
-  prima di avviare Claude, mai passato su riga di comando visibile nei log e mai tracciato.
-- Il disco della VM, che contiene l'ambiente dell'agente, viene cancellato a fine task.
-- Le VM hanno accesso a internet tramite NAT: serve per l'API di Claude e per installare dipendenze.
+- The server listens only on `127.0.0.1`.
+- Each VM sees only its own `share/` folder, never the real repo: code goes in and out via bundles.
+- The token is read from the Keychain, written to `.token` with `600` permissions, read and deleted by the guest
+  before starting Claude, never passed on a command line visible in logs and never traced.
+- The VM disk, which contains the agent's environment, is deleted at the end of the task.
+- The VMs have internet access via NAT: it is needed for the Claude API and to install dependencies.
 
-## 9. Fuori scope per l'MVP
+## 9. Out of scope for the MVP
 
-Pool di VM già accese, avvio diretto del kernel, pulsante merge, persistenza su SQLite,
-autenticazione e accesso remoto, più immagini golden, grafici CPU/RAM, submodule e Git LFS,
-CLI separata, task che proseguono una sessione esistente.
+Pool of pre-booted VMs, direct kernel boot, merge button, SQLite persistence,
+authentication and remote access, multiple golden images, CPU/RAM charts, submodules and Git LFS,
+separate CLI, tasks that continue an existing session.
 
-## 10. Test — nessun mock
+## 10. Tests — no mocks
 
-**Regola**: nessun mock, stub, fake o test double. Ogni test usa i componenti veri: git vero, file veri,
-processi veri, VM vere, server HTTP vero, e Claude vero dove serve. Quello che è difficile da testare
-senza sostituti si rende puro (§3.2, punto 1) invece di simularlo.
+**Rule**: no mocks, stubs, fakes or test doubles. Every test uses the real components: real git, real files,
+real processes, real VMs, a real HTTP server, and real Claude where needed. Whatever is hard to test
+without substitutes is made pure (§3.2, point 1) instead of being simulated.
 
-| Livello | Cosa | Con cosa | Quando gira |
+| Level | What | With what | When it runs |
 |---|---|---|---|
-| **1. Core puro** | `transition()`, `outcome`, parsing di `agent_event`, newtype | Dati reali: `stream.jsonl`, `result.json` registrati da esecuzioni vere (`server/tests/fixtures/`, verificati senza token) | sempre (`cargo test`) |
-| **2. Adapter** | `git`: bundle, fetch, diff su repo temporanei veri · `jobdir`: clonefile vero su APFS, pulizia in `Drop` · `tail`: file che cresce scritto da un processo vero · `keychain`: portachiavi temporaneo vero (`security create-keychain` in una tempdir) | Sistema reale, tempdir isolate | sempre |
-| **3. VM** | `agentvm-vm` + `VmProcess`: avvio della golden vera senza `task.json` → il guest scrive `result.json {status:"failed", error:"no_task"}` e si spegne; SIGTERM su una VM in esecuzione → uscita 130 e disco cancellato | VM Debian vera (~4 s per test) | `cargo test -- --ignored` (richiede la golden) |
-| **4. Sistema** | Server vero su porta effimera → `POST /api/tasks` su un repo temporaneo con il prompt "crea hello.txt con scritto ciao e fai commit" → SSE fino a `done` → `agent/<id>` contiene `hello.txt`; 4 task in parallelo; stop di un task in corso; grep del token su tutto `~/AgentVMs` → 0 occorrenze | Server + VM + Claude veri (~$0,03 per task) | `cargo test -- --ignored` con token nel Portachiavi |
+| **1. Pure core** | `transition()`, `outcome`, `agent_event` parsing, newtypes | Real data: `stream.jsonl`, `result.json` recorded from real runs (`server/tests/fixtures/`, checked to contain no token) | always (`cargo test`) |
+| **2. Adapters** | `git`: bundle, fetch, diff on real temporary repos · `jobdir`: real clonefile on APFS, cleanup in `Drop` · `tail`: growing file written by a real process · `keychain`: real temporary keychain (`security create-keychain` in a tempdir) | Real system, isolated tempdirs | always |
+| **3. VM** | `agentvm-vm` + `VmProcess`: boot of the real golden without `task.json` → the guest writes `result.json {status:"failed", error:"no_task"}` and shuts down; SIGTERM on a running VM → exit 130 and disk deleted | Real Debian VM (~4 s per test) | `cargo test -- --ignored` (requires the golden) |
+| **4. System** | Real server on an ephemeral port → `POST /api/tasks` on a temporary repo with the prompt "create hello.txt containing ciao and commit it" → SSE until `done` → `agent/<id>` contains `hello.txt`; 4 tasks in parallel; stop of a running task; grep for the token across all of `~/AgentVMs` → 0 occurrences | Real server + VM + Claude (~$0.03 per task) | `cargo test -- --ignored` with the token in the Keychain |
 
-I test di livello 3 e 4 sono `#[ignore]` solo perché richiedono la golden e il token, non perché
-usino qualcosa di finto. Il livello 4 sostituisce l'end-to-end manuale.
+Level 3 and 4 tests are `#[ignore]` only because they require the golden and the token, not because
+they use anything fake. Level 4 replaces the manual end-to-end.
 
-## 11. Struttura del repo
+## 11. Repo structure
 
 ```
 agentvm/
 ├── README.md
 ├── docs/superpowers/specs/2026-10-08-agentvm-mvp-design.md
 ├── vm-helper/      main.swift, Config.swift, MachineFactory.swift, Runner.swift, vz.entitlements
-├── server/         Cargo.toml, src/ (vedi §3.4), tests/{adapters,vm,system}.rs, tests/fixtures/
+├── server/         Cargo.toml, src/ (see §3.4), tests/{adapters,vm,system}.rs, tests/fixtures/
 ├── guest/          agentvm-job, agentvm.service, 10-agentvm.network, golden-user-data.yaml
 └── scripts/        build.sh, build-golden.sh
 ```
-Dati a runtime: `~/AgentVMs/{images,golden,jobs}/`.
+Runtime data: `~/AgentVMs/{images,golden,jobs}/`.

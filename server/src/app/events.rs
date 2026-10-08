@@ -1,4 +1,4 @@
-//! Storia + pubblicazione degli eventi di un task, per più client contemporanei.
+//! History + publishing of a task's events, for multiple concurrent clients.
 
 use std::sync::Mutex;
 
@@ -42,7 +42,7 @@ impl EventLog {
         let mut history = self.history.lock().unwrap();
         let seq = history.len() as Seq + 1;
         history.push((seq, item.clone()));
-        // Inviato sotto lock: un sottoscrittore vede ogni evento o nella storia o dal vivo, mai entrambi.
+        // Sent under the lock: a subscriber sees each event either in the history or live, never both.
         let _ = self.live.send((seq, item));
     }
 
@@ -51,7 +51,7 @@ impl EventLog {
         (history.clone(), self.live.subscribe())
     }
 
-    /// Storia completa seguita dagli eventi dal vivo.
+    /// Full history followed by live events.
     pub fn stream(&self) -> impl Stream<Item = (Seq, StreamItem)> + Send + use<> {
         let (history, rx) = self.subscribe();
         let last = history.last().map_or(0, |(s, _)| *s);

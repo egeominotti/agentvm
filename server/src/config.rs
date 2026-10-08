@@ -1,4 +1,4 @@
-//! Configurazione letta una volta all'avvio e passata per costruttore.
+//! Configuration read once at startup and passed via constructors.
 
 use std::path::PathBuf;
 
@@ -44,10 +44,10 @@ impl Config {
     }
 }
 
-/// Memoria lasciata a macOS e alle app dell'utente.
+/// Memory left to macOS and the user's apps.
 const HOST_RESERVE_MB: u64 = 8 * 1024;
 
-/// Quante VM da `memory_mb` stanno nella RAM del Mac senza farlo andare in swap.
+/// How many `memory_mb` VMs fit in the Mac's RAM without making it swap.
 fn vms_fitting_in_ram(memory_mb: u64) -> usize {
     let ram_mb = std::process::Command::new("sysctl")
         .args(["-n", "hw.memsize"])

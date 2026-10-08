@@ -1,5 +1,5 @@
-//! VM reali: richiedono `scripts/build.sh` e `scripts/build-golden.sh`.
-//! Eseguire con `cargo test --test vm -- --ignored`.
+//! Real VMs: require `scripts/build.sh` and `scripts/build-golden.sh`.
+//! Run with `cargo test --test vm -- --ignored`.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
@@ -37,17 +37,17 @@ fn config(ws: &JobWorkspace) -> VmConfig {
 }
 
 #[tokio::test]
-#[ignore = "richiede bin/agentvm-vm"]
+#[ignore = "requires bin/agentvm-vm"]
 async fn helper_reports_invalid_config() {
     let tmp = tempfile::tempdir().unwrap();
     let ws = JobWorkspace::create(tmp.path(), &TaskId::generate(SystemTime::now(), [3, 4])).unwrap();
     let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws)).unwrap();
-    assert!(matches!(vm.next_event().await, Some(VmEvent::Error(m)) if m.contains("disco assente")));
-    assert!(matches!(vm.wait().await, VmExit::Error(m) if m.contains("disco assente")));
+    assert!(matches!(vm.next_event().await, Some(VmEvent::Error(m)) if m.contains("disk missing")));
+    assert!(matches!(vm.wait().await, VmExit::Error(m) if m.contains("disk missing")));
 }
 
 #[tokio::test]
-#[ignore = "richiede la golden"]
+#[ignore = "requires the golden image"]
 async fn boots_golden_without_task_and_powers_off() {
     let tmp = tempfile::tempdir().unwrap();
     let ws = workspace(&tmp);
@@ -62,11 +62,11 @@ async fn boots_golden_without_task_and_powers_off() {
 }
 
 #[tokio::test]
-#[ignore = "richiede la golden"]
+#[ignore = "requires the golden image"]
 async fn terminate_stops_a_running_vm() {
     let tmp = tempfile::tempdir().unwrap();
     let ws = workspace(&tmp);
-    // Fermata subito dopo l'avvio, prima che il guest si spenga da solo.
+    // Stopped right after boot, before the guest shuts down on its own.
     let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws)).unwrap();
     assert_eq!(vm.next_event().await, Some(VmEvent::Started));
     vm.terminate();
@@ -87,7 +87,7 @@ fn repo_with_bundle(ws: &JobWorkspace) -> String {
 }
 
 #[tokio::test]
-#[ignore = "richiede la golden"]
+#[ignore = "requires the golden image"]
 async fn interactive_vm_serves_a_shell_over_vsock_and_closes_on_request() {
     use agentvm::adapters::pty::{Frame, PtyConnection};
     use agentvm::domain::spec::TaskSpec;
@@ -111,7 +111,7 @@ async fn interactive_vm_serves_a_shell_over_vsock_and_closes_on_request() {
     let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &cfg).unwrap();
     assert_eq!(vm.next_event().await, Some(VmEvent::Started));
 
-    // Il server PTY del guest può impiegare qualche istante a mettersi in ascolto.
+    // The guest PTY server may take a moment to start listening.
     let t0 = Instant::now();
     let mut seen = String::new();
     'retry: while t0.elapsed() < Duration::from_secs(30) {
@@ -119,13 +119,13 @@ async fn interactive_vm_serves_a_shell_over_vsock_and_closes_on_request() {
             tokio::time::sleep(Duration::from_millis(300)).await;
             continue;
         };
-        pty.send(&Frame::Input(b"echo ciao-$((40+2))\n".to_vec())).await.unwrap();
+        pty.send(&Frame::Input(b"echo hello-$((40+2))\n".to_vec())).await.unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline {
             match tokio::time::timeout(Duration::from_secs(1), pty.recv()).await {
                 Ok(Ok(Some(bytes))) => {
                     seen.push_str(&String::from_utf8_lossy(&bytes));
-                    if seen.contains("ciao-42") {
+                    if seen.contains("hello-42") {
                         break 'retry;
                     }
                 }
@@ -134,10 +134,74 @@ async fn interactive_vm_serves_a_shell_over_vsock_and_closes_on_request() {
             }
         }
     }
-    assert!(seen.contains("ciao-42"), "output del terminale: {seen:?}");
+    assert!(seen.contains("hello-42"), "terminal output: {seen:?}");
 
     std::fs::write(ws.share().join("close.request"), "").unwrap();
     assert_eq!(tokio::time::timeout(Duration::from_secs(30), vm.wait()).await.unwrap(), VmExit::Clean);
     let r = ws.read_result().expect("result.json");
     assert_eq!(r.commits, 0);
+}
+
+/// Opens the shell once the guest PTY server is ready (before that, the bridge closes immediately).
+async fn open_ready_shell(ws: &JobWorkspace) -> agentvm::adapters::pty::PtyConnection {
+    use agentvm::adapters::pty::{Frame, PtyConnection};
+    let t0 = Instant::now();
+    'retry: loop {
+        assert!(t0.elapsed() < Duration::from_secs(30), "shell never ready");
+        let Ok(mut pty) = PtyConnection::open(&ws.pty_socket(), "shell", 100, 30).await else {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            continue;
+        };
+        pty.send(&Frame::Input(b"echo ready-$((1+1))\n".to_vec())).await.unwrap();
+        let mut seen = String::new();
+        while !seen.contains("ready-2") {
+            match tokio::time::timeout(Duration::from_secs(5), pty.recv()).await {
+                Ok(Ok(Some(bytes))) => seen.push_str(&String::from_utf8_lossy(&bytes)),
+                _ => {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    continue 'retry;
+                }
+            }
+        }
+        return pty;
+    }
+}
+
+/// The shell must respond to keystrokes like a local terminal.
+#[tokio::test]
+#[ignore = "requires the golden image"]
+async fn shell_keystroke_echo_is_fast() {
+    use agentvm::adapters::pty::Frame;
+    use agentvm::domain::spec::TaskSpec;
+    use agentvm::secret::Secret;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = workspace(&tmp);
+    let base = repo_with_bundle(&ws);
+    ws.write_spec(&TaskSpec { id: "t".into(), prompt: String::new(), branch: "agent/t".into(), base_sha: base, timeout_s: 60, interactive: true }).unwrap();
+    ws.write_token(&Secret::new("sk-ant-oat01-not-a-real-token".into())).unwrap();
+    let mut cfg = config(&ws);
+    cfg.pty_socket = Some(ws.pty_socket());
+    let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &cfg).unwrap();
+    assert_eq!(vm.next_event().await, Some(VmEvent::Started));
+
+    let mut pty = open_ready_shell(&ws).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let mut samples = Vec::new();
+    for c in "abcdefghijklmnopqrstuvwxyzabcdefghijklmn".chars() {
+        let sent = Instant::now();
+        pty.send(&Frame::Input(c.to_string().into_bytes())).await.unwrap();
+        let bytes = tokio::time::timeout(Duration::from_secs(2), pty.recv()).await.unwrap().unwrap().unwrap();
+        assert!(String::from_utf8_lossy(&bytes).contains(c), "unexpected echo: {bytes:?}");
+        samples.push(sent.elapsed());
+    }
+    samples.sort();
+    let median = samples[samples.len() / 2];
+    let p95 = samples[samples.len() * 95 / 100];
+    eprintln!("keystroke echo: median {median:?}, p95 {p95:?}");
+    vm.terminate();
+    vm.wait().await;
+    assert!(median < Duration::from_millis(5), "median {median:?}");
+    assert!(p95 < Duration::from_millis(15), "p95 {p95:?}");
 }

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -39,7 +39,7 @@ button, input, textarea { font: inherit; color: inherit; }
 code, kbd { font-family: var(--mono); font-size: 12px; }
 [hidden] { display: none !important; }
 
-/* ---------- barra superiore + lanciatore ---------- */
+/* ---------- top bar + launcher ---------- */
 .top { display: flex; align-items: center; gap: 14px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
 .brand { font-weight: 650; font-size: 14.5px; letter-spacing: -0.01em; }
 .meter { display: flex; align-items: center; gap: 7px; color: var(--ink-2); font-size: 12.5px; white-space: nowrap; }
@@ -77,7 +77,7 @@ textarea.input.tall { overflow-y: auto; }
 .pill-warn { font-size: 12px; padding: 3px 10px; border-radius: 999px; cursor: pointer; border: 0; background: rgba(236,107,97,.15); color: var(--c-failed); }
 .form-error { color: var(--c-failed); font-size: 12.5px; padding: 6px 14px; background: rgba(236,107,97,.08); border-bottom: 1px solid var(--line); }
 
-/* ---------- schede dei terminali ---------- */
+/* ---------- terminal tabs ---------- */
 .tabs { display: flex; gap: 2px; padding: 6px 8px 0; background: var(--bg); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: thin; }
 .tab {
   display: flex; align-items: center; gap: 8px; max-width: 240px; min-width: 120px; padding: 7px 12px; cursor: pointer;
@@ -94,7 +94,7 @@ textarea.input.tall { overflow-y: auto; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 25%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .dot { animation: none !important; } }
 
-/* ---------- area di lavoro ---------- */
+/* ---------- work area ---------- */
 .work { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--panel); overflow: hidden; }
 .toolbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 7px; overflow: hidden; }
@@ -119,7 +119,7 @@ textarea.input.tall { overflow-y: auto; }
 .empty ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; color: var(--ink-2); }
 .empty li b { color: var(--ink); }
 
-/* ---------- esito + modifiche ---------- */
+/* ---------- outcome + changes ---------- */
 .result { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 20px 40px; display: grid; gap: 14px; align-content: start; }
 .outcome { border-radius: 8px; padding: 12px 14px; display: grid; gap: 8px; border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); background: color-mix(in srgb, var(--c) 7%, var(--panel)); }
 .outcome .title { font-weight: 600; }
@@ -149,38 +149,39 @@ textarea.input.tall { overflow-y: auto; }
 <body>
 <header class="top">
   <span class="brand">agentvm</span>
-  <span class="meter" title="VM accese sul massimo che la RAM del Mac regge"><span class="bar"><i id="meter-bar"></i></span><span id="meter-text"></span></span>
+  <span class="meter" title="Running VMs out of the maximum the Mac's RAM can handle"><span class="bar"><i id="meter-bar"></i></span><span id="meter-text"></span></span>
   <form class="launcher" id="launcher" autocomplete="off">
     <div class="repo-wrap">
-      <input class="input" id="repo" name="repo_path" placeholder="Repository, es. ~/progetti/app" spellcheck="false" required>
+      <input class="input" id="repo" name="repo_path" placeholder="Repository, e.g. ~/projects/app" spellcheck="false" required>
       <div class="recent" id="recent" hidden></div>
     </div>
     <div class="prompt-wrap">
-      <textarea class="input" id="prompt" name="prompt" rows="1" placeholder="Compito iniziale per Claude (facoltativo)"></textarea>
+      <textarea class="input" id="prompt" name="prompt" rows="1" placeholder="Initial task for Claude (optional)"></textarea>
     </div>
-    <label class="batch" title="Ogni riga del compito apre un terminale con il suo agente"><input type="checkbox" id="batch"> Uno per riga</label>
-    <button class="btn primary" type="submit" id="launch" title="⌘ Invio">Nuovo terminale</button>
+    <label class="batch" title="Each line of the task opens a terminal with its own agent"><input type="checkbox" id="batch"> One per line</label>
+    <button class="btn primary" type="submit" id="launch" title="⌘ Enter">New terminal</button>
   </form>
   <div class="warn" id="warn"></div>
 </header>
 <div class="form-error" id="form-error" role="alert" hidden></div>
-<nav class="tabs" id="tabs" role="tablist" aria-label="Terminali" hidden></nav>
+<nav class="tabs" id="tabs" role="tablist" aria-label="Terminals" hidden></nav>
 <main class="work" id="work"></main>
 
 <template id="empty-tpl">
   <div class="empty">
-    <h1>Ogni terminale è una VM</h1>
-    <p>Scegli un repository e premi <b>Nuovo terminale</b>: si accende una VM Debian solo per te, con il repo dentro e Claude Code già aperto con pieni permessi. Il tuo Mac resta intatto.</p>
+    <h1>Every terminal is a VM</h1>
+    <p>Pick a repository and press <b>New terminal</b>: a Debian VM boots just for you, with the repo inside and Claude Code already open with full permissions. Your Mac stays untouched.</p>
     <ul>
-      <li><b>Scrivi a Claude</b> direttamente nel terminale, come sempre. Con <b>Shell</b> apri un terminale nella stessa VM.</li>
-      <li><b>Salva nel repo</b> porta il lavoro nel branch <code>agent/…</code> del tuo repository, senza chiudere niente.</li>
-      <li><b>Chiudi VM</b> salva e distrugge la macchina. Con <b>Uno per riga</b> apri più agenti insieme, uno per ogni compito.</li>
+      <li><b>Talk to Claude</b> directly in the terminal, as usual. <b>Shell</b> opens a terminal in the same VM.</li>
+      <li><b>Save to repo</b> brings the work into the <code>agent/…</code> branch of your repository, without closing anything.</li>
+      <li><b>Close VM</b> saves and destroys the machine. <b>One per line</b> opens several agents at once, one per task.</li>
     </ul>
   </div>
 </template>
 
 <script src="/vendor/xterm.js"></script>
 <script src="/vendor/addon-fit.js"></script>
+<script src="/vendor/addon-webgl.js"></script>
 <script>
 "use strict";
 const TERMINAL = new Set(["done", "no_changes", "failed", "stopped"]);
@@ -205,36 +206,36 @@ let selected = null;
 let status = { running: 0, concurrency: 1, golden: true, token: true };
 const views = new Map();   // id -> { root, terms: {claude, shell}, session, ... }
 
-// ---------- stato sintetico di un terminale ----------
+// ---------- summary state of a terminal ----------
 function phase(t) {
   const s = t.status.state;
-  if (s === "queued") return ["s-boot", "In coda, aspetta una VM libera"];
-  if (BOOTING.has(s)) return ["s-boot", "Avvio della VM"];
+  if (s === "queued") return ["s-boot", "Queued, waiting for a free VM"];
+  if (BOOTING.has(s)) return ["s-boot", "Booting the VM"];
   if (s === "running") {
-    if (!t.interactive) return ["s-work", "Al lavoro"];
-    if (t.activity === "working") return ["s-work", "Claude sta lavorando"];
-    if (t.activity === "waiting") return ["s-wait", "Claude ti aspetta"];
-    return ["s-none", "Pronto"];
+    if (!t.interactive) return ["s-work", "Working"];
+    if (t.activity === "working") return ["s-work", "Claude is working"];
+    if (t.activity === "waiting") return ["s-wait", "Claude is waiting for you"];
+    return ["s-none", "Ready"];
   }
-  if (s === "collecting") return ["s-boot", "Salvataggio e spegnimento"];
-  if (s === "done") return ["s-done", `Chiuso, ${t.status.commits} commit nel branch`];
-  if (s === "no_changes") return ["s-done", "Chiuso, nessuna modifica"];
-  if (s === "stopped") return ["s-stopped", "Fermato"];
-  return ["s-failed", "Non riuscito"];
+  if (s === "collecting") return ["s-boot", "Saving and shutting down"];
+  if (s === "done") return ["s-done", `Closed, ${t.status.commits} commit(s) on the branch`];
+  if (s === "no_changes") return ["s-done", "Closed, no changes"];
+  if (s === "stopped") return ["s-stopped", "Stopped"];
+  return ["s-failed", "Failed"];
 }
 const titleOf = t => t.prompt ? t.prompt.split("\n")[0] : repoName(t.repo);
 
-// ---------- barra superiore ----------
+// ---------- top bar ----------
 async function loadStatus() {
   try { status = await (await fetch("/api/status")).json(); } catch { return; }
   const live = tasks.filter(t => !TERMINAL.has(t.status.state)).length;
   $("#meter-bar").style.width = `${Math.min(100, (status.running / status.concurrency) * 100)}%`;
   const queued = tasks.filter(t => t.status.state === "queued").length;
-  $("#meter-text").textContent = `${status.running}/${status.concurrency} VM` + (queued ? `, ${queued} in coda` : "");
+  $("#meter-text").textContent = `${status.running}/${status.concurrency} VM` + (queued ? `, ${queued} queued` : "");
   const warn = $("#warn");
   warn.replaceChildren();
-  if (!status.golden) warn.append(h("button", { class: "pill-warn", type: "button", onclick: () => setup("golden") }, "Manca l'immagine VM"));
-  if (!status.token) warn.append(h("button", { class: "pill-warn", type: "button", onclick: () => setup("token") }, "Manca il token Claude"));
+  if (!status.golden) warn.append(h("button", { class: "pill-warn", type: "button", onclick: () => setup("golden") }, "VM image missing"));
+  if (!status.token) warn.append(h("button", { class: "pill-warn", type: "button", onclick: () => setup("token") }, "Claude token missing"));
   updateLaunch();
   return live;
 }
@@ -243,12 +244,12 @@ function setup(what) {
   selected = null;
   renderTabs();
   const body = what === "golden"
-    ? [h("h1", {}, "Crea l'immagine della VM"), h("p", {}, "Una volta sola, circa 2 minuti, dalla cartella del progetto:"), cmdRow("scripts/build-golden.sh")]
-    : [h("h1", {}, "Collega il tuo account Claude"), h("p", {}, "Genera un token e salvalo nel Portachiavi (il secondo comando chiede di incollarlo):"), cmdRow("claude setup-token"), cmdRow("security add-generic-password -U -s agentvm -a agentvm -w")];
+    ? [h("h1", {}, "Create the VM image"), h("p", {}, "Once only, about 2 minutes, from the project directory:"), cmdRow("scripts/build-golden.sh")]
+    : [h("h1", {}, "Connect your Claude account"), h("p", {}, "Generate a token and store it in the Keychain (the second command asks you to paste it):"), cmdRow("claude setup-token"), cmdRow("security add-generic-password -U -s agentvm -a agentvm -w")];
   showOnly(h("div", { class: "empty" }, ...body));
 }
 
-// ---------- lanciatore ----------
+// ---------- launcher ----------
 const RECENT_KEY = "agentvm.recentRepos";
 const repoEl = $("#repo"), promptEl = $("#prompt");
 function recentRepos() {
@@ -280,7 +281,7 @@ function prompts() {
 }
 function updateLaunch() {
   const n = prompts().length;
-  $("#launch").textContent = n > 1 ? `Apri ${n} terminali` : "Nuovo terminale";
+  $("#launch").textContent = n > 1 ? `Open ${n} terminals` : "New terminal";
   $("#launch").disabled = !status.golden || !status.token || !repoEl.value.trim();
 }
 function autosize() { promptEl.style.height = "32px"; const want = promptEl.scrollHeight + 2; promptEl.style.height = Math.min(want, 160) + "px"; promptEl.classList.toggle("tall", want > 160); }
@@ -299,7 +300,7 @@ $("#launcher").addEventListener("submit", async e => {
   for (const prompt of prompts()) {
     const res = await fetch("/api/tasks", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ repo_path, prompt, interactive: true }) });
-    const data = await res.json().catch(() => ({ error: "Risposta non valida dal server" }));
+    const data = await res.json().catch(() => ({ error: "Invalid response from the server" }));
     if (!res.ok) { err.textContent = data.error; err.hidden = false; break; }
     ids.push(data.id);
   }
@@ -312,7 +313,7 @@ $("#launcher").addEventListener("submit", async e => {
   updateLaunch();
 });
 
-// ---------- schede ----------
+// ---------- tabs ----------
 async function loadTasks() {
   try { tasks = await (await fetch("/api/tasks")).json(); } catch { return; }
   tasks.sort((a, b) => (TERMINAL.has(a.status.state) - TERMINAL.has(b.status.state)) || a.created_at - b.created_at);
@@ -350,11 +351,12 @@ function select(id) {
   showOnly(null);
   view.root.hidden = false;
   view.update(t);
+  view.fitSoon();
   view.focus();
   renderTabs();
 }
 
-// ---------- vista di un terminale ----------
+// ---------- terminal view ----------
 class TaskView {
   constructor(t) {
     this.id = t.id;
@@ -363,16 +365,16 @@ class TaskView {
     this.statusEl = h("span", { class: "status" });
     this.savedEl = h("span", { class: "saved" });
     this.segBtns = ["claude", "shell"].map(s => h("button", { type: "button", "aria-pressed": String(s === "claude"), onclick: () => this.show(s) }, s === "claude" ? "Claude" : "Shell"));
-    this.saveBtn = h("button", { class: "btn", type: "button", onclick: () => this.save() }, "Salva nel repo");
-    this.closeBtn = h("button", { class: "btn", type: "button", onclick: () => this.close() }, "Chiudi VM");
-    this.stopBtn = h("button", { class: "btn danger", type: "button", title: "Spegne subito la VM senza salvare", onclick: () => this.stop() }, "Forza arresto");
+    this.saveBtn = h("button", { class: "btn", type: "button", onclick: () => this.save() }, "Save to repo");
+    this.closeBtn = h("button", { class: "btn", type: "button", onclick: () => this.close() }, "Close VM");
+    this.stopBtn = h("button", { class: "btn danger", type: "button", title: "Shuts down the VM immediately without saving", onclick: () => this.stop() }, "Force stop");
     this.toolbar = h("div", { class: "toolbar" }, h("div", { class: "seg" }, this.segBtns), this.statusEl, h("span", { class: "spacer" }), this.savedEl, this.saveBtn, this.closeBtn, this.stopBtn);
     this.overlay = h("div", { class: "overlay" });
     this.area = h("div", { class: "term-area" }, this.overlay);
     this.result = h("div", { class: "result" });
     this.result.hidden = true;
     this.root = h("section", { class: "work", "data-view": t.id, style: "flex:1;min-height:0" }, this.toolbar, this.area, this.result);
-    new ResizeObserver(() => this.fit()).observe(this.area);
+    new ResizeObserver(() => this.fitSoon()).observe(this.area);
   }
 
   update(t) {
@@ -387,10 +389,18 @@ class TaskView {
     this.stopBtn.hidden = TERMINAL.has(s);
     for (const b of this.segBtns) b.hidden = !t.interactive || TERMINAL.has(s);
     if (TERMINAL.has(s)) return this.ended(t);
-    if (!t.interactive) { this.overlayText("Agente senza terminale", "È stato avviato dall'API in modalità automatica."); return; }
-    if (!live) { this.overlayText(s === "queued" ? "In coda" : "Avvio della VM", s === "queued" ? "Tutte le VM disponibili sono occupate: parte appena se ne libera una." : "Pochi secondi: Debian si accende e Claude si apre da solo."); return; }
+    if (!t.interactive) { this.overlayText("Agent without a terminal", "It was started from the API in automatic mode."); return; }
+    if (!live) { this.overlayText(s === "queued" ? "Queued" : "Booting the VM", s === "queued" ? "All available VMs are busy: it starts as soon as one frees up." : "A few seconds: Debian boots and Claude opens on its own."); return; }
     this.overlay.hidden = true;
-    this.ensureTerm(this.session);
+    if (!this.terms[this.session]) { this.ensureTerm(this.session); this.fitSoon(); }
+    else if (!this.terms[this.session].ws) this.terms[this.session].connect();
+  }
+
+  /** One recalculation per frame: avoids repeated resizes that make tmux redraw. */
+  fitSoon() {
+    if (this.fitPending) return;
+    this.fitPending = true;
+    requestAnimationFrame(() => { this.fitPending = false; this.fit(); });
   }
 
   overlayText(title, text) {
@@ -403,6 +413,7 @@ class TaskView {
     for (const b of this.segBtns) b.setAttribute("aria-pressed", String(b.textContent.toLowerCase() === session));
     for (const [name, term] of Object.entries(this.terms)) term.el.hidden = name !== session;
     if (this.task?.status.state === "running") this.ensureTerm(session);
+    this.fitSoon();
     this.focus();
   }
 
@@ -414,7 +425,7 @@ class TaskView {
       term.el.hidden = session !== this.session;
     }
     if (!term.ws) term.connect();
-    if (session === this.session) requestAnimationFrame(() => { term.fit(); term.xterm.focus(); });
+    return term;
   }
 
   fit() { this.terms[this.session]?.fit(); }
@@ -422,18 +433,18 @@ class TaskView {
 
   async save() {
     this.saveBtn.disabled = true;
-    this.savedEl.textContent = "Salvataggio…";
+    this.savedEl.textContent = "Saving…";
     const res = await fetch(`/api/tasks/${this.id}/save`, { method: "POST" });
     const data = await res.json().catch(() => ({}));
     this.savedEl.textContent = res.ok
-      ? (data.commits ? `Salvato: ${data.commits} commit in agent/${this.id}` : "Niente da salvare per ora")
-      : (data.error || "Salvataggio non riuscito");
+      ? (data.commits ? `Saved: ${data.commits} commit(s) in agent/${this.id}` : "Nothing to save yet")
+      : (data.error || "Save failed");
     this.saveBtn.disabled = false;
     this.focus();
   }
   async close() {
     this.closeBtn.disabled = this.saveBtn.disabled = true;
-    this.closeBtn.textContent = "Chiusura…";
+    this.closeBtn.textContent = "Closing…";
     await fetch(`/api/tasks/${this.id}/close`, { method: "POST" });
     loadTasks();
   }
@@ -456,7 +467,7 @@ class TaskView {
   }
 }
 
-// ---------- terminale xterm collegato alla VM ----------
+// ---------- xterm terminal connected to the VM ----------
 const THEME = {
   background: "#0b0e11", foreground: "#e3e8ee", cursor: "#e3e8ee", selectionBackground: "#2c4a70",
   black: "#1b2128", red: "#ec6b61", green: "#4cc28a", yellow: "#e2a93b", blue: "#5c9cf0", magenta: "#b48ce0", cyan: "#4cc0d0", white: "#d7dde3",
@@ -473,13 +484,25 @@ class VmTerminal {
     this.fitter = new FitAddon.FitAddon();
     this.xterm.loadAddon(this.fitter);
     this.xterm.open(this.el);
+    // GPU rendering: much faster than the DOM renderer; if the WebGL context is lost, fall back to the DOM.
+    try {
+      const gl = new WebglAddon.WebglAddon();
+      gl.onContextLoss(() => gl.dispose());
+      this.xterm.loadAddon(gl);
+    } catch {}
     const enc = new TextEncoder();
     this.xterm.onData(d => { if (this.ws?.readyState === 1) this.ws.send(enc.encode(d)); });
     this.xterm.onResize(({ cols, rows }) => { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify({ cols, rows })); });
   }
-  fit() { if (!this.el.hidden && this.el.offsetWidth) try { this.fitter.fit(); } catch {} }
+  fit() {
+    if (this.el.hidden || !this.el.offsetWidth) return;
+    const dims = this.fitter.proposeDimensions();
+    if (!dims || (dims.cols === this.xterm.cols && dims.rows === this.xterm.rows)) return;
+    this.xterm.resize(dims.cols, dims.rows);
+  }
   connect() {
     this.fit();
+    if (this.xterm.cols < 20) this.xterm.resize(120, 36);
     const { cols, rows } = this.xterm;
     const ws = new WebSocket(`ws://${location.host}/api/tasks/${this.id}/pty?session=${this.session}&cols=${cols}&rows=${rows}`);
     ws.binaryType = "arraybuffer";
@@ -489,7 +512,7 @@ class VmTerminal {
       this.ws = null;
       const t = tasks.find(t => t.id === this.id);
       if (t && t.status.state === "running") {
-        if (this.session === "claude") this.xterm.write("\r\n\x1b[2m[sessione chiusa: premi Invio o attendi per riaprire Claude]\x1b[0m\r\n");
+        if (this.session === "claude") this.xterm.write("\r\n\x1b[2m[session closed: press Enter or wait to reopen Claude]\x1b[0m\r\n");
         setTimeout(() => { if (!this.ws && !this.disposed) this.connect(); }, this.session === "claude" ? 1500 : 800);
       }
     };
@@ -498,32 +521,32 @@ class VmTerminal {
   dispose() { this.disposed = true; this.ws?.close(); this.xterm.dispose(); this.el.remove(); }
 }
 
-// ---------- esito e modifiche ----------
+// ---------- outcome and changes ----------
 function cmdRow(text) {
-  const btn = h("button", { class: "copy", type: "button" }, "Copia");
+  const btn = h("button", { class: "copy", type: "button" }, "Copy");
   btn.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(text); btn.textContent = "Copiato"; } catch { btn.textContent = "Selezionalo"; }
-    setTimeout(() => (btn.textContent = "Copia"), 1500);
+    try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; } catch { btn.textContent = "Select it"; }
+    setTimeout(() => (btn.textContent = "Copy"), 1500);
   });
   return h("div", { class: "cmd" }, h("code", {}, text), btn);
 }
 function explain(reason = "") {
-  if (reason === "timeout") return ["Tempo massimo superato", "L'agente è stato fermato dopo il limite impostato."];
-  if (reason === "guest_no_result") return ["La VM si è spenta senza risultato", "Controlla console.log nella cartella del job."];
-  if (reason.startsWith("claude_exit")) return ["Claude si è fermato con un errore", ""];
-  if (reason.startsWith("vm_error")) return ["La VM non è partita", "Virtualization.framework ha riportato un errore."];
-  if (reason.startsWith("fetch_failed")) return ["Impossibile importare il branch", "Il lavoro è finito ma git fetch non è riuscito."];
-  return ["Non riuscito", ""];
+  if (reason === "timeout") return ["Time limit exceeded", "The agent was stopped after the configured limit."];
+  if (reason === "guest_no_result") return ["The VM shut down without a result", "Check console.log in the job directory."];
+  if (reason.startsWith("claude_exit")) return ["Claude stopped with an error", ""];
+  if (reason.startsWith("vm_error")) return ["The VM did not start", "Virtualization.framework reported an error."];
+  if (reason.startsWith("fetch_failed")) return ["Could not import the branch", "The work finished but git fetch failed."];
+  return ["Failed", ""];
 }
 function outcome(t) {
   const s = t.status.state;
   const [cls] = phase(t);
   const repo = shortPath(t.repo).replace(/ /g, "\\ ");
   const box = h("div", { class: `outcome ${cls}`, style: `--c: var(--c-${s === "failed" ? "failed" : s === "stopped" ? "stopped" : "done"})` });
-  if (s === "done") box.append(h("div", { class: "title" }, `Branch ${t.branch} con ${t.status.commits} commit`),
-    h("div", { class: "why" }, "È nel tuo repository. Per provarlo o unirlo:"), cmdRow(`git -C ${repo} switch ${t.branch}`), cmdRow(`git -C ${repo} merge ${t.branch}`));
-  else if (s === "no_changes") box.append(h("div", { class: "title" }, "Chiuso senza modifiche ai file"), h("div", { class: "why" }, "Nessun branch creato."));
-  else if (s === "stopped") box.append(h("div", { class: "title" }, "Fermato"), h("div", { class: "why" }, "La VM è stata spenta senza salvare. Quello già salvato resta nel branch."));
+  if (s === "done") box.append(h("div", { class: "title" }, `Branch ${t.branch} with ${t.status.commits} commit(s)`),
+    h("div", { class: "why" }, "It is in your repository. To try it or merge it:"), cmdRow(`git -C ${repo} switch ${t.branch}`), cmdRow(`git -C ${repo} merge ${t.branch}`));
+  else if (s === "no_changes") box.append(h("div", { class: "title" }, "Closed without file changes"), h("div", { class: "why" }, "No branch created."));
+  else if (s === "stopped") box.append(h("div", { class: "title" }, "Stopped"), h("div", { class: "why" }, "The VM was shut down without saving. Anything already saved stays on the branch."));
   else { const [title, why] = explain(t.status.reason); box.append(h("div", { class: "title" }, title), why && h("div", { class: "why" }, why), h("div", { class: "code" }, t.status.reason ?? "")); }
   return box;
 }
@@ -533,7 +556,7 @@ async function loadDiff(t, container) {
   const files = parseDiff(await res.text());
   if (!files.length) return;
   const add = files.reduce((n, f) => n + f.add, 0), del = files.reduce((n, f) => n + f.del, 0);
-  container.append(h("div", { class: "diff-summary" }, `${files.length} file modificati, `, h("span", { class: "plus" }, `+${add}`), " ", h("span", { class: "minus" }, `−${del}`)),
+  container.append(h("div", { class: "diff-summary" }, `${files.length} file(s) changed, `, h("span", { class: "plus" }, `+${add}`), " ", h("span", { class: "minus" }, `−${del}`)),
     ...files.map((f, i) => h("details", { class: "diff-file", open: files.length <= 4 || i === 0 },
       h("summary", {}, h("span", { class: "path", title: f.path }, f.path), h("span", { class: "plus" }, `+${f.add}`), h("span", { class: "minus" }, `−${f.del}`)),
       h("div", { class: "diff-body" }, f.lines.map(l => h("div", { class: l.startsWith("@@") ? "h" : l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : "" }, l))))));
@@ -549,7 +572,7 @@ function parseDiff(text) {
   return files;
 }
 
-// ---------- avvio ----------
+// ---------- startup ----------
 (async () => {
   repoEl.value = recentRepos()[0] ?? "";
   await loadTasks();

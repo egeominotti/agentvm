@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Server PTY su vsock (porta 5000), eseguito da root nella VM.
+"""PTY server over vsock (port 5000), run as root in the VM.
 
-Ogni connessione si collega a una sessione tmux persistente (`claude` o `shell`) dell'utente
-agent, così ricaricare la pagina non uccide Claude. Protocollo: una riga JSON di intestazione
-`{"session","cols","rows"}`, poi frame dal client `[tipo:1][lunghezza:4 BE][payload]`
-(0 = input, 1 = resize JSON `{"cols","rows"}`); verso il client i byte grezzi del terminale.
+Each connection attaches to a persistent root tmux session (`claude` or `shell`),
+so reloading the page does not kill Claude. Protocol: one JSON header line
+`{"session","cols","rows"}`, then frames from the client `[type:1][length:4 BE][payload]`
+(0 = input, 1 = resize JSON `{"cols","rows"}`); to the client, the raw terminal bytes.
 """
 import fcntl
 import json
@@ -18,8 +18,8 @@ import termios
 import threading
 
 PORT = 5000
-USER = "agent"
-WORK = "/home/agent/work"
+USER = "root"
+WORK = "/root/work"
 TMUX_CONF = "/etc/agentvm/tmux.conf"
 SESSIONS = {
     "claude": ["/usr/local/bin/agentvm-claude"],
@@ -56,13 +56,11 @@ def spawn(session, cols, rows):
     cmd = ["tmux", "-f", TMUX_CONF, "new-session", "-A", "-s", session, "-c", WORK] + SESSIONS[session]
     pid, fd = pty.fork()
     if pid == 0:
-        os.setgroups(os.getgrouplist(USER, pw.pw_gid))
-        os.setgid(pw.pw_gid)
-        os.setuid(pw.pw_uid)
         env = {
             "HOME": pw.pw_dir, "USER": USER, "LOGNAME": USER, "SHELL": "/bin/bash",
             "TERM": "xterm-256color", "COLORTERM": "truecolor", "LANG": "C.UTF-8",
-            "PATH": f"{pw.pw_dir}/.local/bin:/usr/local/bin:/usr/bin:/bin",
+            "PATH": f"{pw.pw_dir}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "IS_SANDBOX": "1",
         }
         os.chdir(WORK)
         os.execvpe(cmd[0], cmd, env)
@@ -110,7 +108,7 @@ def serve(conn):
     except (OSError, ValueError):
         pass
     finally:
-        # Chiude solo il client tmux: la sessione resta viva per le riconnessioni.
+        # Closes only the tmux client: the session stays alive for reconnections.
         if pid:
             try:
                 os.kill(pid, signal.SIGHUP)

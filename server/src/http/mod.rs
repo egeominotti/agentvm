@@ -1,4 +1,4 @@
-//! Interfaccia HTTP: API JSON, eventi SSE e dashboard.
+//! HTTP interface: JSON API, SSE events and dashboard.
 mod dto;
 mod routes;
 

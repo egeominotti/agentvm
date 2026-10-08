@@ -1,4 +1,4 @@
-//! Esito finale di un task: decisione pura a partire da ciò che VM e guest hanno lasciato.
+//! A task's final outcome: a pure decision based on what the VM and guest left behind.
 
 use serde::Deserialize;
 
@@ -10,7 +10,7 @@ pub enum GuestStatus {
     Failed,
 }
 
-/// `result.json` scritto da `agentvm-job` nel guest.
+/// `result.json` written by `agentvm-job` in the guest.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct GuestResult {
     pub status: GuestStatus,
@@ -22,11 +22,11 @@ pub struct GuestResult {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VmExit {
-    /// Il guest si è spento da solo.
+    /// The guest shut down on its own.
     Clean,
-    /// Il processo VM ha riportato un errore o è uscito in modo inatteso.
+    /// The VM process reported an error or exited unexpectedly.
     Error(String),
-    /// Fermata da noi (SIGTERM).
+    /// Stopped by us (SIGTERM).
     Signaled,
 }
 
@@ -50,7 +50,7 @@ pub enum Final {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outcome {
     pub final_: Final,
-    /// Importare `out.bundle` nel repo locale.
+    /// Import `out.bundle` into the local repo.
     pub fetch: bool,
 }
 

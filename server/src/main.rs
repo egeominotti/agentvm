@@ -1,4 +1,4 @@
-//! agentvm-server: solo wiring.
+//! agentvm-server: wiring only.
 
 use std::sync::Arc;
 
@@ -13,9 +13,9 @@ use agentvm::config::Config;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let config = Config::from_env();
-    // Prima il lock e la porta: solo un'istanza unica può toccare le VM rimaste orfane.
+    // Lock and port first: only a single instance may touch orphaned VMs.
     let _lock = InstanceLock::acquire(&config.home).map_err(|_| {
-        anyhow::anyhow!("agentvm è già in esecuzione su {} (AGENTVM_HOME)", config.home.display())
+        anyhow::anyhow!("agentvm is already running on {} (AGENTVM_HOME)", config.home.display())
     })?;
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], config.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -28,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
         keychain: Keychain::new(None),
         config,
     });
-    eprintln!("agentvm in ascolto su http://{addr}");
+    eprintln!("agentvm listening on http://{addr}");
     axum::serve(listener, agentvm::http::router(ctx)).await?;
     Ok(())
 }

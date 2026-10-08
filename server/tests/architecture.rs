@@ -1,4 +1,4 @@
-//! Regole di dipendenza della spec (§3.2): http → app → domain, adapter indipendenti, domain senza I/O.
+//! Dependency rules from the spec (§3.2): http → app → domain, independent adapters, domain without I/O.
 
 use std::path::Path;
 
@@ -22,7 +22,7 @@ fn sources(dir: &str) -> Vec<(String, String)> {
 fn assert_absent(dir: &str, forbidden: &[&str]) {
     for (file, text) in sources(dir) {
         for f in forbidden {
-            assert!(!text.contains(f), "{file} non deve usare `{f}`");
+            assert!(!text.contains(f), "{file} must not use `{f}`");
         }
     }
 }
@@ -44,7 +44,7 @@ fn adapters_do_not_know_each_other_or_outer_layers() {
         let own = Path::new(&file).file_stem().unwrap().to_str().unwrap().to_owned();
         for other in ["git", "jobdir", "keychain", "lock", "tail", "vm"] {
             if other != own {
-                assert!(!text.contains(&format!("adapters::{other}")), "{file} usa adapters::{other}");
+                assert!(!text.contains(&format!("adapters::{other}")), "{file} uses adapters::{other}");
             }
         }
     }

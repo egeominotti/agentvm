@@ -1,14 +1,15 @@
 #!/bin/bash
-# Claude Code interattivo nella VM. Il token arriva solo su fd 3 (da un file leggibile da root):
-# non è nell'ambiente dei comandi che Claude esegue. Il prompt iniziale si usa una sola volta.
+# Interactive Claude Code in the VM, as root and without any permission prompts.
+# The token arrives only on fd 3: it is not in the environment of the commands Claude runs.
+# The initial prompt is used only once.
 set -euo pipefail
 args=(--dangerously-skip-permissions)
-if sudo test -s /run/agentvm/prompt; then
-  prompt=$(sudo cat /run/agentvm/prompt)
-  sudo rm -f /run/agentvm/prompt
-  # Un argomento che inizia con "-" verrebbe letto come opzione.
+if [ -s /run/agentvm/prompt ]; then
+  prompt=$(cat /run/agentvm/prompt)
+  rm -f /run/agentvm/prompt
+  # An argument starting with "-" would be parsed as an option.
   [[ "$prompt" == -* ]] && prompt=" $prompt"
   args+=("$prompt")
 fi
-exec 3< <(sudo cat /run/agentvm/token)
-CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3 exec /home/agent/.local/bin/claude "${args[@]}"
+exec 3< /run/agentvm/token
+IS_SANDBOX=1 CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3 exec /root/.local/bin/claude "${args[@]}"

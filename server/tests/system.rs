@@ -1,5 +1,5 @@
-//! Sistema completo: server, VM e Claude veri. Richiede build, golden e token nel Portachiavi.
-//! Eseguire con `cargo test --test system -- --ignored`.
+//! Full system: real server, VM and Claude. Requires the build, the golden image and the token in the Keychain.
+//! Run with `cargo test --test system -- --ignored`.
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -20,7 +20,7 @@ impl Drop for Server {
     }
 }
 
-/// Ogni server di test ha una propria AGENTVM_HOME (golden collegata), mai quella dell'utente.
+/// Each test server has its own AGENTVM_HOME (with the golden image linked), never the user's.
 fn test_home() -> tempfile::TempDir {
     let home = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(home.path().join("golden")).unwrap();
@@ -38,7 +38,7 @@ fn spawn_server(home: &Path) -> (Child, String) {
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("bin/agentvm-server: esegui scripts/build.sh");
+        .expect("bin/agentvm-server: run scripts/build.sh");
     (child, format!("http://127.0.0.1:{port}"))
 }
 
@@ -48,19 +48,19 @@ fn start_server() -> Server {
     let server = Server { child, base, home };
     let t0 = Instant::now();
     while curl(&["-sf", &format!("{}/api/status", server.base)]).is_none() {
-        assert!(t0.elapsed() < Duration::from_secs(10), "il server non risponde");
+        assert!(t0.elapsed() < Duration::from_secs(10), "the server is not responding");
         std::thread::sleep(Duration::from_millis(100));
     }
     server
 }
 
-/// Nessun file dei job contiene il token, e nemmeno il branch prodotto.
+/// No job file contains the token, and neither does the produced branch.
 fn assert_no_token(server: &Server, repo: &Path, branch: Option<&str>) {
     let out = Command::new("grep").args(["-rl", "sk-ant-"]).arg(server.home.path().join("jobs")).output().unwrap();
-    assert!(out.stdout.is_empty(), "token trovato in: {}", String::from_utf8_lossy(&out.stdout));
+    assert!(out.stdout.is_empty(), "token found in: {}", String::from_utf8_lossy(&out.stdout));
     if let Some(b) = branch {
         let log = git(repo, &["log", "-p", b]);
-        assert!(!log.contains("sk-ant-"), "token nel branch {b}");
+        assert!(!log.contains("sk-ant-"), "token in branch {b}");
     }
 }
 
@@ -89,7 +89,7 @@ fn temp_repo() -> tempfile::TempDir {
     git(dir.path(), &["init", "-q", "-b", "main"]);
     git(dir.path(), &["config", "user.email", "t@t"]);
     git(dir.path(), &["config", "user.name", "t"]);
-    std::fs::write(dir.path().join("README.md"), "# prova\n").unwrap();
+    std::fs::write(dir.path().join("README.md"), "# test\n").unwrap();
     git(dir.path(), &["add", "."]);
     git(dir.path(), &["commit", "-qm", "init"]);
     dir
@@ -102,7 +102,7 @@ fn wait_for_state(server: &Server, id: &str, done: impl Fn(&str) -> bool, max: D
         if done(task["status"]["state"].as_str().unwrap()) {
             return task;
         }
-        assert!(t0.elapsed() < max, "timeout, ultimo stato: {task}");
+        assert!(t0.elapsed() < max, "timeout, last state: {task}");
         std::thread::sleep(Duration::from_millis(500));
     }
 }
@@ -110,7 +110,7 @@ fn wait_for_state(server: &Server, id: &str, done: impl Fn(&str) -> bool, max: D
 const TERMINAL: [&str; 4] = ["done", "no_changes", "failed", "stopped"];
 
 #[test]
-#[ignore = "richiede golden, token e Claude"]
+#[ignore = "requires golden, token and Claude"]
 fn task_produces_a_branch_in_the_local_repo() {
     let server = start_server();
     let status = get_json(&format!("{}/api/status", server.base));
@@ -120,7 +120,7 @@ fn task_produces_a_branch_in_the_local_repo() {
     let repo = temp_repo();
     let created = post_json(
         &format!("{}/api/tasks", server.base),
-        &json!({"repo_path": repo.path(), "prompt": "Crea il file hello.txt con scritto ciao e fai commit."}),
+        &json!({"repo_path": repo.path(), "prompt": "Create the file hello.txt containing hello and commit it."}),
     );
     let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
 
@@ -128,10 +128,10 @@ fn task_produces_a_branch_in_the_local_repo() {
     assert_eq!(task["status"]["state"], "done", "{task}");
     let branch = format!("agent/{id}");
     assert_eq!(task["branch"], branch.as_str());
-    assert!(git(repo.path(), &["show", &format!("{branch}:hello.txt")]).to_lowercase().contains("ciao"));
+    assert!(git(repo.path(), &["show", &format!("{branch}:hello.txt")]).to_lowercase().contains("hello"));
     assert!(curl(&["-sf", &format!("{}/api/tasks/{id}/diff", server.base)]).unwrap().contains("hello.txt"));
 
-    // curl esce con errore allo scadere di --max-time, ma l'output ricevuto è valido.
+    // curl exits with an error when --max-time expires, but the output received is valid.
     let out = Command::new("curl").args(["-sN", "--max-time", "2", &format!("{}/api/tasks/{id}/events", server.base)]).output().unwrap();
     let sse = String::from_utf8_lossy(&out.stdout);
     assert!(sse.contains("event: state") && sse.contains("event: agent") && sse.contains("tool_use"), "{sse}");
@@ -139,13 +139,13 @@ fn task_produces_a_branch_in_the_local_repo() {
 }
 
 #[test]
-#[ignore = "richiede golden, token e Claude"]
+#[ignore = "requires golden, token and Claude"]
 fn running_task_can_be_stopped() {
     let server = start_server();
     let repo = temp_repo();
     let created = post_json(
         &format!("{}/api/tasks", server.base),
-        &json!({"repo_path": repo.path(), "prompt": "Esegui il comando `sleep 120` con Bash e poi crea x.txt."}),
+        &json!({"repo_path": repo.path(), "prompt": "Run the command `sleep 120` with Bash and then create x.txt."}),
     );
     let id = created["id"].as_str().unwrap().to_owned();
     wait_for_state(&server, &id, |s| s == "running", Duration::from_secs(30));
@@ -157,15 +157,15 @@ fn running_task_can_be_stopped() {
 }
 
 #[test]
-#[ignore = "richiede golden, token e Claude"]
+#[ignore = "requires golden, token and Claude"]
 fn invalid_requests_are_rejected_with_a_message() {
     let server = start_server();
     let not_repo = tempfile::tempdir().unwrap();
     let r = post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": not_repo.path(), "prompt": "x"}));
-    assert!(r["error"].as_str().unwrap().contains("non è un repository git"), "{r}");
+    assert!(r["error"].as_str().unwrap().contains("is not a git repository"), "{r}");
     let repo = temp_repo();
     let r = post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo.path(), "prompt": "  "}));
-    assert!(r["error"].as_str().unwrap().contains("vuoto"), "{r}");
+    assert!(r["error"].as_str().unwrap().contains("empty"), "{r}");
     assert!(curl(&["-sf", &format!("{}/api/tasks/nope", server.base)]).is_none());
 }
 
@@ -177,7 +177,7 @@ fn run_task(server: &Server, repo: &Path, prompt: &str) -> (String, Value) {
 }
 
 #[test]
-#[ignore = "richiede golden e bin"]
+#[ignore = "requires golden and bin"]
 fn second_server_on_the_same_home_refuses_to_start() {
     let server = start_server();
     let (mut second, _) = spawn_server(server.home.path());
@@ -188,50 +188,50 @@ fn second_server_on_the_same_home_refuses_to_start() {
         }
         if t0.elapsed() > Duration::from_secs(5) {
             let _ = second.kill();
-            panic!("il secondo server è partito sulla stessa home");
+            panic!("the second server started on the same home");
         }
         std::thread::sleep(Duration::from_millis(100));
     };
     assert!(!status.success());
     let mut err = String::new();
     std::io::Read::read_to_string(second.stderr.as_mut().unwrap(), &mut err).unwrap();
-    assert!(err.contains("già in esecuzione"), "{err}");
+    assert!(err.contains("already running"), "{err}");
     assert!(curl(&["-sf", &format!("{}/api/status", server.base)]).is_some());
 }
 
 #[test]
-#[ignore = "richiede golden, token e Claude"]
+#[ignore = "requires golden, token and Claude"]
 fn prompt_starting_with_a_dash_reaches_claude() {
     let server = start_server();
     let repo = temp_repo();
-    let (id, task) = run_task(&server, repo.path(), "- crea il file dash.txt con scritto ok\n- fai commit");
+    let (id, task) = run_task(&server, repo.path(), "- create the file dash.txt containing ok\n- commit it");
     assert_eq!(task["status"]["state"], "done", "{task}");
     git(repo.path(), &["show", &format!("agent/{id}:dash.txt")]);
 }
 
 #[test]
-#[ignore = "richiede golden, token e Claude"]
+#[ignore = "requires golden, token and Claude"]
 fn commits_on_another_branch_are_not_lost() {
     let server = start_server();
     let repo = temp_repo();
     let (id, task) = run_task(
         &server,
         repo.path(),
-        "Esegui `git checkout -b feature/x`, poi crea x.txt con scritto x e fai commit su quel branch.",
+        "Run `git checkout -b feature/x`, then create x.txt containing x and commit it on that branch.",
     );
     assert_eq!(task["status"]["state"], "done", "{task}");
     git(repo.path(), &["show", &format!("agent/{id}:x.txt")]);
 }
 
 #[test]
-#[ignore = "richiede golden, token e Claude"]
+#[ignore = "requires golden, token and Claude"]
 fn agent_commands_cannot_see_the_token() {
     let server = start_server();
     let repo = temp_repo();
     let (id, task) = run_task(
         &server,
         repo.path(),
-        "Esegui `printenv CLAUDE_CODE_OAUTH_TOKEN > env.txt; echo fine >> env.txt` con Bash, poi fai commit di env.txt.",
+        "Run `printenv CLAUDE_CODE_OAUTH_TOKEN > env.txt; echo end >> env.txt` with Bash, then commit env.txt.",
     );
     assert_eq!(task["status"]["state"], "done", "{task}");
     let content = git(repo.path(), &["show", &format!("agent/{id}:env.txt")]);
@@ -240,28 +240,28 @@ fn agent_commands_cannot_see_the_token() {
 }
 
 #[test]
-#[ignore = "richiede golden e token"]
+#[ignore = "requires golden and token"]
 fn stop_right_after_submit_never_leaves_the_task_hanging() {
     let server = start_server();
     let repo = temp_repo();
-    let created = post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo.path(), "prompt": "crea a.txt"}));
+    let created = post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo.path(), "prompt": "create a.txt"}));
     let id = created["id"].as_str().unwrap().to_owned();
     post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
     let task = wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(10));
     assert_eq!(task["status"]["state"], "stopped", "{task}");
     let console = server.home.path().join(format!("jobs/{id}/console.log"));
-    assert!(!console.exists() || std::fs::metadata(&console).unwrap().len() == 0, "la VM è partita comunque");
+    assert!(!console.exists() || std::fs::metadata(&console).unwrap().len() == 0, "the VM started anyway");
 }
 
 #[test]
-#[ignore = "richiede golden, token e Claude"]
+#[ignore = "requires golden, token and Claude"]
 fn interactive_terminal_saves_to_the_branch_and_closes() {
     let server = start_server();
     let repo = temp_repo();
     let created = post_json(
         &format!("{}/api/tasks", server.base),
         &json!({"repo_path": repo.path(), "interactive": true,
-                "prompt": "Crea il file term.txt con scritto ciao e fai commit."}),
+                "prompt": "Create the file term.txt containing hello and commit it."}),
     );
     let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
     let t0 = Instant::now();
@@ -271,16 +271,33 @@ fn interactive_terminal_saves_to_the_branch_and_closes() {
         if task["activity"] == "waiting" && task["status"]["state"] == "running" {
             break;
         }
-        assert!(t0.elapsed() < Duration::from_secs(240), "Claude non ha finito il turno: {task}");
+        assert!(t0.elapsed() < Duration::from_secs(240), "Claude did not finish its turn: {task}");
         std::thread::sleep(Duration::from_millis(500));
     }
     let saved = post_json(&format!("{}/api/tasks/{id}/save", server.base), &json!({}));
     assert!(saved["commits"].as_u64().unwrap_or(0) >= 1, "{saved}");
     let content = git(repo.path(), &["show", &format!("agent/{id}:term.txt")]);
-    assert!(content.to_lowercase().contains("ciao"));
+    assert!(content.to_lowercase().contains("hello"));
 
     post_json(&format!("{}/api/tasks/{id}/close", server.base), &json!({}));
     let task = wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(60));
     assert_eq!(task["status"]["state"], "done", "{task}");
     assert_no_token(&server, repo.path(), Some(&format!("agent/{id}")));
+}
+
+#[test]
+#[ignore = "requires golden, token and Claude"]
+fn claude_runs_as_root_with_full_permissions() {
+    let server = start_server();
+    let repo = temp_repo();
+    let (id, task) = run_task(
+        &server,
+        repo.path(),
+        "Without using sudo: run `id -u > perm.txt`, then `apt-get install -y -q sl >/dev/null 2>&1; dpkg-query -W -f='${Status}' sl >> perm.txt`. Finally commit perm.txt.",
+    );
+    assert_eq!(task["status"]["state"], "done", "{task}");
+    let perm = git(repo.path(), &["show", &format!("agent/{id}:perm.txt")]);
+    let mut lines = perm.lines();
+    assert_eq!(lines.next(), Some("0"), "{perm}");
+    assert!(perm.contains("install ok installed"), "{perm}");
 }

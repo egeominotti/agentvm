@@ -1,4 +1,4 @@
-//! Identificatori validati alla costruzione.
+//! Identifiers validated at construction.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -8,15 +8,15 @@ use serde::Serialize;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum IdError {
-    #[error("SHA di commit non valido: {0}")]
+    #[error("invalid commit SHA: {0}")]
     InvalidSha(String),
-    #[error("il prompt è vuoto")]
+    #[error("the prompt is empty")]
     EmptyPrompt,
-    #[error("{0} non è un repository git")]
+    #[error("{0} is not a git repository")]
     NotARepo(String),
 }
 
-/// `YYYYMMDD-HHMMSS-xxxx` (UTC + 4 hex casuali): univoco e ordinabile.
+/// `YYYYMMDD-HHMMSS-xxxx` (UTC + 4 random hex digits): unique and sortable.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct TaskId(String);
@@ -36,7 +36,7 @@ impl TaskId {
         ))
     }
 
-    /// Ricostruisce un id ricevuto dall'esterno (es. da un URL); accetta solo il formato generato.
+    /// Rebuilds an id received from outside (e.g. from a URL); accepts only the generated format.
     pub fn parse(s: &str) -> Option<Self> {
         let b = s.as_bytes();
         let shape = b.len() == 20
@@ -62,7 +62,7 @@ impl fmt::Display for TaskId {
     }
 }
 
-/// Giorni dall'epoch → (anno, mese, giorno), algoritmo di H. Hinnant.
+/// Days since the epoch → (year, month, day), H. Hinnant's algorithm.
 fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;
     let era = z.div_euclid(146_097);

@@ -1,4 +1,4 @@
-//! Router HTTP reale (tower oneshot): protezione da DNS rebinding e richieste cross-origin.
+//! Real HTTP router (tower oneshot): protection against DNS rebinding and cross-origin requests.
 
 use std::sync::Arc;
 

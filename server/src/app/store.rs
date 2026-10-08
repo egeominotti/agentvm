@@ -1,4 +1,4 @@
-//! Repository dei task: unico proprietario del loro stato (in memoria per l'MVP).
+//! Task repository: sole owner of their state (in memory for the MVP).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -14,12 +14,12 @@ use crate::domain::task::{InvalidTransition, TaskEvent, TaskState, transition};
 pub struct TaskRecord {
     pub id: TaskId,
     pub repo: RepoPath,
-    /// Assente per un terminale aperto senza compito iniziale.
+    /// Absent for a terminal opened without an initial task.
     pub prompt: Option<Prompt>,
     pub base_sha: CommitSha,
     pub interactive: bool,
     pub state: TaskState,
-    /// Ultima attività segnalata dagli hook di Claude Code (`working`, `waiting`).
+    /// Last activity reported by the Claude Code hooks (`working`, `waiting`).
     pub activity: Option<String>,
     pub created_at: SystemTime,
     pub finished_at: Option<SystemTime>,
@@ -43,7 +43,7 @@ impl TaskRecord {
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
-    #[error("task inesistente")]
+    #[error("task not found")]
     NotFound,
     #[error(transparent)]
     Invalid(#[from] InvalidTransition),
@@ -86,7 +86,7 @@ impl Store {
         Ok(next)
     }
 
-    /// Segnala lo stop al supervisor e aggiorna lo stato (un task in coda si ferma subito).
+    /// Signals the stop to the supervisor and updates the state (a queued task stops immediately).
     pub fn request_stop(&self, id: &TaskId) -> Result<TaskState, StoreError> {
         let next = self.apply(id, TaskEvent::StopRequested)?;
         if let Some(e) = self.tasks.lock().unwrap().get(id) {
@@ -109,7 +109,7 @@ impl Store {
         self.tasks.lock().unwrap().get(id).map(|e| e.record.clone())
     }
 
-    /// Più recenti per primi.
+    /// Most recent first.
     pub fn list(&self) -> Vec<TaskRecord> {
         let mut all: Vec<_> = self.tasks.lock().unwrap().values().map(|e| e.record.clone()).collect();
         all.sort_by_key(|r| std::cmp::Reverse(r.created_at));

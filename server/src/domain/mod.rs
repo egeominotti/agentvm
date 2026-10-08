@@ -1,4 +1,4 @@
-//! Core puro: tipi e decisioni, nessun I/O.
+//! Pure core: types and decisions, no I/O.
 pub mod agent_event;
 pub mod ids;
 pub mod outcome;

@@ -1,4 +1,4 @@
-// Ciclo di vita di una VM ed eventi JSON Lines su stdout.
+// A VM's lifecycle and JSON Lines events on stdout.
 import Foundation
 import Virtualization
 
@@ -44,7 +44,7 @@ final class Runner: NSObject, VZVirtualMachineDelegate {
             case .success:
                 startBridge()
                 Events.emit("started")
-            case .failure(let e): Events.fail("avvio fallito: \(e.localizedDescription)")
+            case .failure(let e): Events.fail("start failed: \(e.localizedDescription)")
             }
         }
     }
@@ -52,7 +52,7 @@ final class Runner: NSObject, VZVirtualMachineDelegate {
     private func startBridge() {
         guard let path = ptySocket, let device = vm.socketDevices.first as? VZVirtioSocketDevice else { return }
         let bridge = VsockBridge(path: path.path, port: VsockBridge.ptyPort, device: device)
-        do { try bridge.start() } catch { Events.fail("socket del terminale: \(error)") }
+        do { try bridge.start() } catch { Events.fail("terminal socket: \(error)") }
         self.bridge = bridge
     }
 
@@ -61,10 +61,10 @@ final class Runner: NSObject, VZVirtualMachineDelegate {
     }
 
     func virtualMachine(_ vm: VZVirtualMachine, didStopWithError error: Error) {
-        Events.fail("la VM si è fermata con errore: \(error.localizedDescription)")
+        Events.fail("the VM stopped with an error: \(error.localizedDescription)")
     }
 
-    /// SIGTERM/SIGINT: stop forzato (il disco è usa-e-getta).
+    /// SIGTERM/SIGINT: forced stop (the disk is disposable).
     private func installStopSignals() {
         for sig in [SIGTERM, SIGINT] {
             signal(sig, SIG_IGN)

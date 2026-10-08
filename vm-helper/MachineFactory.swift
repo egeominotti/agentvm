@@ -1,9 +1,9 @@
-// Traduce VMConfig in una configurazione Virtualization.framework.
+// Translates VMConfig into a Virtualization.framework configuration.
 import Foundation
 import Virtualization
 
 enum MachineFactory {
-    /// Tag virtiofs montato dal guest in /mnt/job.
+    /// virtiofs tag mounted by the guest at /mnt/job.
     static let shareTag = "job"
 
     static func make(_ c: VMConfig) throws -> VZVirtualMachineConfiguration {

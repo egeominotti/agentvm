@@ -1,5 +1,5 @@
-// Ponte socket Unix (sul Mac) → porta vsock del guest: ogni connessione accettata diventa un
-// canale verso il server PTY nella VM.
+// Bridge from a Unix socket (on the Mac) → guest vsock port: each accepted connection becomes a
+// channel to the PTY server in the VM.
 import Foundation
 import Virtualization
 
@@ -9,7 +9,7 @@ final class VsockBridge {
     private let path: String
     private let port: UInt32
     private let device: VZVirtioSocketDevice
-    /// Le connessioni vsock vanno tenute in vita finché il canale è aperto.
+    /// The vsock connections must be kept alive while the channel is open.
     private var connections: [ObjectIdentifier: VZVirtioSocketConnection] = [:]
 
     init(path: String, port: UInt32, device: VZVirtioSocketDevice) {
@@ -25,7 +25,7 @@ final class VsockBridge {
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         let bytes = Array(path.utf8CString)
-        guard bytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else { throw ConfigError("percorso troppo lungo: \(path)") }
+        guard bytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else { throw ConfigError("path too long: \(path)") }
         withUnsafeMutableBytes(of: &addr.sun_path) { raw in
             raw.copyBytes(from: bytes.map { UInt8(bitPattern: $0) })
         }
@@ -43,7 +43,7 @@ final class VsockBridge {
         }
     }
 
-    /// Da chiamare sulla coda principale (quella della VM).
+    /// Must be called on the main queue (the VM's queue).
     private func connect(_ client: Int32) {
         device.connect(toPort: port) { [self] result in
             switch result {

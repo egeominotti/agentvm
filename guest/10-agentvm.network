@@ -1,4 +1,4 @@
-# Config generica: vale per qualunque MAC, quindi per ogni clone della golden.
+# Generic config: matches any MAC, hence every clone of the golden image.
 [Match]
 Name=en* eth*
 

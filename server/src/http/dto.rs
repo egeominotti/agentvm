@@ -1,4 +1,4 @@
-//! Forme JSON esposte dall'API.
+//! JSON shapes exposed by the API.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -95,12 +95,12 @@ fn unix(t: SystemTime) -> f64 {
     t.duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0)
 }
 
-/// Errore con messaggio per l'utente: `{"error": "..."}`.
+/// Error with a user-facing message: `{"error": "..."}`.
 pub struct ApiError(pub StatusCode, pub String);
 
 impl ApiError {
     pub fn not_found() -> Self {
-        ApiError(StatusCode::NOT_FOUND, "task inesistente".into())
+        ApiError(StatusCode::NOT_FOUND, "task not found".into())
     }
 }
 

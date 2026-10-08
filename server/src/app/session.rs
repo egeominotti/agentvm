@@ -1,4 +1,4 @@
-//! Azioni su un terminale acceso: aprire un PTY, salvare il lavoro nel branch, chiudere la VM.
+//! Actions on a running terminal: open a PTY, save the work to the branch, close the VM.
 
 use std::time::Duration;
 
@@ -7,7 +7,7 @@ use crate::adapters::git::Git;
 use crate::adapters::jobdir::JobWorkspace;
 use crate::adapters::pty::PtyConnection;
 
-/// Tipi del terminale esposti all'HTTP tramite `app`.
+/// Terminal types exposed to HTTP through `app`.
 pub use crate::adapters::pty::{Frame as TerminalInput, PtyConnection as Terminal};
 use crate::domain::ids::TaskId;
 use crate::domain::task::TaskState;
@@ -16,15 +16,15 @@ const SAVE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
-    #[error("task inesistente")]
+    #[error("task not found")]
     NotFound,
-    #[error("il terminale non è acceso")]
+    #[error("the terminal is not running")]
     NotRunning,
-    #[error("questo task non è un terminale")]
+    #[error("this task is not a terminal")]
     NotInteractive,
-    #[error("la VM non risponde: {0}")]
+    #[error("the VM is not responding: {0}")]
     Unreachable(String),
-    #[error("salvataggio non riuscito: {0}")]
+    #[error("save failed: {0}")]
     SaveFailed(String),
 }
 
@@ -39,7 +39,7 @@ fn running_terminal(ctx: &AppCtx, id: &TaskId) -> Result<crate::app::store::Task
     Ok(record)
 }
 
-/// Collega un client alla sessione `claude` o `shell` della VM (creata se non esiste).
+/// Attaches a client to the VM's `claude` or `shell` session (created if it does not exist).
 pub async fn open_terminal(
     ctx: &AppCtx,
     id: &TaskId,
@@ -52,7 +52,7 @@ pub async fn open_terminal(
     PtyConnection::open(&socket, session, cols, rows).await.map_err(|e| SessionError::Unreachable(e.to_string()))
 }
 
-/// Chiede al guest di fare commit e bundle, poi aggiorna `agent/<id>` nel repo. Restituisce i commit.
+/// Asks the guest to commit and bundle, then updates `agent/<id>` in the repo. Returns the commit count.
 pub async fn save(ctx: &AppCtx, id: &TaskId) -> Result<u32, SessionError> {
     let record = running_terminal(ctx, id)?;
     let share = JobWorkspace::share_of(&ctx.config.jobs(), id);
@@ -68,7 +68,7 @@ pub async fn save(ctx: &AppCtx, id: &TaskId) -> Result<u32, SessionError> {
             break v["commits"].as_u64().unwrap_or(0) as u32;
         }
         if t0.elapsed() > SAVE_TIMEOUT {
-            return Err(SessionError::SaveFailed("la VM non ha risposto in tempo".into()));
+            return Err(SessionError::SaveFailed("the VM did not respond in time".into()));
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     };
@@ -83,7 +83,7 @@ pub async fn save(ctx: &AppCtx, id: &TaskId) -> Result<u32, SessionError> {
     Ok(commits)
 }
 
-/// Salvataggio finale e spegnimento: il supervisor raccoglie l'esito come per ogni task.
+/// Final save and shutdown: the supervisor collects the outcome as for any task.
 pub fn close(ctx: &AppCtx, id: &TaskId) -> Result<(), SessionError> {
     running_terminal(ctx, id)?;
     let share = JobWorkspace::share_of(&ctx.config.jobs(), id);

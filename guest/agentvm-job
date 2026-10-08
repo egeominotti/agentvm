@@ -1,15 +1,13 @@
 #!/bin/bash
-# Esegue il task descritto in /mnt/job/task.json (contratto §3.6 della spec) e spegne la VM.
-# Mai `set -x`: il token passa da questo script.
+# Runs the task described in /mnt/job/task.json (contract §3.6 of the spec) and powers off the VM.
+# Never `set -x`: the token passes through this script.
 set -euo pipefail
 
 JOB=/mnt/job
-AGENT=agent
-WORK=/home/$AGENT/work
-CLAUDE=/home/$AGENT/.local/bin/claude
+WORK=/root/work
+CLAUDE=/root/.local/bin/claude
 
 log() { echo "[$(cut -d' ' -f1 /proc/uptime)s] $*" >> "$JOB/job.log"; }
-as_agent() { sudo -u "$AGENT" -H "$@"; }
 
 write_result() { # status claude_exit commits [error]
   jq -n --arg s "$1" --argjson e "$2" --argjson c "$3" --arg err "${4:-}" \
@@ -40,48 +38,47 @@ ID=$(jq -r .id "$JOB/task.json")
 BRANCH=$(jq -r .branch "$JOB/task.json")
 BASE=$(jq -r .base_sha "$JOB/task.json")
 
-# Variabile non esportata: il token arriva a Claude solo da una pipe (fd 3), mai dall'ambiente,
-# così i comandi eseguiti dall'agente non lo ereditano.
+# Unexported variable: the token reaches Claude only through a pipe (fd 3), never via the environment,
+# so the commands run by the agent do not inherit it.
 TOKEN=$(cat "$JOB/.token")
 rm -f "$JOB/.token"
 
-as_agent git clone -q "$JOB/repo.bundle" "$WORK"
+git clone -q "$JOB/repo.bundle" "$WORK"
 cd "$WORK"
-as_agent git checkout -q -b "$BRANCH" "$BASE"
-as_agent git config user.name agentvm
-as_agent git config user.email agentvm@localhost
+git checkout -q -b "$BRANCH" "$BASE"
+git config user.name agentvm
+git config user.email agentvm@localhost
 log "repo ready on $BRANCH"
 
 for _ in $(seq 100); do getent hosts api.anthropic.com >/dev/null && break; sleep 0.1; done
 log "network ready"
 
-# Commit di ciò che resta e bundle dei commit da $BASE; imposta COMMITS.
+# Commits whatever is left and bundles the commits since $BASE; sets COMMITS.
 save_work() {
-  # Se l'agente ha cambiato branch, il lavoro che conta è quello su HEAD: riportalo su $BRANCH.
-  if [ "$(as_agent git symbolic-ref -q --short HEAD || true)" != "$BRANCH" ]; then
-    log "HEAD non su $BRANCH: lo riallineo"
-    as_agent git checkout -q -B "$BRANCH"
+  # If the agent switched branches, the work that matters is on HEAD: bring it back to $BRANCH.
+  if [ "$(git symbolic-ref -q --short HEAD || true)" != "$BRANCH" ]; then
+    log "HEAD not on $BRANCH: realigning"
+    git checkout -q -B "$BRANCH"
   fi
-  as_agent git add -A
-  as_agent git diff --cached --quiet || as_agent git commit -q -m "agentvm: $ID (auto-commit)"
-  COMMITS=$(as_agent git rev-list --count "$BASE..$BRANCH")
+  git add -A
+  git diff --cached --quiet || git commit -q -m "agentvm: $ID (auto-commit)"
+  COMMITS=$(git rev-list --count "$BASE..$BRANCH")
   rm -f "$JOB/out.bundle"
   if [ "$COMMITS" -gt 0 ]; then
-    as_agent git bundle create -q "$JOB/out.bundle" "$BASE..$BRANCH"
+    git bundle create -q "$JOB/out.bundle" "$BASE..$BRANCH"
   fi
   log "commits $COMMITS"
 }
 
 if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
-  # Terminale: Claude interattivo in tmux, server PTY su vsock, salva/chiudi su richiesta.
+  # Terminal: interactive Claude in tmux, PTY server over vsock, save/close on request.
   install -d -m 700 /run/agentvm
   (umask 077; printf '%s' "$TOKEN" > /run/agentvm/token)
   unset TOKEN
   (umask 077; jq -r .prompt "$JOB/task.json" > /run/agentvm/prompt)
   [ -s /run/agentvm/prompt ] && [ "$(tr -d '[:space:]' < /run/agentvm/prompt)" != "" ] || rm -f /run/agentvm/prompt
   /usr/local/bin/agentvm-pty &
-  runuser -u "$AGENT" -- env -i HOME=/home/$AGENT USER=$AGENT LANG=C.UTF-8 TERM=xterm-256color \
-    PATH=/home/$AGENT/.local/bin:/usr/local/bin:/usr/bin:/bin \
+  env -i HOME=/root USER=root LANG=C.UTF-8 TERM=xterm-256color PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     tmux -f /etc/agentvm/tmux.conf new-session -d -s claude -c "$WORK" -x 160 -y 48 /usr/local/bin/agentvm-claude
   log "terminal ready"
 
@@ -100,12 +97,12 @@ if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
   exit 0
 fi
 
-# Prompt da stdin: mai interpretato come opzione (es. "- elenco") né limitato da ARG_MAX.
-# runuser (a differenza di sudo) lascia aperto il fd 3 con il token.
+# Prompt from stdin: never parsed as an option (e.g. "- list") nor limited by ARG_MAX.
+# Claude runs as root (IS_SANDBOX=1: the VM is the sandbox); the token arrives only on fd 3.
 set +e
-jq -r .prompt "$JOB/task.json" | runuser -u "$AGENT" -- env -i \
-  HOME=/home/$AGENT USER=$AGENT LANG=C.UTF-8 PATH=/home/$AGENT/.local/bin:/usr/local/bin:/usr/bin:/bin \
-  CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3 \
+jq -r .prompt "$JOB/task.json" | env -i \
+  HOME=/root USER=root LANG=C.UTF-8 PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  IS_SANDBOX=1 CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3 \
   "$CLAUDE" -p --dangerously-skip-permissions --output-format stream-json --verbose \
   3< <(printf '%s' "$TOKEN") > "$JOB/stream.jsonl" 2> "$JOB/claude.err"
 CLAUDE_EXIT=${PIPESTATUS[1]}

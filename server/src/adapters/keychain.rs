@@ -1,4 +1,4 @@
-//! Lettura del token Claude dal Portachiavi di macOS (fallback: variabile d'ambiente).
+//! Reads the Claude token from the macOS Keychain (fallback: environment variable).
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -11,14 +11,14 @@ const ENV_FALLBACK: &str = "CLAUDE_CODE_OAUTH_TOKEN";
 #[derive(Debug, thiserror::Error)]
 pub enum KeychainError {
     #[error(
-        "token Claude assente: genera un token con `claude setup-token` e salvalo con \
-         `security add-generic-password -s agentvm -a agentvm -w` (oppure imposta CLAUDE_CODE_OAUTH_TOKEN)"
+        "Claude token missing: generate one with `claude setup-token` and store it with \
+         `security add-generic-password -s agentvm -a agentvm -w` (or set CLAUDE_CODE_OAUTH_TOKEN)"
     )]
     Missing,
 }
 
 pub struct Keychain {
-    /// `None` = portachiavi predefiniti dell'utente.
+    /// `None` = the user's default keychains.
     keychain: Option<PathBuf>,
 }
 

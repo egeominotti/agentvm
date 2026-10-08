@@ -1,4 +1,4 @@
-//! `task.json`: ciò che il guest riceve per eseguire un task.
+//! `task.json`: what the guest receives to run a task.
 
 use serde::{Deserialize, Serialize};
 
@@ -9,7 +9,7 @@ pub struct TaskSpec {
     pub branch: String,
     pub base_sha: String,
     pub timeout_s: u64,
-    /// Terminale interattivo: la VM resta accesa finché l'utente non la chiude.
+    /// Interactive terminal: the VM stays on until the user closes it.
     #[serde(default)]
     pub interactive: bool,
 }

@@ -1,4 +1,4 @@
-//! Letture che coinvolgono sistemi esterni, esposte all'HTTP senza fargli conoscere gli adapter.
+//! Reads that involve external systems, exposed to HTTP without it knowing about the adapters.
 
 use super::supervisor::AppCtx;
 use crate::adapters::git::Git;
@@ -7,15 +7,15 @@ use crate::domain::task::TaskState;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DiffError {
-    #[error("task inesistente")]
+    #[error("task not found")]
     NotFound,
-    #[error("il task non ha prodotto un branch")]
+    #[error("the task did not produce a branch")]
     NoBranch,
     #[error("{0}")]
     Git(String),
 }
 
-/// Diff tra il commit di partenza e il branch prodotto dal task.
+/// Diff between the base commit and the branch produced by the task.
 pub async fn task_diff(ctx: &AppCtx, id: &TaskId) -> Result<String, DiffError> {
     let record = ctx.store.get(id).ok_or(DiffError::NotFound)?;
     if !matches!(record.state, TaskState::Done { .. }) {

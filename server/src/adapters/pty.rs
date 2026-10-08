@@ -1,4 +1,4 @@
-//! Connessione a un terminale nella VM: socket Unix dell'helper → vsock → server PTY del guest.
+//! Connection to a terminal in the VM: helper Unix socket → vsock → guest PTY server.
 
 use std::path::Path;
 
@@ -7,7 +7,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
-/// Messaggi verso il guest: `[tipo:1][lunghezza:4 BE][payload]`.
+/// Messages to the guest: `[type:1][length:4 BE][payload]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Frame {
     Input(Vec<u8>),
@@ -35,7 +35,7 @@ pub struct PtyReader(OwnedReadHalf);
 pub struct PtyWriter(OwnedWriteHalf);
 
 impl PtyConnection {
-    /// Apre la sessione `session` (`claude` o `shell`), creandola se non esiste ancora.
+    /// Opens session `session` (`claude` or `shell`), creating it if it does not exist yet.
     pub async fn open(socket: &Path, session: &str, cols: u16, rows: u16) -> std::io::Result<Self> {
         let stream = UnixStream::connect(socket).await?;
         let (read, mut write) = stream.into_split();
@@ -58,7 +58,7 @@ impl PtyConnection {
 }
 
 impl PtyReader {
-    /// Byte grezzi del terminale; `None` quando la sessione si chiude.
+    /// Raw terminal bytes; `None` when the session closes.
     pub async fn recv(&mut self) -> std::io::Result<Option<Vec<u8>>> {
         let mut buf = vec![0u8; 16 * 1024];
         let n = self.0.read(&mut buf).await?;

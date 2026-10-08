@@ -1,4 +1,4 @@
-//! Ciclo di vita completo di un task: un supervisor (task tokio) per ogni task.
+//! Full task lifecycle: one supervisor (tokio task) per task.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -36,9 +36,9 @@ pub struct AppCtx {
 pub enum SubmitError {
     #[error(transparent)]
     Invalid(#[from] IdError),
-    #[error("ref non trovato: {0}")]
+    #[error("ref not found: {0}")]
     UnknownRef(#[source] GitError),
-    #[error("immagine golden assente ({0}): esegui scripts/build-golden.sh")]
+    #[error("golden image missing ({0}): run scripts/build-golden.sh")]
     NoGolden(String),
     #[error(transparent)]
     Token(#[from] KeychainError),
@@ -48,11 +48,11 @@ pub struct NewTask<'a> {
     pub repo: &'a str,
     pub prompt: String,
     pub base_ref: Option<&'a str>,
-    /// Terminale con Claude Code interattivo; il prompt diventa facoltativo.
+    /// Terminal with interactive Claude Code; the prompt becomes optional.
     pub interactive: bool,
 }
 
-/// Valida la richiesta, accoda il task e avvia il suo supervisor.
+/// Validates the request, queues the task and starts its supervisor.
 pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError> {
     let repo = RepoPath::new(expand_home(req.repo))?;
     let prompt = match Prompt::new(req.prompt) {
@@ -77,7 +77,7 @@ async fn run(ctx: Arc<AppCtx>, id: TaskId) {
     let Some(mut stop) = ctx.store.stop_signal(&id) else { return };
     let _permit = tokio::select! {
         permit = ctx.scheduler.acquire() => permit,
-        _ = stop.wait_for(|s| *s) => return, // fermato mentre era in coda
+        _ = stop.wait_for(|s| *s) => return, // stopped while queued
     };
     if ctx.store.get(&id).is_none_or(|r| r.state != TaskState::Queued) {
         return;
@@ -87,15 +87,15 @@ async fn run(ctx: Arc<AppCtx>, id: TaskId) {
     }
 }
 
-/// Errori prima dello spegnimento della VM → `Err(motivo)`; l'esito normale passa da `Finished`.
+/// Errors before the VM shuts down → `Err(reason)`; the normal outcome goes through `Finished`.
 async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
     let apply = |e| ctx.store.apply(id, e).map(drop).map_err(|e| e.to_string());
     apply(TaskEvent::SlotAcquired)?;
-    let record = ctx.store.get(id).ok_or("task scomparso")?;
+    let record = ctx.store.get(id).ok_or("task disappeared")?;
     let branch = id.branch();
     let git = Git::new(record.repo.clone());
 
-    let ws = JobWorkspace::create(&ctx.config.jobs(), id).map_err(|e| format!("cartella del job: {e}"))?;
+    let ws = JobWorkspace::create(&ctx.config.jobs(), id).map_err(|e| format!("job directory: {e}"))?;
     git.bundle_all(&ws.repo_bundle()).map_err(|e| e.to_string())?;
     ws.write_spec(&TaskSpec {
         id: id.to_string(),
@@ -108,7 +108,7 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
     .map_err(|e| format!("task.json: {e}"))?;
     let token = ctx.keychain.read_token().map_err(|e| e.to_string())?;
     ws.write_token(&token).map_err(|e| format!("token: {e}"))?;
-    ws.clone_disk(&ctx.config.golden()).map_err(|e| format!("clone del disco: {e}"))?;
+    ws.clone_disk(&ctx.config.golden()).map_err(|e| format!("disk clone: {e}"))?;
     apply(TaskEvent::Prepared)?;
 
     let stop_requested_early = ctx.store.stop_signal(id).is_some_and(|s| *s.borrow());
@@ -120,7 +120,7 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
     let mut vm = VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &vm_config(&ctx.config, &ws, record.interactive))
         .map_err(|e| e.to_string())?;
     let _ = ws.write_pid(vm.pid());
-    let follower = Follower::start(ctx.store.log(id).ok_or("task scomparso")?, ws.stream(), token);
+    let follower = Follower::start(ctx.store.log(id).ok_or("task disappeared")?, ws.stream(), token);
 
     let on_started = || {
         let _ = ctx.store.apply(id, TaskEvent::VmStarted);
@@ -153,14 +153,14 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
     apply(TaskEvent::Finished(final_, branch))
 }
 
-/// Segue `stream.jsonl` e pubblica gli eventi dell'agente finché la VM è viva.
+/// Follows `stream.jsonl` and publishes the agent's events while the VM is alive.
 struct Follower {
     stop: watch::Sender<bool>,
     handle: tokio::task::JoinHandle<()>,
 }
 
 impl Follower {
-    /// Ogni riga passa da `token.redact` prima di diventare un evento pubblico.
+    /// Every line goes through `token.redact` before becoming a public event.
     fn start(log: Arc<super::events::EventLog>, stream: PathBuf, token: Secret) -> Self {
         let (stop, rx) = watch::channel(false);
         let handle = tokio::spawn(async move {
@@ -174,15 +174,15 @@ impl Follower {
         Follower { stop, handle }
     }
 
-    /// Legge le ultime righe rimaste e termina.
+    /// Reads the last remaining lines and exits.
     async fn finish(self) {
         self.stop.send_replace(true);
         let _ = self.handle.await;
     }
 }
 
-/// Segue la VM dall'avvio allo spegnimento. Stop e timeout valgono anche durante il boot;
-/// se l'helper ignora SIGTERM per `KILL_GRACE`, riceve SIGKILL. `on_tick` gira ogni secondo.
+/// Follows the VM from boot to shutdown. Stop and timeout also apply during boot;
+/// if the helper ignores SIGTERM for `KILL_GRACE`, it gets SIGKILL. `on_tick` runs every second.
 async fn wait_for_vm(
     ctx: &AppCtx,
     id: &TaskId,

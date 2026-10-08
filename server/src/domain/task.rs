@@ -1,4 +1,4 @@
-//! Ciclo di vita di un task: stati, eventi e l'unica funzione che li collega.
+//! Task lifecycle: states, events and the single function that connects them.
 
 use serde::Serialize;
 
@@ -30,14 +30,14 @@ pub enum TaskEvent {
     Prepared,
     VmStarted,
     VmExited,
-    /// Esito deciso + nome del branch del task.
+    /// Decided outcome + the task's branch name.
     Finished(Final, String),
     Failure(String),
     StopRequested,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
-#[error("transizione non valida: {from:?} + {event:?}")]
+#[error("invalid transition: {from:?} + {event:?}")]
 pub struct InvalidTransition {
     pub from: TaskState,
     pub event: TaskEvent,

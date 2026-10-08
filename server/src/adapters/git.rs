@@ -1,4 +1,4 @@
-//! Operazioni git sul repo locale tramite la CLI `git`.
+//! Git operations on the local repo via the `git` CLI.
 
 use std::path::Path;
 use std::process::Command;
@@ -7,9 +7,9 @@ use crate::domain::ids::{CommitSha, IdError, RepoPath};
 
 #[derive(Debug, thiserror::Error)]
 pub enum GitError {
-    #[error("impossibile eseguire git: {0}")]
+    #[error("cannot run git: {0}")]
     Spawn(#[from] std::io::Error),
-    #[error("git {args} è fallito: {stderr}")]
+    #[error("git {args} failed: {stderr}")]
     Failed { args: String, stderr: String },
     #[error(transparent)]
     BadOutput(#[from] IdError),
@@ -33,9 +33,9 @@ impl Git {
         self.run(&["bundle", "create", "--quiet", path_str(dest), "--all"]).map(drop)
     }
 
-    /// Importa `branch` da un bundle senza toccare working tree né branch corrente.
+    /// Imports `branch` from a bundle without touching the working tree or the current branch.
     pub fn fetch_bundle(&self, bundle: &Path, branch: &str) -> Result<(), GitError> {
-        // Forzato: `branch` è solo nostro e un salvataggio successivo lo sostituisce.
+        // Forced: `branch` is ours alone and a later save replaces it.
         self.run(&["fetch", "--quiet", "--no-write-fetch-head", path_str(bundle), &format!("+{branch}:{branch}")]).map(drop)
     }
 
@@ -62,5 +62,5 @@ impl Git {
 }
 
 fn path_str(p: &Path) -> &str {
-    p.to_str().expect("percorsi del progetto sempre UTF-8")
+    p.to_str().expect("project paths are always UTF-8")
 }

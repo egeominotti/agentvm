@@ -1,4 +1,4 @@
-//! Store ed eventi: logica in memoria, testata direttamente.
+//! Store and events: in-memory logic, tested directly.
 
 use std::time::{Duration, SystemTime};
 
@@ -39,7 +39,7 @@ fn record(repo: &tempfile::TempDir) -> TaskRecord {
     TaskRecord::new(
         TaskId::generate(SystemTime::now(), [9, 9]),
         RepoPath::new(repo.path().to_path_buf()).unwrap(),
-        Some(Prompt::new("fai qualcosa".into()).unwrap()),
+        Some(Prompt::new("do something".into()).unwrap()),
         CommitSha::parse(&"b".repeat(40)).unwrap(),
         false,
     )

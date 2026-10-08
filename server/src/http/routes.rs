@@ -1,4 +1,4 @@
-//! Route dell'API (spec §5).
+//! API routes (spec §5).
 
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -42,12 +42,12 @@ pub fn router(ctx: Arc<AppCtx>) -> Router {
         .with_state(ctx)
 }
 
-/// Difesa da DNS rebinding e da richieste cross-origin (POST e WebSocket): solo Host/Origin di loopback.
+/// Defense against DNS rebinding and cross-origin requests (POST and WebSocket): loopback Host/Origin only.
 async fn loopback_only(State(port): State<u16>, req: Request, next: Next) -> Response {
     if is_loopback_request(port, &req) {
         next.run(req).await
     } else {
-        ApiError(StatusCode::FORBIDDEN, "richiesta non consentita: usa http://127.0.0.1".into()).into_response()
+        ApiError(StatusCode::FORBIDDEN, "request not allowed: use http://127.0.0.1".into()).into_response()
     }
 }
 
@@ -56,7 +56,7 @@ fn is_loopback_request(port: u16, req: &Request) -> bool {
     let header = |name| req.headers().get(name).and_then(|v| v.to_str().ok());
     let host_ok = header(header::HOST).is_some_and(|h| allowed.iter().any(|a| a == h));
     let origin_ok = header(header::ORIGIN).is_none_or(|o| allowed.iter().any(|a| o == format!("http://{a}")));
-    // Origin va controllato anche sui GET: un WebSocket cross-site verso un terminale è un GET.
+    // Origin must be checked on GETs too: a cross-site WebSocket to a terminal is a GET.
     host_ok && origin_ok
 }
 
@@ -118,7 +118,7 @@ async fn events(
             StreamItem::State(s) => event.event("state").json_data(s),
             StreamItem::Agent(a) => event.event("agent").json_data(a),
         }
-        .expect("eventi sempre serializzabili"))
+        .expect("events are always serializable"))
     });
     Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
@@ -139,7 +139,7 @@ async fn diff(State(ctx): Ctx, Path(id): Path<String>) -> Result<impl IntoRespon
 async fn stop(State(ctx): Ctx, Path(id): Path<String>) -> Result<Json<TaskDto>, ApiError> {
     let (id, record) = find(&ctx, &id)?;
     if record.state.is_terminal() {
-        return Err(ApiError(StatusCode::CONFLICT, "il task è già terminato".into()));
+        return Err(ApiError(StatusCode::CONFLICT, "the task has already finished".into()));
     }
     ctx.store.request_stop(&id).map_err(|e| ApiError(StatusCode::CONFLICT, e.to_string()))?;
     Ok(Json(find(&ctx, id.as_str())?.1.into()))
@@ -167,7 +167,7 @@ async fn close(State(ctx): Ctx, Path(id): Path<String>) -> Result<Json<TaskDto>,
     Ok(Json(find(&ctx, id.as_str())?.1.into()))
 }
 
-/// WebSocket ↔ terminale nella VM. Dal browser: binario = input, testo JSON `{"cols","rows"}` = resize.
+/// WebSocket ↔ terminal in the VM. From the browser: binary = input, JSON text `{"cols","rows"}` = resize.
 async fn pty(
     State(ctx): Ctx,
     Path(id): Path<String>,
@@ -176,7 +176,7 @@ async fn pty(
 ) -> Result<Response, ApiError> {
     let (id, _) = find(&ctx, &id)?;
     if q.session != "claude" && q.session != "shell" {
-        return Err(ApiError(StatusCode::BAD_REQUEST, "sessione sconosciuta".into()));
+        return Err(ApiError(StatusCode::BAD_REQUEST, "unknown session".into()));
     }
     let conn = session::open_terminal(&ctx, &id, &q.session, q.cols, q.rows).await.map_err(session_error)?;
     Ok(ws.on_upgrade(move |socket| bridge(socket, conn)))
@@ -219,8 +219,9 @@ async fn vendor(Path(file): Path<String>) -> Result<Response, ApiError> {
     let (body, mime): (&'static str, &str) = match file.as_str() {
         "xterm.js" => (include_str!("web/vendor/xterm.js"), "text/javascript"),
         "addon-fit.js" => (include_str!("web/vendor/addon-fit.js"), "text/javascript"),
+        "addon-webgl.js" => (include_str!("web/vendor/addon-webgl.js"), "text/javascript"),
         "xterm.css" => (include_str!("web/vendor/xterm.css"), "text/css"),
-        _ => return Err(ApiError(StatusCode::NOT_FOUND, "file inesistente".into())),
+        _ => return Err(ApiError(StatusCode::NOT_FOUND, "file not found".into())),
     };
     Ok(([("content-type", mime), ("cache-control", "max-age=86400")], body).into_response())
 }

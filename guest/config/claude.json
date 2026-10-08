@@ -3,7 +3,7 @@
   "theme": "dark",
   "bypassPermissionsModeAccepted": true,
   "projects": {
-    "/home/agent/work": {
+    "/root/work": {
       "hasTrustDialogAccepted": true,
       "hasCompletedProjectOnboarding": true
     }

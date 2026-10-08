@@ -1,4 +1,4 @@
-//! Cartella di un job: disco clonato, file del contratto con il guest, pulizia garantita.
+//! A job's directory: cloned disk, guest contract files, guaranteed cleanup.
 
 use std::ffi::CString;
 use std::fs;
@@ -18,14 +18,14 @@ unsafe extern "C" {
     fn kill(pid: i32, sig: i32) -> std::ffi::c_int;
 }
 
-/// Possiede `<jobs>/<id>/`. Al `Drop` cancella disco, variabili EFI, token e bundle d'ingresso;
-/// i log (`stream.jsonl`, `result.json`, `job.log`, `console.log`) restano.
+/// Owns `<jobs>/<id>/`. On `Drop` it deletes the disk, EFI variables, token and input bundle;
+/// the logs (`stream.jsonl`, `result.json`, `job.log`, `console.log`) are kept.
 pub struct JobWorkspace {
     dir: PathBuf,
 }
 
 impl JobWorkspace {
-    /// Percorsi di un job esistente, senza assumerne la proprietà (nessuna pulizia al drop).
+    /// Paths of an existing job, without taking ownership (no cleanup on drop).
     pub fn share_of(jobs_root: &Path, id: &TaskId) -> PathBuf {
         jobs_root.join(id.as_str()).join("share")
     }
@@ -37,7 +37,7 @@ impl JobWorkspace {
         let dir = jobs_root.join(id.as_str());
         let share = dir.join("share");
         fs::create_dir_all(&share)?;
-        // Il guest scrive come utenti diversi (root, agent).
+        // The guest writes as different users (root, agent).
         fs::set_permissions(&share, fs::Permissions::from_mode(0o777))?;
         Ok(JobWorkspace { dir })
     }
@@ -95,11 +95,11 @@ impl JobWorkspace {
         f.write_all(token.expose().as_bytes())
     }
 
-    /// Copia istantanea copy-on-write (APFS `clonefile(2)`).
+    /// Instant copy-on-write copy (APFS `clonefile(2)`).
     pub fn clone_disk(&self, golden: &Path) -> io::Result<()> {
         let src = CString::new(golden.as_os_str().as_bytes())?;
         let dst = CString::new(self.disk().as_os_str().as_bytes())?;
-        // SAFETY: stringhe C valide per la durata della chiamata.
+        // SAFETY: C strings valid for the duration of the call.
         if unsafe { clonefile(src.as_ptr(), dst.as_ptr(), 0) } == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
     }
 
@@ -107,7 +107,7 @@ impl JobWorkspace {
         fs::write(self.pid_path(), pid.to_string())
     }
 
-    /// `None` se il file manca o non è valido: per l'esito conta solo un risultato leggibile.
+    /// `None` if the file is missing or invalid: only a readable result counts for the outcome.
     pub fn read_result(&self) -> Option<GuestResult> {
         serde_json::from_slice(&fs::read(self.share().join("result.json")).ok()?).ok()
     }
@@ -116,7 +116,7 @@ impl JobWorkspace {
         self.out_bundle().is_file()
     }
 
-    /// Ultime righe della console seriale, per diagnosticare un avvio fallito.
+    /// Last lines of the serial console, to diagnose a failed boot.
     pub fn console_tail(&self, lines: usize) -> String {
         let text = fs::read_to_string(self.console()).unwrap_or_default();
         let all: Vec<&str> = text.lines().collect();
@@ -132,14 +132,14 @@ impl Drop for JobWorkspace {
     }
 }
 
-/// All'avvio del server: termina le VM rimaste da un'esecuzione precedente e libera i loro dischi.
+/// At server startup: terminates VMs left over from a previous run and frees their disks.
 pub fn cleanup_orphans(jobs_root: &Path) {
     let Ok(entries) = fs::read_dir(jobs_root) else { return };
     for dir in entries.flatten().map(|e| e.path()) {
         if let Some(pid) = fs::read_to_string(dir.join("vm.pid")).ok().and_then(|s| s.trim().parse::<i32>().ok())
             && is_vm_helper(pid)
         {
-            // SAFETY: segnale a un PID verificato come nostro helper.
+            // SAFETY: signal to a PID verified to be our helper.
             unsafe { kill(pid, 15) };
         }
         for f in ["vm.pid", "disk.raw", "efivars", "share/.token", "share/repo.bundle"] {

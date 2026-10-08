@@ -1,4 +1,4 @@
-//! Valore segreto: non stampabile, leggibile solo esplicitamente.
+//! Secret value: not printable, readable only explicitly.
 
 use std::fmt;
 
@@ -21,7 +21,7 @@ impl fmt::Debug for Secret {
 }
 
 impl Secret {
-    /// Sostituisce ogni occorrenza del valore con `[REDACTED]`.
+    /// Replaces every occurrence of the value with `[REDACTED]`.
     pub fn redact(&self, text: &str) -> String {
         if self.0.is_empty() { text.to_owned() } else { text.replace(&self.0, "[REDACTED]") }
     }

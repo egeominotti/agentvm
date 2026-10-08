@@ -1,4 +1,4 @@
-//! Segue un file che cresce e ne emette le righe complete.
+//! Follows a growing file and emits its complete lines.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -9,7 +9,7 @@ use tokio::sync::watch;
 
 const POLL: Duration = Duration::from_millis(200);
 
-/// Termina quando `stop` diventa `true`: legge ciò che resta ed emette anche l'ultima riga senza `\n`.
+/// Ends when `stop` becomes `true`: reads what is left and also emits the last line without `\n`.
 pub fn tail_lines(path: PathBuf, mut stop: watch::Receiver<bool>) -> impl Stream<Item = String> {
     async_stream(move |tx| async move {
         let mut offset = 0u64;
@@ -42,7 +42,7 @@ pub fn tail_lines(path: PathBuf, mut stop: watch::Receiver<bool>) -> impl Stream
     })
 }
 
-/// Stream alimentato da un task tokio tramite canale.
+/// Stream fed by a tokio task through a channel.
 fn async_stream<F, Fut>(f: F) -> impl Stream<Item = String>
 where
     F: FnOnce(tokio::sync::mpsc::Sender<String>) -> Fut,

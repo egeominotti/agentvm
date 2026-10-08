@@ -1,4 +1,4 @@
-//! Casi d'uso e orchestrazione dei task.
+//! Use cases and task orchestration.
 pub mod events;
 pub mod queries;
 pub mod scheduler;

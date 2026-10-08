@@ -1,4 +1,4 @@
-// Configurazione di una VM, letta dal JSON scritto dal server (protocollo §3.5 della spec).
+// A VM's configuration, read from the JSON written by the server (protocol §3.5 of the spec).
 import Foundation
 import Virtualization
 
@@ -10,7 +10,7 @@ struct VMConfig: Decodable {
     let cpus: Int
     let memoryMB: UInt64
     let seedISO: URL?
-    /// Socket Unix da inoltrare alla porta vsock del server PTY nel guest.
+    /// Unix socket to forward to the vsock port of the PTY server in the guest.
     let ptySocket: URL?
 
     enum CodingKeys: String, CodingKey {
@@ -43,16 +43,16 @@ struct VMConfig: Decodable {
     func validate() throws {
         let fm = FileManager.default
         var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: disk.path) else { throw ConfigError("disco assente: \(disk.path)") }
+        guard fm.fileExists(atPath: disk.path) else { throw ConfigError("disk missing: \(disk.path)") }
         guard fm.fileExists(atPath: share.path, isDirectory: &isDir), isDir.boolValue else {
-            throw ConfigError("cartella condivisa assente: \(share.path)")
+            throw ConfigError("shared directory missing: \(share.path)")
         }
-        if let seed = seedISO, !fm.fileExists(atPath: seed.path) { throw ConfigError("seed ISO assente: \(seed.path)") }
+        if let seed = seedISO, !fm.fileExists(atPath: seed.path) { throw ConfigError("seed ISO missing: \(seed.path)") }
         let cpuRange = VZVirtualMachineConfiguration.minimumAllowedCPUCount...VZVirtualMachineConfiguration.maximumAllowedCPUCount
-        guard cpuRange.contains(cpus) else { throw ConfigError("cpus fuori intervallo \(cpuRange): \(cpus)") }
+        guard cpuRange.contains(cpus) else { throw ConfigError("cpus out of range \(cpuRange): \(cpus)") }
         let mem = memoryMB << 20
         let memRange = VZVirtualMachineConfiguration.minimumAllowedMemorySize...VZVirtualMachineConfiguration.maximumAllowedMemorySize
-        guard memRange.contains(mem) else { throw ConfigError("memory_mb fuori intervallo: \(memoryMB)") }
+        guard memRange.contains(mem) else { throw ConfigError("memory_mb out of range: \(memoryMB)") }
     }
 }
 

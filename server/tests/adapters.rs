@@ -1,4 +1,4 @@
-//! Test degli adapter su sistemi reali: git, APFS, processi, Portachiavi. Nessun mock.
+//! Adapter tests against real systems: git, APFS, processes, Keychain. No mocks.
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -37,7 +37,7 @@ fn git_roundtrip_through_bundles() {
     let bundle = tmp.path().join("repo.bundle");
     git.bundle_all(&bundle).unwrap();
 
-    // Il "guest": clona dal bundle, lavora su un branch e produce out.bundle.
+    // The "guest": clones from the bundle, works on a branch and produces out.bundle.
     let work = tmp.path().join("work");
     sh(tmp.path(), &format!("git clone -q {} work", bundle.display()));
     sh(&work, &format!(
@@ -49,7 +49,7 @@ fn git_roundtrip_through_bundles() {
     assert!(git.rev_parse("agent/x").is_ok());
     assert_eq!(git.commit_count(&base, "agent/x").unwrap(), 1);
     assert!(git.diff(&base, "agent/x").unwrap().contains("new.txt"));
-    // Il working tree locale non è stato toccato.
+    // The local working tree was not touched.
     assert_eq!(std::fs::read_to_string(repo_dir.join("dirty.txt")).unwrap(), "uncommitted");
     assert!(sh(&repo_dir, "git status --porcelain").contains("?? dirty.txt"));
     assert!(!repo_dir.join("new.txt").exists());
@@ -161,10 +161,10 @@ fn instance_lock_is_exclusive_until_dropped() {
     let first = InstanceLock::acquire(tmp.path()).unwrap();
     assert!(InstanceLock::acquire(tmp.path()).is_err());
     drop(first);
-    // Un figlio creato in quel momento da un altro test può tenere il descrittore fino al suo exec.
+    // A child spawned at that moment by another test may hold the descriptor until its exec.
     let t0 = std::time::Instant::now();
     while InstanceLock::acquire(tmp.path()).is_err() {
-        assert!(t0.elapsed() < Duration::from_secs(2), "lock non rilasciato");
+        assert!(t0.elapsed() < Duration::from_secs(2), "lock not released");
         std::thread::sleep(Duration::from_millis(20));
     }
 }
@@ -173,7 +173,7 @@ fn instance_lock_is_exclusive_until_dropped() {
 fn secret_redacts_its_own_value() {
     let secret = Secret::new("sk-ant-oat01-abc".into());
     assert_eq!(secret.redact("token=sk-ant-oat01-abc fine"), "token=[REDACTED] fine");
-    assert_eq!(secret.redact("niente da nascondere"), "niente da nascondere");
+    assert_eq!(secret.redact("nothing to hide"), "nothing to hide");
 }
 
 #[test]

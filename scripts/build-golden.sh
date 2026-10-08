@@ -1,5 +1,5 @@
 #!/bin/bash
-# Crea ~/AgentVMs/golden/disk.raw: Debian 13 arm64 + Claude Code + job runner. Una tantum (~2 min).
+# Creates ~/AgentVMs/golden/disk.raw: Debian 13 arm64 + Claude Code + job runner. One-off (~2 min).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -11,11 +11,11 @@ BASE_URL=https://cloud.debian.org/images/cloud/trixie/latest
 TARBALL=debian-13-genericcloud-arm64.tar.xz
 HELPER=$ROOT/bin/agentvm-vm
 
-[ -x "$HELPER" ] || { echo "manca $HELPER: esegui prima scripts/build.sh" >&2; exit 1; }
+[ -x "$HELPER" ] || { echo "$HELPER is missing: run scripts/build.sh first" >&2; exit 1; }
 mkdir -p "$IMAGES" "$GOLDEN"
 
 if [ ! -f "$IMAGES/disk.raw" ]; then
-  echo "scarico $TARBALL…"
+  echo "downloading $TARBALL…"
   curl -fsSL -o "$IMAGES/$TARBALL" "$BASE_URL/$TARBALL"
   SUM=$(curl -fsSL "$BASE_URL/SHA512SUMS" | awk -v f="$TARBALL" '$2 == f {print $1}')
   echo "$SUM  $IMAGES/$TARBALL" | shasum -a 512 -c -
@@ -37,9 +37,9 @@ cat > "$BUILD/vm.json" <<JSON
 {"disk":"$BUILD/disk.raw","efivars":"$BUILD/efivars","share":"$BUILD/share",
  "console":"$BUILD/console.log","cpus":4,"memory_mb":4096,"seed_iso":"$BUILD/seed.iso"}
 JSON
-echo "preparo la golden (installazione di pacchetti e Claude Code nella VM)…"
+echo "preparing the golden image (installing packages and Claude Code in the VM)…"
 "$HELPER" --config "$BUILD/vm.json"
 
-grep -q GOLDEN_OK "$BUILD/share/setup.log" || { echo "setup fallito, vedi $BUILD/share/setup.log" >&2; exit 1; }
+grep -q GOLDEN_OK "$BUILD/share/setup.log" || { echo "setup failed, see $BUILD/share/setup.log" >&2; exit 1; }
 mv "$BUILD/disk.raw" "$GOLDEN/disk.raw"
 echo "GOLDEN_OK: $GOLDEN/disk.raw"

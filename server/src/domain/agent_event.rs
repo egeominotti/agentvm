@@ -1,4 +1,4 @@
-//! Traduce le righe di `claude -p --output-format stream-json` in eventi leggibili per la dashboard.
+//! Translates `claude -p --output-format stream-json` lines into readable events for the dashboard.
 
 use serde::Serialize;
 use serde_json::Value;
@@ -17,8 +17,8 @@ pub enum AgentEvent {
     Unparsed { raw: String },
 }
 
-/// Una riga può contenere più blocchi (testo + tool). Righe non riconosciute senza contenuto utile
-/// (es. `rate_limit_event`) non producono eventi.
+/// A line can contain several blocks (text + tool). Unrecognized lines with no useful content
+/// (e.g. `rate_limit_event`) produce no events.
 pub fn parse_line(line: &str) -> Vec<AgentEvent> {
     let Ok(v) = serde_json::from_str::<Value>(line) else {
         return vec![AgentEvent::Unparsed { raw: line.to_owned() }];
@@ -59,7 +59,7 @@ fn content_blocks(content: &Value) -> Vec<AgentEvent> {
         .collect()
 }
 
-/// Per i tool più comuni mostra il campo significativo, altrimenti l'input JSON.
+/// For the most common tools shows the meaningful field, otherwise the JSON input.
 fn tool_input_text(input: &Value) -> String {
     ["command", "file_path", "pattern", "url", "description"]
         .iter()

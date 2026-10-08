@@ -1,4 +1,4 @@
-//! Limite di VM contemporanee.
+//! Limit on concurrent VMs.
 
 use std::sync::Arc;
 
@@ -15,7 +15,7 @@ impl Scheduler {
     }
 
     pub async fn acquire(&self) -> OwnedSemaphorePermit {
-        self.slots.clone().acquire_owned().await.expect("semaforo mai chiuso")
+        self.slots.clone().acquire_owned().await.expect("semaphore is never closed")
     }
 
     pub fn concurrency(&self) -> usize {
