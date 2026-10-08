@@ -62,6 +62,8 @@ kbd { font-family: var(--ui); font-size: 11px; opacity: .7; margin-left: 6px; }
 .gauge .track { height: 3px; background: var(--line-2); border-radius: 2px; overflow: hidden; }
 .gauge .track i { display: block; height: 100%; background: var(--brand); transition: width .4s; }
 .gauge.hot .track i { background: var(--wait); }
+.gauge.spend { min-width: 90px; }
+.gauge.spend .row { flex-direction: column; gap: 2px; }
 .pill-warn { border: 0; cursor: pointer; font-size: 12px; padding: 4px 10px; border-radius: 999px; background: rgba(255, 107, 107, .14); color: var(--fail); }
 
 /* ---------- launcher (dialog) ---------- */

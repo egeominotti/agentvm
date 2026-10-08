@@ -38,5 +38,10 @@
         ]
       }
     ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "/usr/local/bin/agentvm-statusline",
+    "padding": 0
   }
 }

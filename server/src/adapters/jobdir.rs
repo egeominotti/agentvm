@@ -98,6 +98,11 @@ impl JobWorkspace {
         serde_json::from_slice(&fs::read(self.share().join("metrics.json")).ok()?).ok()
     }
 
+    /// Cost and tokens copied by the Claude Code status line inside the VM.
+    pub fn read_usage(&self) -> Option<crate::domain::usage::AgentUsage> {
+        serde_json::from_slice(&fs::read(self.share().join("usage.json")).ok()?).ok()
+    }
+
     pub fn activity(&self) -> Option<String> {
         let s = fs::read_to_string(self.share().join("activity")).ok()?;
         let s = s.trim();

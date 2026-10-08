@@ -407,3 +407,16 @@ fn per_vm_resources_are_checked_against_the_mac() {
     assert!(host.check_vm(4, 512).is_err());
     assert!(host.check_vm(4, 65536).is_err());
 }
+
+#[test]
+fn agent_usage_parses_the_status_line_copy() {
+    use agentvm::domain::usage::AgentUsage;
+    let u: AgentUsage = serde_json::from_str(
+        r#"{"cost_usd":0.1234,"input_tokens":15234,"output_tokens":2100,"lines_added":12,"lines_removed":3,"context_pct":7,"model":"Sonnet 5.5"}"#,
+    )
+    .unwrap();
+    assert_eq!(u.input_tokens, 15234);
+    assert!((u.cost_usd - 0.1234).abs() < 1e-9);
+    let empty: AgentUsage = serde_json::from_str("{}").unwrap();
+    assert_eq!(empty.output_tokens, 0);
+}

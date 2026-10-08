@@ -15,6 +15,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> /root/.bashrc
 install -m 755 "$SRC/agentvm-job" /usr/local/bin/agentvm-job
 install -m 755 "$SRC/agentvm-pty" /usr/local/bin/agentvm-pty
 install -m 755 "$SRC/agentvm-metrics" /usr/local/bin/agentvm-metrics
+install -m 755 "$SRC/agentvm-statusline" /usr/local/bin/agentvm-statusline
 install -m 755 "$SRC/agentvm-claude" /usr/local/bin/agentvm-claude
 install -d /etc/agentvm
 install -m 644 "$SRC/config/tmux.conf" /etc/agentvm/tmux.conf

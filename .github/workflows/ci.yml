@@ -36,5 +36,5 @@ jobs:
       - name: Check shell scripts
         working-directory: .
         run: |
-          for f in guest/agentvm-job guest/agentvm-claude guest/setup-golden.sh scripts/*.sh; do bash -n "$f"; done
+          for f in guest/agentvm-job guest/agentvm-claude guest/agentvm-statusline guest/setup-golden.sh scripts/*.sh; do bash -n "$f"; done
           python3 -c "import ast; [ast.parse(open(f).read()) for f in ['guest/agentvm-pty', 'guest/agentvm-metrics']]"

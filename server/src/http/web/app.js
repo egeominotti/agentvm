@@ -45,6 +45,8 @@ function rate(bps) {
   if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(0)} KB/s`;
   return `${(bps / 1024 / 1024).toFixed(1)} MB/s`;
 }
+const money = n => (n >= 100 ? `$${n.toFixed(0)}` : `$${n.toFixed(2)}`);
+const tokens = n => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(n >= 1e4 ? 0 : 1)}k` : String(n));
 function duration(s) {
   s = Math.max(0, Math.round(s));
   if (s < 60) return `${s}s`;
@@ -145,6 +147,9 @@ function renderHost() {
     gauge("RAM reserved", `${gb(s.ram_committed_mb)} / ${gb(s.host.ram_mb)}`, (100 * s.ram_committed_mb) / s.host.ram_mb, s.ram_committed_mb > s.host.ram_mb * 0.85),
     gauge("CPU in VMs", `${cpu.toFixed(0)}%`, cpu, cpu > 85),
   ];
+  const spent = state.tasks.reduce((n, t) => n + (t.usage?.cost_usd ?? 0), 0);
+  kids.push(h("div", { class: "gauge spend", title: "What these agents would cost at API prices; with a subscription it counts against its limits" },
+    h("div", { class: "row" }, h("span", {}, "Claude usage"), h("b", {}, money(spent)))));
   if (!s.golden) kids.unshift(h("button", { class: "pill-warn", type: "button", onclick: () => (location.hash = "#/settings") }, "VM image missing"));
   if (!s.token) kids.unshift(h("button", { class: "pill-warn", type: "button", onclick: () => (location.hash = "#/settings") }, "Claude token missing"));
   box.replaceChildren(...kids);
@@ -489,7 +494,8 @@ class Cell {
     const m = t.metrics;
     this.cpu.replaceChildren(h("b", {}, m ? `${m.cpu_pct.toFixed(0)}%` : "—"), "CPU", sparkline(t.cpu_history, { width: 70, height: 16 }));
     this.mem.replaceChildren(h("b", {}, m ? gb(m.mem_used_mb) : "—"), "RAM", sparkline(t.mem_history, { width: 70, height: 16, color: "var(--wait)" }));
-    this.proc.textContent = m?.top?.[0] ? `${m.top[0].name} ${m.top[0].cpu_pct.toFixed(0)}%` : repoName(t.repo);
+    const u = t.usage;
+    this.proc.textContent = u?.output_tokens ? `${money(u.cost_usd)}  ${tokens(u.input_tokens + u.output_tokens)} tokens` : m?.top?.[0] ? `${m.top[0].name} ${m.top[0].cpu_pct.toFixed(0)}%` : repoName(t.repo);
     if (t.status.state === "running" && t.interactive) {
       if (!this.term) {
         this.body.replaceChildren();
@@ -588,6 +594,16 @@ class FocusView {
           h("dt", {}, "Load"), h("dd", {}, m.load1.toFixed(2)),
           h("dt", {}, "Processes"), h("dd", {}, String(m.procs)),
           h("dt", {}, "VM uptime"), h("dd", {}, duration(m.uptime_s))));
+    }
+    const u = t.usage;
+    if (u) {
+      kids.unshift(h("div", { class: "stat" }, h("h3", {}, "Claude"),
+        h("div", { class: "big" }, money(u.cost_usd), h("small", {}, "at API prices")),
+        h("dl", { class: "kv" },
+          h("dt", {}, "Tokens in"), h("dd", {}, tokens(u.input_tokens)),
+          h("dt", {}, "Tokens out"), h("dd", {}, tokens(u.output_tokens)),
+          h("dt", {}, "Lines changed"), h("dd", {}, h("span", { class: "plus" }, `+${u.lines_added}`), " ", h("span", { class: "minus" }, `−${u.lines_removed}`)),
+          u.context_pct != null && h("dt", {}, "Context used"), u.context_pct != null && h("dd", {}, `${Math.round(u.context_pct)}%`))));
     }
     kids.push(h("dl", { class: "kv" },
       h("dt", {}, "State"), h("dd", {}, label),

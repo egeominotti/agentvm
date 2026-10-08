@@ -1,0 +1,18 @@
+#!/bin/bash
+# Claude Code status line: keeps a copy of the session's cost and token usage for the dashboard
+# (/mnt/job/usage.json) and prints a compact line under Claude's prompt.
+set -u
+input=$(cat)
+usage=$(jq -c '{
+  cost_usd: (.cost.total_cost_usd // 0),
+  input_tokens: (.context_window.total_input_tokens // 0),
+  output_tokens: (.context_window.total_output_tokens // 0),
+  lines_added: (.cost.total_lines_added // 0),
+  lines_removed: (.cost.total_lines_removed // 0),
+  context_pct: (.context_window.used_percentage // null),
+  model: (.model.display_name // .model.id // null)
+}' <<<"$input" 2>/dev/null) || exit 0
+if [ -d /mnt/job ]; then
+  printf '%s' "$usage" > /mnt/job/usage.json.tmp && mv -f /mnt/job/usage.json.tmp /mnt/job/usage.json
+fi
+jq -r '"\(.model // "Claude")  $\(.cost_usd * 100 | round / 100)  \(.input_tokens / 1000 | floor)k in / \(.output_tokens / 1000 | floor)k out  +\(.lines_added) −\(.lines_removed)"' <<<"$usage"

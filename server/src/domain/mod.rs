@@ -8,3 +8,4 @@ pub mod settings;
 pub mod snapshot;
 pub mod spec;
 pub mod task;
+pub mod usage;

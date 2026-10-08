@@ -13,6 +13,7 @@ use crate::domain::metrics::VmMetrics;
 use crate::domain::settings::Model;
 use crate::domain::snapshot::SnapshotId;
 use crate::domain::task::{InvalidTransition, TaskEvent, TaskState, transition};
+use crate::domain::usage::AgentUsage;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TaskRecord {
@@ -35,6 +36,9 @@ pub struct TaskRecord {
     pub cpus: u32,
     pub memory_mb: u64,
     /// Latest telemetry sample and the last `HISTORY` CPU and memory percentages.
+    /// Claude's cost and tokens (kept across restarts).
+    #[serde(default)]
+    pub usage: Option<AgentUsage>,
     #[serde(skip)]
     pub metrics: Option<VmMetrics>,
     #[serde(skip)]
@@ -63,6 +67,7 @@ impl TaskRecord {
             restore_from: None,
             cpus: 0,
             memory_mb: 0,
+            usage: None,
             metrics: None,
             cpu_history: VecDeque::with_capacity(HISTORY),
             mem_history: VecDeque::with_capacity(HISTORY),
@@ -96,9 +101,10 @@ struct Entry {
     stop: watch::Sender<bool>,
 }
 
-#[derive(Default)]
+/// Cheap to clone: clones share the same tasks.
+#[derive(Default, Clone)]
 pub struct Store {
-    tasks: Mutex<HashMap<TaskId, Entry>>,
+    tasks: Arc<Mutex<HashMap<TaskId, Entry>>>,
     /// When set, every task is mirrored to `<dir>/<id>/record.json` to survive restarts.
     dir: Option<PathBuf>,
 }
@@ -109,7 +115,12 @@ impl Store {
     }
 
     pub fn persistent(dir: PathBuf) -> Self {
-        Store { tasks: Mutex::default(), dir: Some(dir) }
+        Store { tasks: Arc::default(), dir: Some(dir) }
+    }
+
+    /// Another handle on the same tasks (for callbacks that outlive a borrow).
+    pub fn clone_handle(&self) -> Store {
+        self.clone()
     }
 
     /// Tasks saved by a previous run.
@@ -182,6 +193,19 @@ impl Store {
     /// Memory reserved by the VMs that hold a slot.
     pub fn committed_memory_mb(&self) -> u64 {
         self.tasks.lock().unwrap().values().filter(|e| e.record.holds_vm()).map(|e| e.record.memory_mb).sum()
+    }
+
+    /// Saved to disk only when it changes.
+    pub fn set_usage(&self, id: &TaskId, usage: AgentUsage) {
+        let mut tasks = self.tasks.lock().unwrap();
+        if let Some(e) = tasks.get_mut(id)
+            && e.record.usage.as_ref() != Some(&usage)
+        {
+            e.record.usage = Some(usage);
+            let record = e.record.clone();
+            drop(tasks);
+            self.persist(&record);
+        }
     }
 
     pub fn running_count(&self) -> usize {

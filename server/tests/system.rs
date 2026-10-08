@@ -287,6 +287,17 @@ fn interactive_terminal_saves_to_the_branch_and_closes() {
         assert!(t0.elapsed() < Duration::from_secs(240), "Claude did not finish its turn: {task}");
         std::thread::sleep(Duration::from_millis(500));
     }
+    // Cost and tokens arrive through Claude Code's status line.
+    let t1 = Instant::now();
+    let usage = loop {
+        let task = get_json(&format!("{}/api/tasks/{id}", server.base));
+        if task["usage"]["output_tokens"].as_u64().unwrap_or(0) > 0 {
+            break task["usage"].clone();
+        }
+        assert!(t1.elapsed() < Duration::from_secs(30), "no usage: {task}");
+        std::thread::sleep(Duration::from_millis(500));
+    };
+    assert!(usage["cost_usd"].as_f64().unwrap() > 0.0 && usage["input_tokens"].as_u64().unwrap() > 0, "{usage}");
     let saved = post_json(&format!("{}/api/tasks/{id}/save", server.base), &json!({}));
     assert!(saved["commits"].as_u64().unwrap_or(0) >= 1, "{saved}");
     let content = git(repo.path(), &["show", &format!("agent/{id}:term.txt")]);

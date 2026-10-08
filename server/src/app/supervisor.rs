@@ -228,7 +228,14 @@ async fn supervise(
     mut vm: VmProcess,
     token: Secret,
 ) -> Result<(), String> {
-    let follower = Follower::start(ctx.store.log(id).ok_or("task disappeared")?, ws.stream(), token);
+    let cost_sink = (ctx.store.clone_handle(), id.clone());
+    let on_cost = move |cost_usd: f64| {
+        let (store, id) = &cost_sink;
+        let mut usage = store.get(id).and_then(|r| r.usage).unwrap_or_default();
+        usage.cost_usd = cost_usd;
+        store.set_usage(id, usage);
+    };
+    let follower = Follower::start(ctx.store.log(id).ok_or("task disappeared")?, ws.stream(), token, on_cost);
     let on_started = || {
         let _ = ctx.store.apply(id, TaskEvent::VmStarted);
     };
@@ -236,6 +243,9 @@ async fn supervise(
         ctx.store.set_activity(id, ws.activity());
         if let Some(m) = ws.read_metrics() {
             ctx.store.record_metrics(id, m);
+        }
+        if let Some(u) = ws.read_usage() {
+            ctx.store.set_usage(id, u);
         }
     };
     let timeout = (!record.interactive).then(|| Duration::from_secs(ctx.settings.get().timeout_s));
@@ -338,12 +348,20 @@ struct Follower {
 
 impl Follower {
     /// Every line goes through `token.redact` before becoming a public event.
-    fn start(log: Arc<super::events::EventLog>, stream: PathBuf, token: Secret) -> Self {
+    fn start(
+        log: Arc<super::events::EventLog>,
+        stream: PathBuf,
+        token: Secret,
+        on_cost: impl Fn(f64) + Send + 'static,
+    ) -> Self {
         let (stop, rx) = watch::channel(false);
         let handle = tokio::spawn(async move {
             let mut lines = std::pin::pin!(tail_lines(stream, rx));
             while let Some(line) = lines.next().await {
                 for event in parse_line(&token.redact(&line)) {
+                    if let crate::domain::agent_event::AgentEvent::Result { cost_usd, .. } = &event {
+                        on_cost(*cost_usd);
+                    }
                     log.push(StreamItem::Agent(event));
                 }
             }
