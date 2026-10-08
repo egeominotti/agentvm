@@ -1,0 +1,31 @@
+//! A VM's telemetry history on disk, next to its job (never in the folder the guest shares).
+
+use agentvm::adapters::telemetry_file::{append, read};
+use agentvm::domain::telemetry::TelemetrySample;
+
+fn at(t: f64) -> TelemetrySample {
+    TelemetrySample { at: t, cpu_pct: 1.0, ..Default::default() }
+}
+
+#[test]
+fn lines_are_appended_and_read_back_from_a_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("telemetry.jsonl");
+    for t in [10.0, 20.0, 30.0] {
+        append(&path, &at(t)).unwrap();
+    }
+    assert_eq!(read(&path, None).iter().map(|s| s.at).collect::<Vec<_>>(), [10.0, 20.0, 30.0]);
+    assert_eq!(read(&path, Some(15.0)).len(), 2);
+    assert!(read(&dir.path().join("none.jsonl"), None).is_empty());
+}
+
+#[test]
+fn a_symlink_in_its_place_is_never_followed() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("elsewhere.txt");
+    std::fs::write(&target, "untouched").unwrap();
+    let path = dir.path().join("telemetry.jsonl");
+    std::os::unix::fs::symlink(&target, &path).unwrap();
+    assert!(append(&path, &at(1.0)).is_err());
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched");
+}

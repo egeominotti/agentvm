@@ -17,3 +17,4 @@ mod recovery;
 mod scheduler;
 mod settings;
 mod store;
+mod telemetry;

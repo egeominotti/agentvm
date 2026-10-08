@@ -50,3 +50,16 @@ fn metrics_from_an_older_collector_still_parse() {
     assert_eq!((m.disk_read_bps, m.disk_write_bps), (None, None));
     assert!(m.top_mem.is_empty());
 }
+
+/// A VM's whole life (days of 10 s lines) is drawn with at most 1000 points; bursts survive.
+#[test]
+fn a_long_history_is_thinned_keeping_its_peaks() {
+    use agentvm::domain::telemetry::thin;
+    let mut points: Vec<_> = (0..5000).map(|i| sample(f64::from(i) * 10.0, 10.0)).collect();
+    points[2345].cpu_peak = 99.0;
+    let thinned = thin(&points, 1000);
+    assert!(thinned.len() <= 1000 && thinned.len() >= 900, "{}", thinned.len());
+    assert_eq!(thinned[0].at, 0.0);
+    assert!(thinned.iter().any(|p| p.cpu_peak == 99.0), "the burst was averaged away");
+    assert_eq!(thin(&points[..10], 1000).len(), 10, "short histories stay as they are");
+}

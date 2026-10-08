@@ -58,6 +58,7 @@ fn adapters_do_not_know_each_other_or_outer_layers() {
             "settings_file",
             "snapshots",
             "tail",
+            "telemetry_file",
             "vm",
         ] {
             if other != own {

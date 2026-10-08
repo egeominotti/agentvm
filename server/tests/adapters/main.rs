@@ -13,4 +13,5 @@ mod server_log;
 mod settings;
 mod snapshots;
 mod tail;
+mod telemetry_file;
 mod workspace;
