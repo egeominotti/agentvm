@@ -27,6 +27,8 @@ trap finish EXIT
 
 mkdir -p "$JOB"
 mount -t virtiofs job "$JOB"
+# Telemetry for the dashboard, once per second, in every mode.
+/usr/local/bin/agentvm-metrics &
 log "job start"
 
 if [ ! -s "$JOB/task.json" ]; then
@@ -37,6 +39,7 @@ fi
 ID=$(jq -r .id "$JOB/task.json")
 BRANCH=$(jq -r .branch "$JOB/task.json")
 BASE=$(jq -r .base_sha "$JOB/task.json")
+MODEL=$(jq -r '.model // empty' "$JOB/task.json")
 
 # Unexported variable: the token reaches Claude only through a pipe (fd 3), never via the environment,
 # so the commands run by the agent do not inherit it.
@@ -77,6 +80,7 @@ if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
   unset TOKEN
   (umask 077; jq -r .prompt "$JOB/task.json" > /run/agentvm/prompt)
   [ -s /run/agentvm/prompt ] && [ "$(tr -d '[:space:]' < /run/agentvm/prompt)" != "" ] || rm -f /run/agentvm/prompt
+  if [ -n "$MODEL" ]; then printf '%s' "$MODEL" > /run/agentvm/model; fi
   /usr/local/bin/agentvm-pty &
   env -i HOME=/root USER=root LANG=C.UTF-8 TERM=xterm-256color PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     tmux -f /etc/agentvm/tmux.conf new-session -d -s claude -c "$WORK" -x 160 -y 48 /usr/local/bin/agentvm-claude
@@ -103,7 +107,7 @@ set +e
 jq -r .prompt "$JOB/task.json" | env -i \
   HOME=/root USER=root LANG=C.UTF-8 PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   IS_SANDBOX=1 CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3 \
-  "$CLAUDE" -p --dangerously-skip-permissions --output-format stream-json --verbose \
+  "$CLAUDE" -p --dangerously-skip-permissions ${MODEL:+--model "$MODEL"} --output-format stream-json --verbose \
   3< <(printf '%s' "$TOKEN") > "$JOB/stream.jsonl" 2> "$JOB/claude.err"
 CLAUDE_EXIT=${PIPESTATUS[1]}
 set -e

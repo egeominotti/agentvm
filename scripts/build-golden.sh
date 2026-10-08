@@ -25,7 +25,7 @@ fi
 rm -rf "${BUILD:?}"
 mkdir -p "$BUILD/share" "$BUILD/seed"
 chmod 777 "$BUILD/share"
-cp -R guest/agentvm-job guest/agentvm-pty guest/agentvm-claude guest/config guest/agentvm.service guest/10-agentvm.network guest/setup-golden.sh "$BUILD/share/"
+cp -R guest/agentvm-job guest/agentvm-pty guest/agentvm-metrics guest/agentvm-claude guest/config guest/agentvm.service guest/10-agentvm.network guest/setup-golden.sh "$BUILD/share/"
 cp guest/golden-user-data.yaml "$BUILD/seed/user-data"
 printf 'instance-id: agentvm-golden-%s\nlocal-hostname: agentvm\n' "$(date +%s)" > "$BUILD/seed/meta-data"
 hdiutil makehybrid -quiet -iso -joliet -default-volume-name cidata -o "$BUILD/seed.iso" "$BUILD/seed"

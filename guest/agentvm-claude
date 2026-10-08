@@ -4,6 +4,7 @@
 # The initial prompt is used only once.
 set -euo pipefail
 args=(--dangerously-skip-permissions)
+if [ -s /run/agentvm/model ]; then args+=(--model "$(cat /run/agentvm/model)"); fi
 if [ -s /run/agentvm/prompt ]; then
   prompt=$(cat /run/agentvm/prompt)
   rm -f /run/agentvm/prompt

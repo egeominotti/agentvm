@@ -49,6 +49,7 @@ fn task_spec_roundtrips_hostile_prompt() {
         base_sha: "a".repeat(40),
         timeout_s: 1800,
         interactive: false,
+        model: None,
     };
     let json = serde_json::to_string(&spec).unwrap();
     let back: TaskSpec = serde_json::from_str(&json).unwrap();
@@ -248,4 +249,60 @@ fn task_spec_interactive_defaults_to_false() {
     )
     .unwrap();
     assert!(!spec.interactive);
+}
+
+// ---- settings ----
+
+use agentvm::domain::settings::{HostLimits, Model, Settings};
+
+fn limits() -> HostLimits {
+    HostLimits { cpus: 18, ram_mb: 65536 }
+}
+
+#[test]
+fn default_settings_are_valid() {
+    let s = Settings { max_vms: 4, cpus: 4, memory_mb: 4096, timeout_s: 1800, model: Model::Default, default_repo: None };
+    assert!(s.validate(&limits()).is_ok());
+}
+
+#[test]
+fn settings_reject_out_of_range_values() {
+    let ok = Settings { max_vms: 4, cpus: 4, memory_mb: 4096, timeout_s: 1800, model: Model::Default, default_repo: None };
+    for bad in [
+        Settings { max_vms: 0, ..ok.clone() },
+        Settings { cpus: 0, ..ok.clone() },
+        Settings { cpus: 19, ..ok.clone() },
+        Settings { memory_mb: 512, ..ok.clone() },
+        Settings { memory_mb: 65536, ..ok.clone() },
+        Settings { timeout_s: 10, ..ok.clone() },
+    ] {
+        assert!(bad.validate(&limits()).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn recommended_vms_fit_in_ram() {
+    assert_eq!(limits().recommended_vms(4096), 14);
+    assert_eq!(limits().recommended_vms(2048), 28);
+}
+
+#[test]
+fn model_maps_to_cli_flag() {
+    assert_eq!(Model::Default.cli_name(), None);
+    assert_eq!(Model::Opus.cli_name(), Some("opus"));
+    let m: Model = serde_json::from_str("\"haiku\"").unwrap();
+    assert_eq!(m, Model::Haiku);
+}
+
+#[test]
+fn vm_metrics_parse_guest_json() {
+    use agentvm::domain::metrics::VmMetrics;
+    let m: VmMetrics = serde_json::from_str(
+        r#"{"uptime_s":12,"cpus":4,"cpu_pct":37.5,"load1":0.8,"mem_used_mb":900,"mem_total_mb":3922,
+            "disk_used_mb":3100,"disk_total_mb":19800,"net_rx_bps":1200,"net_tx_bps":300,"procs":91,
+            "top":[{"name":"cargo","cpu_pct":180.2,"mem_mb":410}]}"#,
+    )
+    .unwrap();
+    assert_eq!(m.top[0].name, "cargo");
+    assert_eq!(m.cpus, 4);
 }

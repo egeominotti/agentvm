@@ -103,6 +103,7 @@ async fn interactive_vm_serves_a_shell_over_vsock_and_closes_on_request() {
         base_sha: base,
         timeout_s: 60,
         interactive: true,
+        model: None,
     })
     .unwrap();
     ws.write_token(&Secret::new("sk-ant-oat01-not-a-real-token".into())).unwrap();
@@ -135,6 +136,19 @@ async fn interactive_vm_serves_a_shell_over_vsock_and_closes_on_request() {
         }
     }
     assert!(seen.contains("hello-42"), "terminal output: {seen:?}");
+
+    // Telemetry arrives once per second from inside the VM.
+    let t1 = Instant::now();
+    let metrics = loop {
+        if let Some(m) = ws.read_metrics() {
+            break m;
+        }
+        assert!(t1.elapsed() < Duration::from_secs(10), "no metrics.json from the guest");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    };
+    assert_eq!(metrics.cpus, 2);
+    assert!(metrics.mem_total_mb > 1500 && metrics.mem_used_mb > 0, "{metrics:?}");
+    assert!(metrics.disk_total_mb > 10_000, "{metrics:?}");
 
     std::fs::write(ws.share().join("close.request"), "").unwrap();
     assert_eq!(tokio::time::timeout(Duration::from_secs(30), vm.wait()).await.unwrap(), VmExit::Clean);
@@ -178,7 +192,7 @@ async fn shell_keystroke_echo_is_fast() {
     let tmp = tempfile::tempdir().unwrap();
     let ws = workspace(&tmp);
     let base = repo_with_bundle(&ws);
-    ws.write_spec(&TaskSpec { id: "t".into(), prompt: String::new(), branch: "agent/t".into(), base_sha: base, timeout_s: 60, interactive: true }).unwrap();
+    ws.write_spec(&TaskSpec { id: "t".into(), prompt: String::new(), branch: "agent/t".into(), base_sha: base, timeout_s: 60, interactive: true, model: None }).unwrap();
     ws.write_token(&Secret::new("sk-ant-oat01-not-a-real-token".into())).unwrap();
     let mut cfg = config(&ws);
     cfg.pty_socket = Some(ws.pty_socket());

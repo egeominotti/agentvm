@@ -5,8 +5,6 @@ use std::sync::Arc;
 use agentvm::adapters::jobdir::cleanup_orphans;
 use agentvm::adapters::keychain::Keychain;
 use agentvm::adapters::lock::InstanceLock;
-use agentvm::app::scheduler::Scheduler;
-use agentvm::app::store::Store;
 use agentvm::app::supervisor::AppCtx;
 use agentvm::config::Config;
 
@@ -22,12 +20,7 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(config.jobs())?;
     cleanup_orphans(&config.jobs());
 
-    let ctx = Arc::new(AppCtx {
-        scheduler: Scheduler::new(config.concurrency),
-        store: Store::new(),
-        keychain: Keychain::new(None),
-        config,
-    });
+    let ctx = Arc::new(AppCtx::new(config, Keychain::new(None)));
     eprintln!("agentvm listening on http://{addr}");
     axum::serve(listener, agentvm::http::router(ctx)).await?;
     Ok(())

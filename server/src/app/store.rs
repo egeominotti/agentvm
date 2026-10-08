@@ -1,6 +1,6 @@
 //! Task repository: sole owner of their state (in memory for the MVP).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
@@ -8,6 +8,8 @@ use tokio::sync::watch;
 
 use super::events::{EventLog, StreamItem};
 use crate::domain::ids::{CommitSha, Prompt, RepoPath, TaskId};
+use crate::domain::metrics::VmMetrics;
+use crate::domain::settings::Model;
 use crate::domain::task::{InvalidTransition, TaskEvent, TaskState, transition};
 
 #[derive(Debug, Clone)]
@@ -21,9 +23,17 @@ pub struct TaskRecord {
     pub state: TaskState,
     /// Last activity reported by the Claude Code hooks (`working`, `waiting`).
     pub activity: Option<String>,
+    pub model: Model,
+    /// Latest telemetry sample and the last `HISTORY` CPU and memory percentages.
+    pub metrics: Option<VmMetrics>,
+    pub cpu_history: VecDeque<f32>,
+    pub mem_history: VecDeque<f32>,
     pub created_at: SystemTime,
     pub finished_at: Option<SystemTime>,
 }
+
+/// One minute of samples at one per second.
+pub const HISTORY: usize = 60;
 
 impl TaskRecord {
     pub fn new(id: TaskId, repo: RepoPath, prompt: Option<Prompt>, base_sha: CommitSha, interactive: bool) -> Self {
@@ -35,9 +45,23 @@ impl TaskRecord {
             interactive,
             state: TaskState::Queued,
             activity: None,
+            model: Model::Default,
+            metrics: None,
+            cpu_history: VecDeque::with_capacity(HISTORY),
+            mem_history: VecDeque::with_capacity(HISTORY),
             created_at: SystemTime::now(),
             finished_at: None,
         }
+    }
+
+    pub fn with_model(mut self, model: Model) -> Self {
+        self.model = model;
+        self
+    }
+
+    /// The task holds a VM slot (queued and finished tasks do not).
+    pub fn holds_vm(&self) -> bool {
+        matches!(self.state, TaskState::Preparing | TaskState::Booting | TaskState::Running | TaskState::Collecting)
     }
 }
 
@@ -99,6 +123,23 @@ impl Store {
         if let Some(e) = self.tasks.lock().unwrap().get_mut(id) {
             e.record.activity = activity;
         }
+    }
+
+    pub fn record_metrics(&self, id: &TaskId, m: VmMetrics) {
+        if let Some(e) = self.tasks.lock().unwrap().get_mut(id) {
+            let r = &mut e.record;
+            for (history, value) in [(&mut r.cpu_history, m.cpu_pct as f32), (&mut r.mem_history, m.mem_pct() as f32)] {
+                if history.len() == HISTORY {
+                    history.pop_front();
+                }
+                history.push_back(value);
+            }
+            r.metrics = Some(m);
+        }
+    }
+
+    pub fn running_count(&self) -> usize {
+        self.tasks.lock().unwrap().values().filter(|e| e.record.holds_vm()).count()
     }
 
     pub fn stop_signal(&self, id: &TaskId) -> Option<watch::Receiver<bool>> {

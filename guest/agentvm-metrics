@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""VM telemetry: once per second, writes /mnt/job/metrics.json (atomic rename).
+
+Reads only /proc and statfs, so it costs well under 1% of one CPU.
+"""
+import json
+import os
+import shutil
+import time
+
+OUT = "/mnt/job/metrics.json"
+PERIOD_S = 1.0
+TOP_N = 3
+CLK_TCK = os.sysconf("SC_CLK_TCK")
+PAGE_MB = os.sysconf("SC_PAGE_SIZE") / (1024 * 1024)
+
+
+def cpu_totals():
+    fields = [int(v) for v in open("/proc/stat").readline().split()[1:]]
+    idle = fields[3] + fields[4]
+    return idle, sum(fields)
+
+
+def memory_mb():
+    info = {}
+    for line in open("/proc/meminfo"):
+        key, value = line.split(":", 1)
+        info[key] = int(value.split()[0]) // 1024
+    return info["MemTotal"] - info["MemAvailable"], info["MemTotal"]
+
+
+def net_bytes():
+    rx = tx = 0
+    for line in open("/proc/net/dev").readlines()[2:]:
+        name, data = line.split(":", 1)
+        if name.strip() == "lo":
+            continue
+        cols = data.split()
+        rx += int(cols[0])
+        tx += int(cols[8])
+    return rx, tx
+
+
+def process_ticks():
+    """pid -> (name, cpu ticks, rss MB)."""
+    out = {}
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            raw = open(f"/proc/{pid}/stat").read()
+        except OSError:
+            continue
+        name = raw[raw.index("(") + 1 : raw.rindex(")")]
+        rest = raw[raw.rindex(")") + 2 :].split()
+        out[pid] = (name, int(rest[11]) + int(rest[12]), int(rest[21]) * PAGE_MB)
+    return out
+
+
+def write(data):
+    tmp = OUT + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, separators=(",", ":"))
+    os.replace(tmp, OUT)
+
+
+def main():
+    cpus = os.cpu_count() or 1
+    prev_idle, prev_total = cpu_totals()
+    prev_rx, prev_tx = net_bytes()
+    prev_procs = process_ticks()
+    prev_t = time.monotonic()
+    while True:
+        time.sleep(PERIOD_S)
+        now = time.monotonic()
+        dt = max(now - prev_t, 1e-3)
+        idle, total = cpu_totals()
+        rx, tx = net_bytes()
+        procs = process_ticks()
+        busy = (total - prev_total) - (idle - prev_idle)
+        top = []
+        for pid, (name, ticks, rss) in procs.items():
+            before = prev_procs.get(pid)
+            if before and before[0] == name:
+                pct = (ticks - before[1]) / CLK_TCK / dt * 100
+                if pct > 0.5:
+                    top.append({"name": name, "cpu_pct": round(pct, 1), "mem_mb": round(rss)})
+        top.sort(key=lambda p: p["cpu_pct"], reverse=True)
+        mem_used, mem_total = memory_mb()
+        disk = shutil.disk_usage("/")
+        write({
+            "uptime_s": round(float(open("/proc/uptime").read().split()[0])),
+            "cpus": cpus,
+            "cpu_pct": round(100 * busy / max(total - prev_total, 1), 1),
+            "load1": round(os.getloadavg()[0], 2),
+            "mem_used_mb": mem_used,
+            "mem_total_mb": mem_total,
+            "disk_used_mb": (disk.total - disk.free) // (1024 * 1024),
+            "disk_total_mb": disk.total // (1024 * 1024),
+            "net_rx_bps": round((rx - prev_rx) / dt),
+            "net_tx_bps": round((tx - prev_tx) / dt),
+            "procs": len(procs),
+            "top": top[:TOP_N],
+        })
+        prev_idle, prev_total, prev_rx, prev_tx, prev_procs, prev_t = idle, total, rx, tx, procs, now
+
+
+if __name__ == "__main__":
+    main()

@@ -3,8 +3,6 @@
 use std::sync::Arc;
 
 use agentvm::adapters::keychain::Keychain;
-use agentvm::app::scheduler::Scheduler;
-use agentvm::app::store::Store;
 use agentvm::app::supervisor::AppCtx;
 use agentvm::config::Config;
 use axum::body::Body;
@@ -20,13 +18,9 @@ fn app(home: &std::path::Path) -> axum::Router {
         memory_mb: 2048,
         timeout_s: 60,
         vm_helper: "agentvm-vm".into(),
+        scripts_dir: "scripts".into(),
     };
-    agentvm::http::router(Arc::new(AppCtx {
-        scheduler: Scheduler::new(1),
-        store: Store::new(),
-        keychain: Keychain::new(Some(home.join("none.keychain-db"))),
-        config,
-    }))
+    agentvm::http::router(Arc::new(AppCtx::new(config, Keychain::new(Some(home.join("none.keychain-db"))))))
 }
 
 async fn status_of(req: Request<Body>) -> StatusCode {
@@ -84,4 +78,49 @@ async fn rejects_cross_origin_websocket_to_a_terminal() {
         .body(Body::empty())
         .unwrap();
     assert_eq!(status_of(req).await, StatusCode::FORBIDDEN);
+}
+
+async fn send(app: axum::Router, req: Request<Body>) -> (StatusCode, serde_json::Value) {
+    let res = app.oneshot(req).await.unwrap();
+    let status = res.status();
+    let bytes = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
+    (status, serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null))
+}
+
+fn json_req(method: &str, path: &str, body: serde_json::Value) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(path)
+        .header("host", "127.0.0.1:7777")
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn settings_can_be_read_updated_and_persisted() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (status, body) = send(app(tmp.path()), Request::get("/api/settings").header("host", "127.0.0.1:7777").body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["limits"]["cpus"].as_u64().unwrap() >= 1);
+    let mut s = body["settings"].clone();
+    s["max_vms"] = 3.into();
+    s["model"] = "opus".into();
+    let (status, body) = send(app(tmp.path()), json_req("PUT", "/api/settings", s)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // A fresh server on the same home sees the saved settings.
+    let (_, body) = send(app(tmp.path()), Request::get("/api/settings").header("host", "127.0.0.1:7777").body(Body::empty()).unwrap()).await;
+    assert_eq!(body["settings"]["max_vms"], 3);
+    assert_eq!(body["settings"]["model"], "opus");
+}
+
+#[tokio::test]
+async fn invalid_settings_are_rejected_with_a_message() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (_, body) = send(app(tmp.path()), Request::get("/api/settings").header("host", "127.0.0.1:7777").body(Body::empty()).unwrap()).await;
+    let mut s = body["settings"].clone();
+    s["cpus"] = 999.into();
+    let (status, body) = send(app(tmp.path()), json_req("PUT", "/api/settings", s)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"].as_str().unwrap().contains("vCPU"), "{body}");
 }

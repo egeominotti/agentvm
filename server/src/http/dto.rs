@@ -8,6 +8,8 @@ use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 
 use crate::app::store::TaskRecord;
+use crate::domain::metrics::VmMetrics;
+use crate::domain::settings::{HostLimits, Model, Settings};
 use crate::domain::task::TaskState;
 
 #[derive(Deserialize)]
@@ -19,6 +21,21 @@ pub struct CreateTask {
     pub base_ref: Option<String>,
     #[serde(default)]
     pub interactive: bool,
+    #[serde(default)]
+    pub model: Option<Model>,
+}
+
+#[derive(Serialize)]
+pub struct SettingsView {
+    pub settings: Settings,
+    pub limits: HostLimits,
+    /// VMs that fit in RAM with the current memory per VM.
+    pub recommended_max_vms: usize,
+}
+
+#[derive(Deserialize)]
+pub struct TokenUpdate {
+    pub token: String,
 }
 
 #[derive(Serialize)]
@@ -58,6 +75,9 @@ pub struct Status {
     pub token_hint: Option<String>,
     pub concurrency: usize,
     pub running: usize,
+    pub host: HostLimits,
+    /// Memory promised to running VMs.
+    pub ram_committed_mb: u64,
 }
 
 #[derive(Serialize)]
@@ -69,6 +89,10 @@ pub struct TaskDto {
     pub branch: String,
     pub interactive: bool,
     pub activity: Option<String>,
+    pub model: Model,
+    pub metrics: Option<VmMetrics>,
+    pub cpu_history: Vec<f32>,
+    pub mem_history: Vec<f32>,
     pub status: TaskState,
     pub created_at: f64,
     pub finished_at: Option<f64>,
@@ -84,6 +108,10 @@ impl From<TaskRecord> for TaskDto {
             base_sha: r.base_sha.as_str().to_owned(),
             interactive: r.interactive,
             activity: r.activity,
+            model: r.model,
+            metrics: r.metrics,
+            cpu_history: r.cpu_history.into(),
+            mem_history: r.mem_history.into(),
             status: r.state,
             created_at: unix(r.created_at),
             finished_at: r.finished_at.map(unix),

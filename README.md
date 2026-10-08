@@ -67,26 +67,34 @@ lives in `~/AgentVMs`.
 
 ## Using it
 
-1. Open **http://127.0.0.1:7777**, pick a repository (recent ones are suggested) and optionally
-   write a first task for Claude.
-2. Press **New terminal** (⌘ Enter). A VM boots in a few seconds with Claude Code already open.
-   Tick **One per line** to open one terminal per line of the task, each with its own agent.
-3. Work with Claude as usual. Switch to **Shell** for a root shell in the same VM, on the same
-   checkout (`/root/work`). Reloading the page keeps both sessions alive.
+1. Open **http://127.0.0.1:7777** and press **New VM** (⌘K). Pick a repository (recent ones are
+   suggested), a model, and optionally a first task for Claude. Tick **One VM per line** to launch
+   one machine per line of the task.
+2. **Machines** is a wall of live terminals: every VM at once, with its state, CPU and memory
+   sparklines and the busiest process. Amber means Claude is waiting for you; the page title
+   counts them, and desktop notifications can tell you while you are elsewhere.
+3. Click a machine to work in it: Claude Code full size, a **Root shell** in the same VM on the
+   same checkout (`/root/work`), and a telemetry panel (CPU, memory, disk, network, processes).
+   Reloading the page keeps the sessions alive.
 4. **Save to repo** turns the current work into commits on `agent/<id>` in your repository
    without stopping anything. **Close VM** saves and destroys the machine. **Force stop**
    powers it off without saving.
 
-Tab colors show each agent's state: blue while Claude works, amber when it is waiting for you.
-The page title counts the terminals waiting for you. To select text in a terminal, hold
-**⌥ Option** while dragging.
+When a machine is closed you get the branch, the diff per file, and ready-to-copy
+`git switch` / `git merge` commands. To select text in a terminal, hold **⌥ Option** while dragging.
 
-When a terminal is closed, the dashboard shows the branch, the diff per file, and ready-to-copy
-`git switch` / `git merge` commands.
+### Settings
+
+Everything is editable from the **Settings** page and saved in `~/AgentVMs/settings.json`:
+VMs at the same time (with the number that fits in RAM), vCPUs and memory per VM, default model,
+time limit for automatic tasks, default repository, the Claude token (stored in the Keychain),
+desktop notifications, the VM image (Claude Code version, rebuild with live log) and storage
+(clean up logs of closed VMs).
 
 ## Configuration
 
-Environment variables read by `agentvm-server` at start-up:
+Environment variables read by `agentvm-server` at start-up. They are the defaults; values saved
+from the Settings page take precedence.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -110,7 +118,11 @@ Environment variables read by `agentvm-server` at start-up:
 | `POST` | `/api/tasks/{id}/stop` | Power the VM off without saving |
 | `GET` | `/api/tasks/{id}/diff` | Diff of the produced branch |
 | `GET` | `/api/tasks/{id}/events` | Server-sent events (state changes, agent events) |
-| `GET` | `/api/status` | Golden image and token present, VMs running |
+| `GET` | `/api/status` | Golden image and token present, VMs running, host limits |
+| `GET`/`PUT` | `/api/settings` | Read or change the settings |
+| `PUT` | `/api/settings/token` | Save the Claude token in the Keychain |
+| `GET` | `/api/golden`, `POST` `/api/golden/rebuild` | VM image status and rebuild |
+| `GET` | `/api/storage`, `POST` `/api/storage/cleanup` | Disk usage and cleanup of closed jobs |
 
 Non-interactive tasks (`interactive: false`) run `claude -p` to completion and return a branch,
 which is handy for scripting.
@@ -156,4 +168,5 @@ domain does no I/O, adapters do not know each other.
   (branches already saved stay in your repositories).
 - Single user, local only. Submodules and Git LFS are not carried into the VM.
 
-xterm.js and its addons are bundled under `server/src/http/web/vendor/` (MIT license).
+xterm.js and its addons (MIT) and the Geist fonts (SIL OFL 1.1) are bundled under
+`server/src/http/web/vendor/`; the dashboard loads nothing from the internet.

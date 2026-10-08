@@ -16,12 +16,14 @@ use crate::secret::Secret;
 unsafe extern "C" {
     fn clonefile(src: *const std::ffi::c_char, dst: *const std::ffi::c_char, flags: u32) -> std::ffi::c_int;
     fn kill(pid: i32, sig: i32) -> std::ffi::c_int;
+    fn getuid() -> u32;
 }
 
 /// Owns `<jobs>/<id>/`. On `Drop` it deletes the disk, EFI variables, token and input bundle;
 /// the logs (`stream.jsonl`, `result.json`, `job.log`, `console.log`) are kept.
 pub struct JobWorkspace {
     dir: PathBuf,
+    id: String,
 }
 
 impl JobWorkspace {
@@ -29,8 +31,15 @@ impl JobWorkspace {
     pub fn share_of(jobs_root: &Path, id: &TaskId) -> PathBuf {
         jobs_root.join(id.as_str()).join("share")
     }
-    pub fn pty_socket_of(jobs_root: &Path, id: &TaskId) -> PathBuf {
-        jobs_root.join(id.as_str()).join("pty.sock")
+    /// Unix socket paths are limited to 104 bytes on macOS, so sockets live in a short
+    /// per-user folder instead of the (possibly deep) jobs root. Task ids are unique.
+    pub fn pty_socket_of(_jobs_root: &Path, id: &TaskId) -> PathBuf {
+        socket_dir().join(format!("{id}.sock"))
+    }
+
+    /// Deletes a finished job's folder (logs included).
+    pub fn remove_job(jobs_root: &Path, name: &str) -> io::Result<()> {
+        fs::remove_dir_all(jobs_root.join(name))
     }
 
     pub fn create(jobs_root: &Path, id: &TaskId) -> io::Result<Self> {
@@ -39,7 +48,9 @@ impl JobWorkspace {
         fs::create_dir_all(&share)?;
         // The guest writes as different users (root, agent).
         fs::set_permissions(&share, fs::Permissions::from_mode(0o777))?;
-        Ok(JobWorkspace { dir })
+        fs::create_dir_all(socket_dir())?;
+        fs::set_permissions(socket_dir(), fs::Permissions::from_mode(0o700))?;
+        Ok(JobWorkspace { dir, id: id.to_string() })
     }
 
     pub fn dir(&self) -> &Path {
@@ -70,8 +81,12 @@ impl JobWorkspace {
         self.share().join("repo.bundle")
     }
     pub fn pty_socket(&self) -> PathBuf {
-        self.dir.join("pty.sock")
+        socket_dir().join(format!("{}.sock", self.id))
     }
+    pub fn read_metrics(&self) -> Option<crate::domain::metrics::VmMetrics> {
+        serde_json::from_slice(&fs::read(self.share().join("metrics.json")).ok()?).ok()
+    }
+
     pub fn activity(&self) -> Option<String> {
         let s = fs::read_to_string(self.share().join("activity")).ok()?;
         let s = s.trim();
@@ -130,6 +145,11 @@ impl Drop for JobWorkspace {
             let _ = fs::remove_file(p);
         }
     }
+}
+
+fn socket_dir() -> PathBuf {
+    // SAFETY: getuid has no preconditions.
+    PathBuf::from(format!("/tmp/agentvm-{}", unsafe { getuid() }))
 }
 
 /// At server startup: terminates VMs left over from a previous run and frees their disks.

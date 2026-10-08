@@ -11,6 +11,8 @@ pub struct Config {
     pub memory_mb: u64,
     pub timeout_s: u64,
     pub vm_helper: PathBuf,
+    /// Folder with `build-golden.sh`, for rebuilds started from the dashboard.
+    pub scripts_dir: PathBuf,
 }
 
 impl Config {
@@ -32,6 +34,10 @@ impl Config {
             memory_mb,
             timeout_s: var("AGENTVM_TIMEOUT_S", 1800),
             vm_helper: std::env::var("AGENTVM_VM_HELPER").map(PathBuf::from).unwrap_or(default_helper),
+            scripts_dir: std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().and_then(|bin| bin.parent()).map(|root| root.join("scripts")))
+                .unwrap_or_else(|| PathBuf::from("scripts")),
         }
     }
 

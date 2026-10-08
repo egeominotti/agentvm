@@ -12,4 +12,7 @@ pub struct TaskSpec {
     /// Interactive terminal: the VM stays on until the user closes it.
     #[serde(default)]
     pub interactive: bool,
+    /// Value for `claude --model`; absent to let Claude Code decide.
+    #[serde(default)]
+    pub model: Option<String>,
 }

@@ -11,14 +11,17 @@ use axum::http::{StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use futures::{SinkExt, Stream, StreamExt};
 
-use super::dto::{ApiError, CreateTask, Created, PtyQuery, Saved, Status, TaskDto};
+use super::dto::{ApiError, CreateTask, Created, PtyQuery, Saved, SettingsView, Status, TaskDto, TokenUpdate};
 use crate::app::session::{self, SessionError, TerminalInput};
 use crate::app::events::StreamItem;
-use crate::app::queries::{DiffError, task_diff};
+use crate::app::golden::GoldenStatus;
+use crate::app::queries::{DiffError, StorageUsage, cleanup_finished_jobs, storage_usage, task_diff};
+use crate::domain::settings::Settings;
+use crate::secret::Secret;
 use crate::app::store::TaskRecord;
 use crate::app::supervisor::{AppCtx, NewTask, SubmitError, submit};
 use crate::domain::ids::TaskId;
@@ -38,6 +41,14 @@ pub fn router(ctx: Arc<AppCtx>) -> Router {
         .route("/api/tasks/{id}/close", post(close))
         .route("/api/tasks/{id}/pty", get(pty))
         .route("/vendor/{file}", get(vendor))
+        .route("/logo.svg", get(logo))
+        .route("/assets/{file}", get(asset))
+        .route("/api/settings", get(get_settings).put(put_settings))
+        .route("/api/settings/token", put(put_token))
+        .route("/api/golden", get(golden_status))
+        .route("/api/golden/rebuild", post(golden_rebuild))
+        .route("/api/storage", get(storage))
+        .route("/api/storage/cleanup", post(storage_cleanup))
         .layer(middleware::from_fn_with_state(ctx.config.port, loopback_only))
         .with_state(ctx)
 }
@@ -71,7 +82,9 @@ async fn status(State(ctx): Ctx) -> Json<Status> {
         token_hint: token.as_ref().err().map(ToString::to_string),
         token: token.is_ok(),
         concurrency: ctx.scheduler.concurrency(),
-        running: ctx.scheduler.running(),
+        running: ctx.store.running_count(),
+        host: ctx.settings.limits(),
+        ram_committed_mb: ctx.store.running_count() as u64 * ctx.settings.get().memory_mb,
     })
 }
 
@@ -81,6 +94,7 @@ async fn create(State(ctx): Ctx, Json(req): Json<CreateTask>) -> Result<(StatusC
         prompt: req.prompt,
         base_ref: req.base_ref.as_deref(),
         interactive: req.interactive,
+        model: req.model,
     };
     let id = submit(&ctx, new).map_err(|e| {
         let code = match e {
@@ -215,7 +229,28 @@ async fn bridge(socket: WebSocket, conn: crate::app::session::Terminal) {
     tokio::select! { _ = to_browser => {}, _ = to_vm => {} }
 }
 
+async fn asset(Path(file): Path<String>) -> Result<Response, ApiError> {
+    let (body, mime): (&'static str, &str) = match file.as_str() {
+        "app.css" => (include_str!("web/app.css"), "text/css"),
+        "app.js" => (include_str!("web/app.js"), "text/javascript"),
+        _ => return Err(ApiError(StatusCode::NOT_FOUND, "no such file".into())),
+    };
+    Ok(([("content-type", mime), ("cache-control", "no-cache")], body).into_response())
+}
+
+async fn font(file: &str) -> Option<Response> {
+    let bytes: &'static [u8] = match file {
+        "GeistVF.woff2" => include_bytes!("web/vendor/GeistVF.woff2"),
+        "GeistMonoVF.woff2" => include_bytes!("web/vendor/GeistMonoVF.woff2"),
+        _ => return None,
+    };
+    Some(([("content-type", "font/woff2"), ("cache-control", "max-age=604800")], bytes).into_response())
+}
+
 async fn vendor(Path(file): Path<String>) -> Result<Response, ApiError> {
+    if let Some(font) = font(&file).await {
+        return Ok(font);
+    }
     let (body, mime): (&'static str, &str) = match file.as_str() {
         "xterm.js" => (include_str!("web/vendor/xterm.js"), "text/javascript"),
         "addon-fit.js" => (include_str!("web/vendor/addon-fit.js"), "text/javascript"),
@@ -224,4 +259,51 @@ async fn vendor(Path(file): Path<String>) -> Result<Response, ApiError> {
         _ => return Err(ApiError(StatusCode::NOT_FOUND, "file not found".into())),
     };
     Ok(([("content-type", mime), ("cache-control", "max-age=86400")], body).into_response())
+}
+
+async fn logo() -> Response {
+    ([("content-type", "image/svg+xml"), ("cache-control", "max-age=86400")], include_str!("web/logo.svg")).into_response()
+}
+
+fn settings_view(ctx: &AppCtx) -> SettingsView {
+    let settings = ctx.settings.get();
+    let limits = ctx.settings.limits();
+    SettingsView { recommended_max_vms: limits.recommended_vms(settings.memory_mb), settings, limits }
+}
+
+async fn get_settings(State(ctx): Ctx) -> Json<SettingsView> {
+    Json(settings_view(&ctx))
+}
+
+async fn put_settings(State(ctx): Ctx, Json(new): Json<Settings>) -> Result<Json<SettingsView>, ApiError> {
+    ctx.update_settings(new).map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(settings_view(&ctx)))
+}
+
+async fn put_token(State(ctx): Ctx, Json(req): Json<TokenUpdate>) -> Result<StatusCode, ApiError> {
+    let secret = Secret::new(req.token.trim().to_owned());
+    let ctx2 = ctx.clone();
+    tokio::task::spawn_blocking(move || ctx2.keychain.write_token(&secret))
+        .await
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn golden_status(State(ctx): Ctx) -> Json<GoldenStatus> {
+    Json(ctx.golden.status())
+}
+
+async fn golden_rebuild(State(ctx): Ctx) -> Result<Json<GoldenStatus>, ApiError> {
+    ctx.golden.rebuild().map_err(|e| ApiError(StatusCode::CONFLICT, e.to_string()))?;
+    Ok(Json(ctx.golden.status()))
+}
+
+async fn storage(State(ctx): Ctx) -> Json<StorageUsage> {
+    Json(tokio::task::spawn_blocking(move || storage_usage(&ctx)).await.expect("storage scan"))
+}
+
+async fn storage_cleanup(State(ctx): Ctx) -> Json<serde_json::Value> {
+    let removed = tokio::task::spawn_blocking(move || cleanup_finished_jobs(&ctx)).await.expect("cleanup");
+    Json(serde_json::json!({ "removed": removed }))
 }

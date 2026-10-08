@@ -93,3 +93,41 @@ fn unknown_task_is_not_found() {
     assert!(matches!(store.apply(&id, TaskEvent::SlotAcquired), Err(StoreError::NotFound)));
     assert!(store.get(&id).is_none());
 }
+
+#[tokio::test]
+async fn scheduler_grows_and_shrinks_at_runtime() {
+    use agentvm::app::scheduler::Scheduler;
+    let s = Scheduler::new(1);
+    let a = s.acquire().await;
+    assert!(tokio::time::timeout(Duration::from_millis(50), s.acquire()).await.is_err(), "only 1 slot");
+    s.resize(2);
+    let b = tokio::time::timeout(Duration::from_millis(200), s.acquire()).await.expect("second slot after grow");
+    assert_eq!(s.concurrency(), 2);
+    s.resize(1);
+    drop(a);
+    drop(b);
+    let _c = s.acquire().await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(tokio::time::timeout(Duration::from_millis(100), s.acquire()).await.is_err(), "back to 1 slot");
+}
+
+#[test]
+fn store_keeps_the_last_60_metric_samples() {
+    use agentvm::domain::metrics::VmMetrics;
+    let repo = tempfile::tempdir().unwrap();
+    let store = Store::new();
+    let rec = record(&repo);
+    let id = rec.id.clone();
+    store.insert(rec);
+    for i in 0..70 {
+        let m: VmMetrics = serde_json::from_value(serde_json::json!({
+            "uptime_s": i, "cpus": 4, "cpu_pct": i as f64, "load1": 0.0, "mem_used_mb": 100, "mem_total_mb": 4000,
+            "disk_used_mb": 1, "disk_total_mb": 2, "net_rx_bps": 0, "net_tx_bps": 0, "procs": 1, "top": []
+        })).unwrap();
+        store.record_metrics(&id, m);
+    }
+    let rec = store.get(&id).unwrap();
+    assert_eq!(rec.cpu_history.len(), 60);
+    assert_eq!(rec.cpu_history.back().copied(), Some(69.0));
+    assert_eq!(rec.metrics.unwrap().uptime_s, 69);
+}
