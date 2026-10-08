@@ -13,7 +13,7 @@ import { DiagnosticsPanel } from "./diagnostics.js";
 import { appendDiff } from "./diff.js";
 import { outcome } from "./outcome.js";
 import { PortsBar } from "./ports.js";
-import { telemetry } from "./telemetry.js";
+import { TelemetryPanel } from "./telemetry/panel.js";
 
 export class MachineView {
   constructor(id) {
@@ -42,7 +42,8 @@ export class MachineView {
     this.result = h("div", { class: "result" });
     this.result.hidden = true;
     this.stage = h("section", { class: "stage" }, this.toolbar, this.ports.el, this.screen, this.result, this.diag.el);
-    this.panel = h("aside", { class: "panel", "aria-label": "Telemetry" });
+    this.tele = new TelemetryPanel(id);
+    this.panel = h("aside", { class: "panel", "aria-label": "Telemetry" }, this.tele.el);
     this.root = h("div", { class: "focus" }, this.stage, this.panel);
   }
 
@@ -61,7 +62,7 @@ export class MachineView {
     this.auto.paint(t);
     this.saveBtn.disabled = this.closeBtn.disabled = this.snapBtn.disabled = s !== "running";
     this.stopBtn.hidden = ended;
-    if (this.showPanel) this.panel.replaceChildren(...telemetry(t, label));
+    if (this.showPanel) this.tele.update(t, label);
     this.ports.update(ended ? [] : t.ports || []);
     if (ended) return this.ended(t);
     if (!t.interactive) return this.overlayText("Running without a terminal", "Started from the API in automatic mode.");
@@ -176,5 +177,8 @@ export class MachineView {
     if (r.ok) { toast("Removed from the list"); location.hash = "#/wall"; loadTasks(); } else toast(r.data?.error || "Could not remove", "err");
   }
 
-  destroy() { for (const term of Object.values(this.terms)) term.dispose(); }
+  destroy() {
+    for (const term of Object.values(this.terms)) term.dispose();
+    this.tele.destroy();
+  }
 }

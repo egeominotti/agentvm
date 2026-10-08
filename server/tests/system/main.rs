@@ -9,4 +9,5 @@ mod s3;
 mod server;
 mod snapshots;
 mod tasks;
+mod telemetry;
 mod terminals;
