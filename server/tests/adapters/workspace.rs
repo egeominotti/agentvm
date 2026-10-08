@@ -1,0 +1,69 @@
+//! The job folder: the VM's disk, its shared folder, the token and the guest's result.
+
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+
+use agentvm::adapters::jobdir::JobWorkspace;
+use agentvm::secret::Secret;
+
+use crate::helpers::task_id;
+
+#[test]
+fn workspace_clones_disk_and_cleans_up_on_drop() {
+    let tmp = tempfile::tempdir().unwrap();
+    let golden = tmp.path().join("golden.raw");
+    std::fs::write(&golden, vec![7u8; 1 << 20]).unwrap();
+
+    let ws = JobWorkspace::create(&tmp.path().join("jobs"), &task_id()).unwrap();
+    assert_eq!(std::fs::metadata(ws.share()).unwrap().permissions().mode() & 0o777, 0o777);
+    ws.clone_disk(&golden).unwrap();
+    assert_eq!(std::fs::read(ws.disk()).unwrap(), std::fs::read(&golden).unwrap());
+    std::fs::write(ws.share().join("stream.jsonl"), "{}\n").unwrap();
+    std::fs::write(ws.share().join("repo.bundle"), "x").unwrap();
+    let (disk, share) = (ws.disk(), ws.share());
+    drop(ws);
+    assert!(!disk.exists());
+    assert!(!share.join("repo.bundle").exists());
+    assert!(share.join("stream.jsonl").exists());
+    assert!(golden.exists());
+}
+
+#[test]
+fn workspace_token_is_private_and_secret_is_redacted() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = JobWorkspace::create(tmp.path(), &task_id()).unwrap();
+    let secret = Secret::new("sk-ant-oat01-test".into());
+    ws.write_token(&secret).unwrap();
+    let token = ws.share().join(".token");
+    assert_eq!(std::fs::metadata(&token).unwrap().permissions().mode() & 0o777, 0o600);
+    assert_eq!(std::fs::read_to_string(&token).unwrap(), "sk-ant-oat01-test");
+    assert_eq!(format!("{secret:?}"), "[REDACTED]");
+    drop(ws);
+    assert!(!token.exists());
+}
+
+#[test]
+fn workspace_reads_guest_result() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = JobWorkspace::create(tmp.path(), &task_id()).unwrap();
+    assert!(ws.read_result().is_none());
+    std::fs::write(ws.share().join("result.json"), "{not json").unwrap();
+    assert!(ws.read_result().is_none());
+    std::fs::write(ws.share().join("result.json"), r#"{"status":"ok","claude_exit":0,"commits":2}"#).unwrap();
+    assert_eq!(ws.read_result().unwrap().commits, 2);
+    assert!(!ws.has_out_bundle());
+}
+
+/// The guest runs the scripts of the server that started it, not the ones baked in its image.
+#[test]
+fn workspace_ships_the_guest_runtime_of_this_server() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = JobWorkspace::create(&tmp.path().join("jobs"), &task_id()).unwrap();
+    let guest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../guest");
+    for f in
+        ["agentvm-job", "agentvm-pty", "agentvm-metrics", "agentvm-statusline", "agentvm-claude", "config/tmux.conf"]
+    {
+        let shipped = ws.share().join("runtime").join(Path::new(f).file_name().unwrap());
+        assert_eq!(std::fs::read(&shipped).ok(), Some(std::fs::read(guest.join(f)).unwrap()), "{f}");
+    }
+}
