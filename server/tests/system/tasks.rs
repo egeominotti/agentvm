@@ -124,8 +124,9 @@ fn a_task_that_runs_out_of_time_keeps_its_commits() {
     let (id, task) = run_task(
         &server,
         repo.path(),
-        "Create the file early.txt containing early and commit it. Then run the shell command `sleep 600` \
-         in the foreground and wait for it to finish.",
+        // Not `sleep 600`: Claude Code now blocks a standalone sleep, and the task would end early.
+        "Create the file early.txt containing early and commit it. Then run the shell command \
+         `tail -f /dev/null` in the foreground (it waits forever, that is intended) and wait for it to finish.",
     );
     assert_eq!(task["status"]["state"], "failed", "{task}");
     assert!(task["status"]["reason"].as_str().unwrap_or_default().contains("timeout"), "{task}");
