@@ -2,27 +2,9 @@
 
 use std::time::Duration;
 
-use agentvm::app::store::Store;
 use agentvm::domain::ids::TaskId;
-use agentvm::domain::task::TaskEvent;
 
-use crate::helpers::{ctx, git_repo, record};
-
-/// A task left Running by a server that went away (a reboot, a crash) whose VM is gone.
-fn interrupted_task(home: &std::path::Path, repo: &tempfile::TempDir, interactive: bool) -> TaskId {
-    let mut rec = record(repo);
-    rec.interactive = interactive;
-    let id = rec.id.clone();
-    let store = Store::persistent(home.join("jobs"));
-    store.insert(rec);
-    for e in [TaskEvent::SlotAcquired, TaskEvent::Prepared, TaskEvent::VmStarted] {
-        store.apply(&id, e).unwrap();
-    }
-    let job = home.join("jobs").join(id.as_str());
-    std::fs::write(job.join("disk.raw"), vec![7u8; 4 << 20]).unwrap();
-    std::fs::write(job.join("efivars"), b"efi").unwrap();
-    id
-}
+use crate::helpers::{ctx, git_repo, running_task as interrupted_task};
 
 async fn wait_terminal(ctx: &agentvm::app::supervisor::AppCtx, id: &TaskId) -> agentvm::app::store::TaskRecord {
     for _ in 0..100 {

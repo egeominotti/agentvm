@@ -137,7 +137,13 @@ export class MachineView {
   async close() {
     this.closeBtn.disabled = this.saveBtn.disabled = true;
     this.closeBtn.textContent = "Closing…";
-    await api(`/api/tasks/${this.id}/close`, { method: "POST" });
+    const r = await api(`/api/tasks/${this.id}/close`, { method: "POST" });
+    if (!r.ok) {
+      // The VM stays up and nothing is lost: say why and give the buttons back.
+      toast(r.data?.error || "Could not close the VM", "err");
+      this.closeBtn.textContent = "Close VM";
+      this.closeBtn.disabled = this.saveBtn.disabled = false;
+    }
     loadTasks();
   }
 

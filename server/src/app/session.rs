@@ -1,6 +1,9 @@
 //! Actions on a running terminal: open a PTY, save the work to the branch, close the VM.
 
+use std::sync::Arc;
 use std::time::Duration;
+
+use serde_json::Value;
 
 use super::context::AppCtx;
 use crate::adapters::git::Git;
@@ -28,6 +31,8 @@ pub enum SessionError {
     Unreachable(String),
     #[error("save failed: {0}")]
     SaveFailed(String),
+    #[error("the VM stays open, nothing is lost: its final save failed ({0})")]
+    CloseFailed(String),
 }
 
 fn running_terminal(ctx: &AppCtx, id: &TaskId) -> Result<crate::app::record::TaskRecord, SessionError> {
@@ -105,15 +110,46 @@ pub struct Saved {
     pub branch: String,
 }
 
-/// Final save and shutdown: the supervisor collects the outcome as for any task.
-pub async fn close(ctx: &AppCtx, id: &TaskId) -> Result<(), SessionError> {
+/// Longest wait for the guest's final save before telling the user the VM is still closing.
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Final save and shutdown. Returns once the VM is going away (the supervisor then collects the
+/// outcome as for any task), or why it stays up: its final save failed and nothing is lost. Runs
+/// on a task of its own, so a page reloaded meanwhile cannot leave the close half done.
+pub async fn close(ctx: &Arc<AppCtx>, id: &TaskId) -> Result<(), SessionError> {
     running_terminal(ctx, id)?;
+    let (ctx, id) = (ctx.clone(), id.clone());
+    tokio::spawn(async move { close_and_wait(&ctx, &id).await })
+        .await
+        .map_err(|e| SessionError::Unreachable(e.to_string()))?
+}
+
+async fn close_and_wait(ctx: &AppCtx, id: &TaskId) -> Result<(), SessionError> {
     // The whole machine as it was (installed packages, Claude's conversation), not just the branch.
     if ctx.settings.get().auto_snapshots.before_close {
         let _ = super::snapshots::take_auto(ctx, id, "before close").await;
     }
     let share = JobWorkspace::share_of(&ctx.config.jobs(), id);
-    write_request(&share, "close.request").map_err(|e| SessionError::Unreachable(e.to_string()))
+    let failed = share.join("close.failed");
+    let _ = std::fs::remove_file(&failed);
+    write_request(&share, "close.request").map_err(|e| SessionError::Unreachable(e.to_string()))?;
+    let t0 = tokio::time::Instant::now();
+    loop {
+        // Partial JSON means the guest is still writing: look again on the next round.
+        if let Some(reply) = guestfs::read(&failed, 4096).and_then(|b| serde_json::from_slice::<Value>(&b).ok()) {
+            let _ = std::fs::remove_file(&failed);
+            let reason = reply["error"].as_str().unwrap_or("unknown error").to_owned();
+            return Err(SessionError::CloseFailed(reason));
+        }
+        if ctx.store.get(id).is_none_or(|r| r.state != TaskState::Running) {
+            return Ok(());
+        }
+        if t0.elapsed() > CLOSE_TIMEOUT {
+            let late = "the VM has not finished its final save yet; it closes when it does";
+            return Err(SessionError::Unreachable(late.into()));
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
 }
 
 /// A file dropped on a terminal, being written into the VM's shared folder.

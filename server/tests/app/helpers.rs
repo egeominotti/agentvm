@@ -2,8 +2,9 @@
 
 use std::time::SystemTime;
 
-use agentvm::app::store::TaskRecord;
+use agentvm::app::store::{Store, TaskRecord};
 use agentvm::domain::ids::{CommitSha, Prompt, RepoPath, TaskId};
+use agentvm::domain::task::TaskEvent;
 
 pub(crate) fn record(repo: &tempfile::TempDir) -> TaskRecord {
     std::fs::create_dir_all(repo.path().join(".git")).unwrap();
@@ -39,4 +40,20 @@ pub(crate) fn git_repo() -> tempfile::TempDir {
     run(&["init", "-q", "-b", "main"]);
     run(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "one"]);
     dir
+}
+
+/// A task in the Running state with a job folder and a small disk, as a VM leaves it.
+pub(crate) fn running_task(home: &std::path::Path, repo: &tempfile::TempDir, interactive: bool) -> TaskId {
+    let mut rec = record(repo);
+    rec.interactive = interactive;
+    let id = rec.id.clone();
+    let store = Store::persistent(home.join("jobs"));
+    store.insert(rec);
+    for e in [TaskEvent::SlotAcquired, TaskEvent::Prepared, TaskEvent::VmStarted] {
+        store.apply(&id, e).unwrap();
+    }
+    let job = home.join("jobs").join(id.as_str());
+    std::fs::write(job.join("disk.raw"), vec![7u8; 4 << 20]).unwrap();
+    std::fs::write(job.join("efivars"), b"efi").unwrap();
+    id
 }
