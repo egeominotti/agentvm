@@ -63,6 +63,18 @@ log "repo ready on $BRANCH"
 for _ in $(seq 100); do getent hosts api.anthropic.com >/dev/null && break; sleep 0.1; done
 log "network ready"
 
+# Per-repository setup (dependencies, databases, dev servers): .agentvm/setup.sh, run as root
+# in the checkout before Claude starts. Background services it starts keep running.
+if [ "$RESTORE" != "true" ] && [ -f "$WORK/.agentvm/setup.sh" ]; then
+  log "running .agentvm/setup.sh"
+  if (cd "$WORK" && timeout 1800 env HOME=/root PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+        bash .agentvm/setup.sh) >> "$JOB/setup.log" 2>&1; then
+    log "setup done"
+  else
+    log "setup failed (see setup.log)"
+  fi
+fi
+
 # A launch can pin another Claude Code release than the image's (the version is validated by the server).
 CLAUDE_VERSION=$(jq -r '.claude_version // empty' "$JOB/task.json")
 if [ -n "$CLAUDE_VERSION" ]; then

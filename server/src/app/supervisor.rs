@@ -42,6 +42,7 @@ pub struct AppCtx {
     pub settings: SettingsService,
     pub golden: GoldenService,
     pub snapshots: SnapshotStore,
+    pub forwards: super::ports::PortForwards,
     releases: tokio::sync::Mutex<Option<(std::time::Instant, Releases)>>,
 }
 
@@ -67,6 +68,7 @@ impl AppCtx {
             keychain,
             settings,
             snapshots: SnapshotStore::new(config.home.join("snapshots")),
+            forwards: Default::default(),
             releases: tokio::sync::Mutex::new(None),
             config,
         }
@@ -245,6 +247,10 @@ async fn supervise(
     let on_tick = || {
         ctx.store.set_activity(id, ws.activity());
         if let Some(m) = ws.read_metrics() {
+            if record.interactive {
+                let ports = ctx.forwards.sync(&ctx.config.jobs(), id, &m.ports);
+                ctx.store.set_ports(id, ports);
+            }
             ctx.store.record_metrics(id, m);
         }
         if let Some(u) = ws.read_usage() {
@@ -254,6 +260,8 @@ async fn supervise(
     let timeout = (!record.interactive).then(|| Duration::from_secs(ctx.settings.get().timeout_s));
     let (exit, stop_requested, timed_out) = wait_for_vm(ctx, id, &mut vm, timeout, on_started, on_tick).await;
     ctx.store.set_activity(id, None);
+    ctx.forwards.stop_all(id);
+    ctx.store.set_ports(id, Vec::new());
     follower.finish().await;
     collect(ctx, id, record, &ws, exit, stop_requested, timed_out)
 }

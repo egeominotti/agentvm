@@ -18,6 +18,25 @@ pub struct VmMetrics {
     pub procs: u32,
     /// Busiest processes; `cpu_pct` is per core (can exceed 100).
     pub top: Vec<ProcessSample>,
+    /// TCP ports something listens on inside the VM.
+    #[serde(default)]
+    pub ports: Vec<ListeningPort>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListeningPort {
+    pub port: u16,
+    /// Process that owns the socket, when known.
+    #[serde(default)]
+    pub name: String,
+}
+
+/// A VM port reachable from the Mac on `127.0.0.1:host_port`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ForwardedPort {
+    pub port: u16,
+    pub host_port: u16,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

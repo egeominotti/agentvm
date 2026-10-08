@@ -57,6 +57,44 @@ def process_ticks():
     return out
 
 
+IGNORED_PORTS = {22, 53, 5355}
+
+
+def listening_ports():
+    """TCP ports in LISTEN state -> {port: inode}, from /proc/net/tcp and tcp6."""
+    ports = {}
+    for path in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            lines = open(path).read().splitlines()[1:]
+        except OSError:
+            continue
+        for line in lines:
+            cols = line.split()
+            if len(cols) < 10 or cols[3] != "0A":
+                continue
+            port = int(cols[1].rsplit(":", 1)[1], 16)
+            if port not in IGNORED_PORTS:
+                ports.setdefault(port, cols[9])
+    return ports
+
+
+def owners(inodes):
+    """socket inode -> process name, scanning /proc/*/fd (only when the set of ports changes)."""
+    wanted = {f"socket:[{i}]" for i in inodes}
+    found = {}
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            for fd in os.listdir(f"/proc/{pid}/fd"):
+                target = os.readlink(f"/proc/{pid}/fd/{fd}")
+                if target in wanted:
+                    found[target[8:-1]] = open(f"/proc/{pid}/comm").read().strip()
+        except OSError:
+            continue
+    return found
+
+
 def write(data):
     tmp = OUT + ".tmp"
     with open(tmp, "w") as f:
@@ -70,6 +108,7 @@ def main():
     prev_rx, prev_tx = net_bytes()
     prev_procs = process_ticks()
     prev_t = time.monotonic()
+    port_names = {}
     while True:
         time.sleep(PERIOD_S)
         now = time.monotonic()
@@ -86,6 +125,10 @@ def main():
                 if pct > 0.5:
                     top.append({"name": name, "cpu_pct": round(pct, 1), "mem_mb": round(rss)})
         top.sort(key=lambda p: p["cpu_pct"], reverse=True)
+        ports = listening_ports()
+        if set(ports) != set(port_names):
+            names = owners(ports.values())
+            port_names = {p: names.get(inode, "") for p, inode in ports.items()}
         mem_used, mem_total = memory_mb()
         disk = shutil.disk_usage("/")
         write({
@@ -101,6 +144,7 @@ def main():
             "net_tx_bps": round((tx - prev_tx) / dt),
             "procs": len(procs),
             "top": top[:TOP_N],
+            "ports": [{"port": p, "name": n} for p, n in sorted(port_names.items())],
         })
         prev_idle, prev_total, prev_rx, prev_tx, prev_procs, prev_t = idle, total, rx, tx, procs, now
 

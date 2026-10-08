@@ -42,6 +42,9 @@ pub struct TaskRecord {
     /// Claude's cost and tokens (kept across restarts).
     #[serde(default)]
     pub usage: Option<AgentUsage>,
+    /// VM ports reachable from the Mac right now.
+    #[serde(skip)]
+    pub ports: Vec<crate::domain::metrics::ForwardedPort>,
     #[serde(skip)]
     pub metrics: Option<VmMetrics>,
     #[serde(skip)]
@@ -72,6 +75,7 @@ impl TaskRecord {
             cpus: 0,
             memory_mb: 0,
             usage: None,
+            ports: Vec::new(),
             metrics: None,
             cpu_history: VecDeque::with_capacity(HISTORY),
             mem_history: VecDeque::with_capacity(HISTORY),
@@ -209,6 +213,12 @@ impl Store {
             let record = e.record.clone();
             drop(tasks);
             self.persist(&record);
+        }
+    }
+
+    pub fn set_ports(&self, id: &TaskId, ports: Vec<crate::domain::metrics::ForwardedPort>) {
+        if let Some(e) = self.tasks.lock().unwrap().get_mut(id) {
+            e.record.ports = ports;
         }
     }
 

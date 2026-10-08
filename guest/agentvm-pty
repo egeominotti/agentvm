@@ -72,10 +72,46 @@ def spawn(session, cols, rows, view=False):
     return pid, fd
 
 
+def forward(conn, port):
+    """Raw byte bridge between the vsock connection and a TCP port inside the VM."""
+    try:
+        target = socket.create_connection(("127.0.0.1", port), timeout=5)
+    except OSError:
+        try:
+            target = socket.create_connection(("::1", port), timeout=5)
+        except OSError:
+            conn.close()
+            return
+    target.settimeout(None)
+
+    def pump(src, dst):
+        try:
+            while True:
+                data = src.recv(65536)
+                if not data:
+                    break
+                dst.sendall(data)
+        except OSError:
+            pass
+        finally:
+            for s in (src, dst):
+                try:
+                    s.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+
+    threading.Thread(target=pump, args=(target, conn), daemon=True).start()
+    pump(conn, target)
+    target.close()
+    conn.close()
+
+
 def serve(conn):
     pid = fd = None
     try:
         header = read_header(conn)
+        if header and isinstance(header.get("forward"), int):
+            return forward(conn, header["forward"])
         if not header or header.get("session") not in SESSIONS:
             return
         pid, fd = spawn(header["session"], int(header.get("cols", 120)), int(header.get("rows", 36)), bool(header.get("view")))

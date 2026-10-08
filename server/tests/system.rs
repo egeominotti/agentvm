@@ -569,3 +569,44 @@ fn restore_keeps_resources_and_finished_tasks_can_be_removed() {
     assert!(curl(&["-sf", &format!("{}/api/tasks/{id}", server.base)]).is_none(), "removed from the list");
     assert!(!server.home.path().join("jobs").join(&id).exists(), "job folder deleted");
 }
+
+#[test]
+#[ignore = "needs golden and token"]
+fn repo_setup_runs_and_vm_ports_are_forwarded_to_the_mac() {
+    let server = start_server();
+    let repo = temp_repo();
+    std::fs::create_dir_all(repo.path().join(".agentvm")).unwrap();
+    std::fs::write(
+        repo.path().join(".agentvm/setup.sh"),
+        "echo hello-from-setup > /root/work/served.txt\nnohup python3 -m http.server 8765 --bind 127.0.0.1 --directory /root/work >/dev/null 2>&1 &\n",
+    )
+    .unwrap();
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-qm", "setup"]);
+    let created =
+        post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo.path(), "interactive": true}));
+    let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    let t0 = Instant::now();
+    let host_port = loop {
+        let task = get_json(&format!("{}/api/tasks/{id}", server.base));
+        let found = task["ports"]
+            .as_array()
+            .and_then(|ps| ps.iter().find(|p| p["port"] == 8765))
+            .and_then(|p| p["host_port"].as_u64());
+        if let Some(port) = found {
+            break port;
+        }
+        assert!(t0.elapsed() < Duration::from_secs(60), "port 8765 never forwarded: {task}");
+        std::thread::sleep(Duration::from_millis(500));
+    };
+    let body = curl(&["-sf", "--max-time", "5", &format!("http://127.0.0.1:{host_port}/served.txt")])
+        .expect("forwarded port answers");
+    assert_eq!(body.trim(), "hello-from-setup");
+    post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
+    wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(30));
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(
+        curl(&["-sf", "--max-time", "2", &format!("http://127.0.0.1:{host_port}/")]).is_none(),
+        "forward closed with the VM"
+    );
+}

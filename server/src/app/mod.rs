@@ -2,6 +2,7 @@
 pub mod backups;
 pub mod events;
 pub mod golden;
+pub mod ports;
 pub mod queries;
 pub mod scheduler;
 pub mod session;
