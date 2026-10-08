@@ -35,6 +35,9 @@ pub struct TaskRecord {
     /// Display name when there is no first task (e.g. "Restored: …").
     #[serde(default)]
     pub label: Option<String>,
+    /// Minutes between automatic snapshots of this machine; `None` follows the settings.
+    #[serde(default)]
+    pub auto_snapshot_min: Option<u32>,
     /// Resources of this VM (from the launch, or the settings at launch time).
     pub cpus: u32,
     pub memory_mb: u64,
@@ -78,6 +81,7 @@ impl TaskRecord {
             claude_version: None,
             restore_from: None,
             label: None,
+            auto_snapshot_min: None,
             cpus: 0,
             memory_mb: 0,
             usage: None,
@@ -212,6 +216,16 @@ impl Store {
     }
 
     /// Saved to disk only when it changes.
+    pub fn set_auto_snapshot_min(&self, id: &TaskId, minutes: Option<u32>) {
+        let mut tasks = self.tasks.lock().unwrap();
+        if let Some(e) = tasks.get_mut(id) {
+            e.record.auto_snapshot_min = minutes;
+            let record = e.record.clone();
+            drop(tasks);
+            self.persist(&record);
+        }
+    }
+
     pub fn set_usage(&self, id: &TaskId, usage: AgentUsage) {
         let mut tasks = self.tasks.lock().unwrap();
         if let Some(e) = tasks.get_mut(id)

@@ -105,6 +105,8 @@ pub struct TaskDto {
     pub cpus: u32,
     pub memory_mb: u64,
     pub label: Option<String>,
+    /// This machine's own interval for automatic snapshots (`null`: the settings').
+    pub auto_snapshot_min: Option<u32>,
     pub ports: Vec<crate::domain::metrics::ForwardedPort>,
     pub boot_log: Vec<String>,
     pub ready: bool,
@@ -131,6 +133,7 @@ impl From<TaskRecord> for TaskDto {
             claude_version: r.claude_version,
             cpus: r.cpus,
             memory_mb: r.memory_mb,
+            auto_snapshot_min: r.auto_snapshot_min,
             label: r.label,
             ports: r.ports,
             boot_log: r.boot_log,

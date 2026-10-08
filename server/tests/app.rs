@@ -154,3 +154,18 @@ fn a_persistent_store_reloads_tasks_after_a_restart() {
     assert_eq!(reloaded[0].state, TaskState::Booting);
     assert_eq!(reloaded[0].prompt.as_ref().unwrap().as_str(), "do something");
 }
+
+#[test]
+fn a_machine_keeps_its_own_snapshot_interval_across_restarts() {
+    let repo = tempfile::tempdir().unwrap();
+    let jobs = tempfile::tempdir().unwrap();
+    let rec = record(&repo);
+    let id = rec.id.clone();
+    {
+        let store = Store::persistent(jobs.path().to_path_buf());
+        store.insert(rec);
+        assert_eq!(store.get(&id).unwrap().auto_snapshot_min, None);
+        store.set_auto_snapshot_min(&id, Some(5));
+    }
+    assert_eq!(Store::load(jobs.path())[0].auto_snapshot_min, Some(5));
+}

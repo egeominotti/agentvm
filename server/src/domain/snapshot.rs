@@ -50,4 +50,58 @@ pub struct SnapshotMeta {
     pub cpus: u32,
     #[serde(default)]
     pub memory_mb: u64,
+    /// Taken by the schedule (or before a close): pruned to the newest `keep` per VM.
+    #[serde(default)]
+    pub auto: bool,
+}
+
+/// Automatic snapshots of running terminals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutoSnapshots {
+    /// Minutes between snapshots; 0 turns the schedule off.
+    pub every_min: u32,
+    /// Automatic snapshots kept per VM (manual ones are never pruned).
+    pub keep: u32,
+    /// One more snapshot just before a VM is closed.
+    pub before_close: bool,
+}
+
+impl Default for AutoSnapshots {
+    fn default() -> Self {
+        AutoSnapshots { every_min: 30, keep: 4, before_close: true }
+    }
+}
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum AutoSnapshotsError {
+    #[error("automatic snapshots run every 1, 5, 10, 15, 30, 60, 120 or 240 minutes, or never (0)")]
+    Interval,
+    #[error("keep between 1 and 50 automatic snapshots per VM")]
+    Keep,
+}
+
+impl AutoSnapshots {
+    pub const INTERVALS: [u32; 9] = [0, 1, 5, 10, 15, 30, 60, 120, 240];
+
+    pub fn validate(&self) -> Result<(), AutoSnapshotsError> {
+        if !Self::INTERVALS.contains(&self.every_min) {
+            return Err(AutoSnapshotsError::Interval);
+        }
+        if !(1..=50).contains(&self.keep) {
+            return Err(AutoSnapshotsError::Keep);
+        }
+        Ok(())
+    }
+
+    /// Times are seconds since the epoch. The first one is counted from the VM's start.
+    pub fn due(&self, last_auto: Option<f64>, started_at: f64, now: f64) -> bool {
+        self.every_min > 0 && now - last_auto.unwrap_or(started_at) >= f64::from(self.every_min) * 60.0
+    }
+
+    /// The automatic snapshots of `task` beyond the newest `keep`.
+    pub fn to_prune(&self, all: &[SnapshotMeta], task: &str) -> Vec<SnapshotId> {
+        let mut autos: Vec<&SnapshotMeta> = all.iter().filter(|s| s.auto && s.source_task == task).collect();
+        autos.sort_by(|a, b| b.created_at.total_cmp(&a.created_at));
+        autos.into_iter().skip(self.keep as usize).map(|s| s.id.clone()).collect()
+    }
 }

@@ -21,6 +21,7 @@ async fn main() -> anyhow::Result<()> {
     // VMs survive restarts: re-attach to them first, then clean up whatever no task owns.
     let live = agentvm::app::supervisor::recover(&ctx);
     cleanup_orphans(&ctx.config.jobs(), &live);
+    tokio::spawn(agentvm::app::snapshots::run_schedule(ctx.clone()));
     eprintln!("agentvm listening on http://{addr}");
     axum::serve(listener, agentvm::http::router(ctx)).await?;
     Ok(())

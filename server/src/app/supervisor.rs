@@ -35,6 +35,9 @@ const KILL_GRACE: Duration = Duration::from_secs(15);
 /// Claude Code releases as served to the dashboard.
 pub type ClaudeReleases = Releases;
 
+/// Time the guest gets after its own time limit to save the work and power off.
+const TIMEOUT_GRACE_S: u64 = 180;
+
 pub struct AppCtx {
     pub config: Config,
     pub store: Store,
@@ -60,6 +63,7 @@ impl AppCtx {
             default_repo: None,
             claude_version: Default::default(),
             s3: None,
+            auto_snapshots: Default::default(),
         };
         let settings = SettingsService::load(config.home.join("settings.json"), defaults, limits);
         AppCtx {
@@ -269,7 +273,8 @@ async fn supervise(
             ctx.store.set_usage(id, u);
         }
     };
-    let timeout = (!record.interactive).then(|| Duration::from_secs(ctx.settings.get().timeout_s));
+    // The guest enforces the limit itself and saves the work; this is the backstop if it cannot.
+    let timeout = (!record.interactive).then(|| Duration::from_secs(ctx.settings.get().timeout_s + TIMEOUT_GRACE_S));
     let (exit, stop_requested, timed_out) = wait_for_vm(ctx, id, &mut vm, timeout, on_started, on_tick).await;
     ctx.store.set_activity(id, None);
     ctx.forwards.stop_all(id);

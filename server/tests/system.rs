@@ -751,3 +751,63 @@ fn files_dropped_on_a_terminal_reach_the_vm() {
     post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
     wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(30));
 }
+
+fn put_json(url: &str, body: &Value) -> Value {
+    let out = curl(&["-s", "-X", "PUT", "-H", "content-type: application/json", "-d", &body.to_string(), url]).unwrap();
+    serde_json::from_str(&out).unwrap()
+}
+
+/// Snapshots on a schedule, pruned to the newest `keep`, plus one just before closing.
+#[test]
+#[ignore = "needs golden and token"]
+fn running_terminals_are_snapshotted_on_a_schedule_and_before_closing() {
+    let server = start_server();
+    let mut s = get_json(&format!("{}/api/settings", server.base))["settings"].clone();
+    s["auto_snapshots"] = json!({"every_min": 1, "keep": 1, "before_close": true});
+    let saved = put_json(&format!("{}/api/settings", server.base), &s);
+    assert_eq!(saved["settings"]["auto_snapshots"]["every_min"], 1, "{saved}");
+
+    let repo = temp_repo();
+    let created =
+        post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo.path(), "interactive": true}));
+    let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    let autos = || -> Vec<Value> {
+        get_json(&format!("{}/api/snapshots", server.base))
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|s| s["source_task"] == id.as_str() && s["auto"] == true)
+            .cloned()
+            .collect()
+    };
+    let t0 = Instant::now();
+    while autos().is_empty() {
+        assert!(t0.elapsed() < Duration::from_secs(150), "no automatic snapshot");
+        std::thread::sleep(Duration::from_secs(2));
+    }
+    post_json(&format!("{}/api/tasks/{id}/close", server.base), &json!({}));
+    wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(60));
+    let left = autos();
+    assert_eq!(left.len(), 1, "{left:?}");
+    assert!(left[0]["name"].as_str().unwrap().contains("before close"), "{left:?}");
+}
+
+/// An automatic task that runs out of time keeps the commits it made.
+#[test]
+#[ignore = "requires golden, token and Claude"]
+fn a_task_that_runs_out_of_time_keeps_its_commits() {
+    let server = start_server();
+    let mut s = get_json(&format!("{}/api/settings", server.base))["settings"].clone();
+    s["timeout_s"] = 60.into();
+    put_json(&format!("{}/api/settings", server.base), &s);
+    let repo = temp_repo();
+    let (id, task) = run_task(
+        &server,
+        repo.path(),
+        "Create the file early.txt containing early and commit it. Then run the shell command `sleep 600` \
+         in the foreground and wait for it to finish.",
+    );
+    assert_eq!(task["status"]["state"], "failed", "{task}");
+    assert!(task["status"]["reason"].as_str().unwrap_or_default().contains("timeout"), "{task}");
+    assert!(git(repo.path(), &["show", &format!("agent/{id}:early.txt")]).contains("early"), "the commit was lost");
+}

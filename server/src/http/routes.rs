@@ -54,6 +54,7 @@ pub fn router(ctx: Arc<AppCtx>) -> Router {
         .route("/api/snapshots/{sid}/export", get(export_snapshot))
         .route("/api/snapshots/{sid}/backup", post(backup_snapshot))
         .route("/api/snapshots/import", post(import_snapshot).layer(axum::extract::DefaultBodyLimit::disable()))
+        .route("/api/tasks/{id}/auto-snapshots", put(set_auto_snapshots))
         .route("/api/tasks/{id}/upload", post(upload).layer(axum::extract::DefaultBodyLimit::disable()))
         .route("/api/backups", get(list_backups))
         .route("/api/backups/{sid}", axum::routing::delete(delete_backup))
@@ -211,7 +212,7 @@ async fn save(State(ctx): Ctx, Path(id): Path<String>) -> Result<Json<Saved>, Ap
 
 async fn close(State(ctx): Ctx, Path(id): Path<String>) -> Result<Json<TaskDto>, ApiError> {
     let (id, _) = find(&ctx, &id)?;
-    session::close(&ctx, &id).map_err(session_error)?;
+    session::close(&ctx, &id).await.map_err(session_error)?;
     Ok(Json(find(&ctx, id.as_str())?.1.into()))
 }
 
@@ -353,7 +354,7 @@ fn snapshot_error(e: crate::app::snapshots::SnapshotError) -> ApiError {
     let code = match e {
         E::NotFound | E::NoSnapshot => StatusCode::NOT_FOUND,
         E::NotRunning => StatusCode::CONFLICT,
-        E::Submit(_) => StatusCode::BAD_REQUEST,
+        E::Submit(_) | E::Interval => StatusCode::BAD_REQUEST,
         E::SyncTimeout | E::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     ApiError(code, e.to_string())
@@ -567,4 +568,20 @@ fn percent_decode(s: &str) -> String {
         }
     }
     String::from_utf8_lossy(&out).into_owned()
+}
+
+#[derive(serde::Deserialize)]
+struct AutoSnapshotInterval {
+    every_min: Option<u32>,
+}
+
+/// `{"every_min": 15}` for this machine only, `{"every_min": null}` to follow the settings.
+async fn set_auto_snapshots(
+    State(ctx): Ctx,
+    Path(id): Path<String>,
+    Json(req): Json<AutoSnapshotInterval>,
+) -> Result<Json<TaskDto>, ApiError> {
+    let (id, _) = find(&ctx, &id)?;
+    crate::app::snapshots::set_interval(&ctx, &id, req.every_min).map_err(snapshot_error)?;
+    Ok(Json(find(&ctx, id.as_str())?.1.into()))
 }

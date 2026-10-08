@@ -7,7 +7,7 @@ use super::supervisor::{AppCtx, NewTask, SubmitError, random_bytes, submit};
 use crate::adapters::jobdir::JobWorkspace;
 use crate::domain::ids::TaskId;
 use crate::domain::settings::Model;
-use crate::domain::snapshot::{SnapshotId, SnapshotMeta};
+use crate::domain::snapshot::{AutoSnapshots, SnapshotId, SnapshotMeta};
 use crate::domain::task::TaskState;
 
 const SYNC_TIMEOUT: Duration = Duration::from_secs(15);
@@ -20,6 +20,8 @@ pub enum SnapshotError {
     NotRunning,
     #[error("snapshot not found")]
     NoSnapshot,
+    #[error("automatic snapshots run every 1, 5, 10, 15, 30, 60, 120 or 240 minutes, or never (0)")]
+    Interval,
     #[error("the VM did not flush its disk in time")]
     SyncTimeout,
     #[error("could not save the snapshot: {0}")]
@@ -31,6 +33,51 @@ pub enum SnapshotError {
 /// Flushes the guest's disk cache, then clones the disk: equivalent to pulling the plug at that
 /// instant, which ext4's journal handles. The VM keeps running.
 pub async fn take_snapshot(ctx: &AppCtx, id: &TaskId, name: Option<String>) -> Result<SnapshotMeta, SnapshotError> {
+    take(ctx, id, name, None).await
+}
+
+/// An automatic snapshot (`why`: "auto", "before close"), then pruning to the newest `keep`.
+pub async fn take_auto(ctx: &AppCtx, id: &TaskId, why: &str) -> Result<SnapshotMeta, SnapshotError> {
+    let meta = take(ctx, id, None, Some(why)).await?;
+    let policy = ctx.settings.get().auto_snapshots;
+    for old in policy.to_prune(&ctx.snapshots.list(), id.as_str()) {
+        let _ = ctx.snapshots.delete(&old);
+    }
+    Ok(meta)
+}
+
+/// Every 15 seconds: snapshots the running terminals whose interval has elapsed.
+pub async fn run_schedule(ctx: Arc<AppCtx>) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        let policy = ctx.settings.get().auto_snapshots;
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        let snapshots = ctx.snapshots.list();
+        for record in ctx.store.list() {
+            if !(record.interactive && record.ready && record.state == TaskState::Running) {
+                continue;
+            }
+            let last = snapshots
+                .iter()
+                .filter(|s| s.auto && s.source_task == record.id.as_str())
+                .map(|s| s.created_at)
+                .fold(None, |m: Option<f64>, t| Some(m.map_or(t, |m| m.max(t))));
+            let started = record.created_at.duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(now);
+            let policy = AutoSnapshots { every_min: record.auto_snapshot_min.unwrap_or(policy.every_min), ..policy };
+            if policy.due(last, started, now) {
+                let _ = take_auto(&ctx, &record.id, "auto").await;
+            }
+        }
+    }
+}
+
+/// `auto`: why an automatic snapshot is taken (it goes into its name), `None` for a manual one.
+async fn take(
+    ctx: &AppCtx,
+    id: &TaskId,
+    name: Option<String>,
+    auto: Option<&str>,
+) -> Result<SnapshotMeta, SnapshotError> {
     let record = ctx.store.get(id).ok_or(SnapshotError::NotFound)?;
     if !record.interactive || record.state != TaskState::Running {
         return Err(SnapshotError::NotRunning);
@@ -59,7 +106,10 @@ pub async fn take_snapshot(ctx: &AppCtx, id: &TaskId, name: Option<String>) -> R
     };
     let meta = SnapshotMeta {
         id: SnapshotId::generate(now, random_bytes()),
-        name: name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty()).unwrap_or(title),
+        name: match auto {
+            Some(why) => format!("{title}, {why} {}", clock(now)),
+            None => name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty()).unwrap_or(title),
+        },
         source_task: id.to_string(),
         repo: record.repo.as_path().display().to_string(),
         base_sha: record.base_sha.as_str().to_owned(),
@@ -69,6 +119,7 @@ pub async fn take_snapshot(ctx: &AppCtx, id: &TaskId, name: Option<String>) -> R
         size_mb: 0,
         cpus: record.cpus,
         memory_mb: record.memory_mb,
+        auto: auto.is_some(),
     };
     let (disk, efivars) = (JobWorkspace::disk_of(&jobs, id), JobWorkspace::efivars_of(&jobs, id));
     let store_meta = meta.clone();
@@ -129,4 +180,16 @@ fn clock(now: SystemTime) -> String {
         .unwrap_or(0);
     let local = (secs as i64 + offset).rem_euclid(86_400);
     format!("{:02}:{:02}", local / 3600, local / 60 % 60)
+}
+
+/// Minutes between automatic snapshots of one machine; `None` follows the settings.
+pub fn set_interval(ctx: &AppCtx, id: &TaskId, minutes: Option<u32>) -> Result<(), SnapshotError> {
+    ctx.store.get(id).ok_or(SnapshotError::NotFound)?;
+    if let Some(m) = minutes
+        && !AutoSnapshots::INTERVALS.contains(&m)
+    {
+        return Err(SnapshotError::Interval);
+    }
+    ctx.store.set_auto_snapshot_min(id, minutes);
+    Ok(())
 }

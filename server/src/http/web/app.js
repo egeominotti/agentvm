@@ -693,11 +693,12 @@ class FocusView {
     this.saveBtn = h("button", { class: "btn", type: "button", onclick: () => this.save() }, "Save to repo");
     this.snapBtn = h("button", { class: "btn", type: "button", title: "Save a copy of this whole VM that you can restore later", onclick: () => this.snapshot() }, "Snapshot");
     this.closeBtn = h("button", { class: "btn", type: "button", onclick: () => this.close() }, "Close VM");
+    this.autoSel = h("select", { class: "auto-snap", title: "Automatic snapshots of this machine", onchange: e => this.setAuto(e.target.value) });
     this.stopBtn = h("button", { class: "btn ghost danger", type: "button", title: "Power off now without saving", onclick: () => this.stop() }, "Force stop");
     this.panelBtn = h("button", { class: "btn ghost", type: "button", onclick: () => this.togglePanel() }, "Telemetry");
     this.seg = h("div", { class: "seg" }, this.segBtns);
     this.toolbar = h("header", { class: "toolbar" }, h("a", { class: "crumb", href: "#/wall" }, "Machines"), h("span", { class: "crumb-sep" }, "›"),
-      h("span", { class: "dot" }), this.titleEl, this.seg, this.snapBtn, this.saveBtn, this.closeBtn, this.stopBtn, this.panelBtn);
+      h("span", { class: "dot" }), this.titleEl, this.seg, h("div", { class: "snap-group" }, this.snapBtn, this.autoSel), this.saveBtn, this.closeBtn, this.stopBtn, this.panelBtn);
     this.overlay = h("div", { class: "overlay" });
     this.portsBar = h("div", { class: "ports-bar", "aria-label": "Ports open on this Mac" });
     this.dropHint = h("div", { class: "drop-hint" }, h("b", {}, "Drop to copy into the VM"), h("span", {}, "The files go to /mnt/job/uploads and their paths are typed in the terminal."));
@@ -728,7 +729,8 @@ class FocusView {
     this.titleEl.title = `${t.prompt || "(no first task)"}\n${t.repo}`;
     const s = t.status.state;
     const ended = TERMINAL.has(s);
-    for (const b of [this.saveBtn, this.closeBtn, this.snapBtn, this.seg]) b.hidden = !t.interactive || ended;
+    for (const b of [this.saveBtn, this.closeBtn, this.snapBtn, this.seg, this.autoSel]) b.hidden = !t.interactive || ended;
+    this.paintAuto(t);
     this.saveBtn.disabled = this.closeBtn.disabled = this.snapBtn.disabled = s !== "running";
     this.stopBtn.hidden = ended;
     this.renderPanel(t, label);
@@ -856,6 +858,23 @@ class FocusView {
     toast(paths.length === 1 ? `In the VM: ${paths[0]}` : `${paths.length} files in /mnt/job/uploads`);
   }
 
+  paintAuto(t) {
+    const def = state.settings?.settings.auto_snapshots?.every_min ?? 30;
+    const label = m => (m === 0 ? "off" : m < 60 ? `${m} min` : `${m / 60} h`);
+    const key = `${def}:${t.auto_snapshot_min}`;
+    if (key === this.autoKey || document.activeElement === this.autoSel) return;
+    this.autoKey = key;
+    this.autoSel.replaceChildren(
+      h("option", { value: "", selected: t.auto_snapshot_min == null }, `Auto: ${label(def)}`),
+      ...[0, 5, 15, 30, 60, 120].map(m => h("option", { value: String(m), selected: t.auto_snapshot_min === m }, m === 0 ? "Auto: off" : `Auto: every ${label(m)}`)));
+  }
+  async setAuto(v) {
+    const r = await api(`/api/tasks/${this.id}/auto-snapshots`, { method: "PUT", body: { every_min: v === "" ? null : Number(v) } });
+    toast(r.ok ? (v === "" ? "Snapshots follow the settings" : v === "0" ? "No automatic snapshots for this machine" : `A snapshot every ${v} minutes`) : r.data?.error || "Could not change it", r.ok ? "ok" : "err");
+    this.autoKey = null;
+    loadTasks();
+  }
+
   async save() {
     this.saveBtn.disabled = true;
     const r = await api(`/api/tasks/${this.id}/save`, { method: "POST" });
@@ -921,6 +940,7 @@ class SettingsView {
       ["agent", "Agent", this.agent()],
       ["account", "Claude account", this.account()],
       ["notifications", "Notifications", this.notifications()],
+      ["snapshots", "Automatic snapshots", this.autoSnapshots()],
       ["image", "VM image", this.image()],
       ["storage", "Storage", this.storage()],
       ["backups", "Backups to S3", this.backups()],
@@ -1001,6 +1021,28 @@ class SettingsView {
         h("div", { class: "set" }, h("label", {}, "Time limit for automatic tasks"), h("div", { class: "unit" }, this.timeoutIn, h("span", {}, "minutes")), h("p", { class: "hint" }, "Terminals never time out: you close them.")),
         h("div", { class: "set" }, h("label", {}, "Default repository"), this.repoIn, h("p", { class: "hint" }, "Prefilled in New VM."))),
       this.agentErr];
+  }
+
+  autoSnapshots() {
+    const a = this.draft.auto_snapshots;
+    const label = m => (m === 0 ? "Off" : m < 60 ? `${m} min` : `${m / 60} h`);
+    this.snapSeg = h("div", { class: "seg wide intervals", role: "radiogroup", "aria-label": "Snapshot every" },
+      [0, 5, 15, 30, 60, 120].map(m => h("button", { type: "button", role: "radio", "data-value": String(m), "aria-checked": String(a.every_min === m),
+        onclick: () => { this.set("auto_snapshots", { ...this.draft.auto_snapshots, every_min: m }); this.paintSnapshots(); } }, label(m))));
+    this.keepIn = h("input", { type: "number", min: "1", max: "50", value: String(a.keep),
+      oninput: e => this.set("auto_snapshots", { ...this.draft.auto_snapshots, keep: Number(e.target.value) }) });
+    this.closeSwitch = h("button", { class: "switch", type: "button", role: "switch", "aria-checked": String(a.before_close),
+      onclick: () => { this.set("auto_snapshots", { ...this.draft.auto_snapshots, before_close: !this.draft.auto_snapshots.before_close }); this.paintSnapshots(); } }, h("i"));
+    return [h("p", { class: "lede" }, "Running machines are saved whole (files, installed packages, Claude's conversation) so you can go back to any point. Copies share unchanged blocks, so they take little space."),
+      h("div", { class: "set" }, h("label", {}, "Snapshot every"), this.snapSeg, h("p", { class: "hint" }, "Each machine can use its own interval: open it and change Snapshots in its panel.")),
+      h("div", { class: "pair" },
+        h("div", { class: "set" }, h("label", {}, "Keep per machine"), h("div", { class: "unit" }, this.keepIn, h("span", {}, "latest automatic snapshots")), h("p", { class: "hint" }, "Older automatic ones are deleted. Snapshots you take yourself are never deleted.")),
+        h("div", { class: "status-line" }, this.closeSwitch, h("div", {}, h("b", {}, "Snapshot before closing"), h("p", { class: "hint" }, "The machine as it was when you closed it, in case you need it again."))))];
+  }
+  paintSnapshots() {
+    const a = this.draft.auto_snapshots;
+    for (const b of this.snapSeg.children) b.setAttribute("aria-checked", String(Number(b.dataset.value) === a.every_min));
+    this.closeSwitch.setAttribute("aria-checked", String(a.before_close));
   }
 
   account() {
@@ -1242,7 +1284,8 @@ class SnapshotsView {
           h("span", {}, new Date(sn.created_at * 1000).toLocaleString()),
           h("span", {}, `disk image ${gb(sn.size_mb)}`),
           sn.cpus ? h("span", {}, `${sn.cpus} vCPUs, ${gb(sn.memory_mb)}`) : null,
-          h("span", {}, modelLabel(sn.model)))),
+          h("span", {}, modelLabel(sn.model)),
+          sn.auto ? h("span", { class: "tag" }, "Automatic") : null)),
       msg, download, backup, del, restore);
   }
   async importFile(file) {

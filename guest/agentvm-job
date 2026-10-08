@@ -183,13 +183,15 @@ if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
   exit 0
 fi
 
+# The time limit is enforced here, so the work done until then is still saved (exit 124).
+TIMEOUT_S=$(jq -r '.timeout_s // 1800' "$JOB/task.json")
 # Prompt from stdin: never parsed as an option (e.g. "- list") nor limited by ARG_MAX.
 # Claude runs as root (IS_SANDBOX=1: the VM is the sandbox); the token arrives only on fd 3.
 set +e
 jq -r .prompt "$JOB/task.json" | env -i \
   HOME=/root USER=root LANG=C.UTF-8 PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   IS_SANDBOX=1 CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3 \
-  "$CLAUDE" -p --dangerously-skip-permissions ${MODEL:+--model "$MODEL"} --output-format stream-json --verbose \
+  timeout --kill-after=30 "$TIMEOUT_S" "$CLAUDE" -p --dangerously-skip-permissions ${MODEL:+--model "$MODEL"} --output-format stream-json --verbose \
   3< <(printf '%s' "$TOKEN") > "$JOB/stream.jsonl" 2> "$JOB/claude.err"
 CLAUDE_EXIT=${PIPESTATUS[1]}
 set -e
@@ -200,6 +202,8 @@ save_work
 
 if [ -n "$SAVE_ERROR" ]; then
   write_result failed "$CLAUDE_EXIT" "$COMMITS" "$SAVE_ERROR"
+elif [ "$CLAUDE_EXIT" -eq 124 ] || [ "$CLAUDE_EXIT" -eq 137 ]; then
+  write_result failed "$CLAUDE_EXIT" "$COMMITS" "timeout: the agent ran out of time; its commits are on the branch"
 elif [ "$CLAUDE_EXIT" -ne 0 ]; then
   write_result failed "$CLAUDE_EXIT" "$COMMITS"
 elif [ "$COMMITS" -eq 0 ]; then

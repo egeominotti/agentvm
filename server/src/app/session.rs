@@ -106,8 +106,12 @@ pub struct Saved {
 }
 
 /// Final save and shutdown: the supervisor collects the outcome as for any task.
-pub fn close(ctx: &AppCtx, id: &TaskId) -> Result<(), SessionError> {
+pub async fn close(ctx: &AppCtx, id: &TaskId) -> Result<(), SessionError> {
     running_terminal(ctx, id)?;
+    // The whole machine as it was (installed packages, Claude's conversation), not just the branch.
+    if ctx.settings.get().auto_snapshots.before_close {
+        let _ = super::snapshots::take_auto(ctx, id, "before close").await;
+    }
     let share = JobWorkspace::share_of(&ctx.config.jobs(), id);
     write_request(&share, "close.request").map_err(|e| SessionError::Unreachable(e.to_string()))
 }

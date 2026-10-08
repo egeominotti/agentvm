@@ -127,6 +127,9 @@ pub struct Settings {
     /// Where snapshots are backed up; the secret key is in the Keychain.
     #[serde(default)]
     pub s3: Option<super::s3::S3Config>,
+    /// Snapshots of running terminals on a schedule (and before closing).
+    #[serde(default)]
+    pub auto_snapshots: super::snapshot::AutoSnapshots,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -173,6 +176,8 @@ pub enum SettingsError {
     Model(String),
     #[error("S3: {0}")]
     S3(String),
+    #[error(transparent)]
+    AutoSnapshots(#[from] super::snapshot::AutoSnapshotsError),
 }
 
 impl Settings {
@@ -187,6 +192,7 @@ impl Settings {
         if let Some(s3) = &self.s3 {
             s3.validate().map_err(|e| SettingsError::S3(e.to_string()))?;
         }
+        self.auto_snapshots.validate()?;
         Ok(())
     }
 }

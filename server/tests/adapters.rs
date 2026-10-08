@@ -380,6 +380,7 @@ fn settings_file_roundtrips_and_is_absent_at_first() {
         default_repo: Some("~/x".into()),
         claude_version: agentvm::domain::settings::ClaudeVersion::parse("2.1.290").unwrap(),
         s3: None,
+        auto_snapshots: Default::default(),
     };
     settings_file::save(&path, &s).unwrap();
     assert_eq!(settings_file::load(&path).unwrap(), s);
@@ -452,6 +453,7 @@ fn snapshots_are_stored_listed_and_deleted() {
         size_mb: 0,
         cpus: 2,
         memory_mb: 2048,
+        auto: false,
     };
     store.create(&meta, &disk, &efi).unwrap();
     let list = store.list();
