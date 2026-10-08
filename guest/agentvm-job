@@ -55,6 +55,51 @@ log "repo ready on $BRANCH"
 for _ in $(seq 100); do getent hosts api.anthropic.com >/dev/null && break; sleep 0.1; done
 log "network ready"
 
+# Commit di ciò che resta e bundle dei commit da $BASE; imposta COMMITS.
+save_work() {
+  # Se l'agente ha cambiato branch, il lavoro che conta è quello su HEAD: riportalo su $BRANCH.
+  if [ "$(as_agent git symbolic-ref -q --short HEAD || true)" != "$BRANCH" ]; then
+    log "HEAD non su $BRANCH: lo riallineo"
+    as_agent git checkout -q -B "$BRANCH"
+  fi
+  as_agent git add -A
+  as_agent git diff --cached --quiet || as_agent git commit -q -m "agentvm: $ID (auto-commit)"
+  COMMITS=$(as_agent git rev-list --count "$BASE..$BRANCH")
+  rm -f "$JOB/out.bundle"
+  if [ "$COMMITS" -gt 0 ]; then
+    as_agent git bundle create -q "$JOB/out.bundle" "$BASE..$BRANCH"
+  fi
+  log "commits $COMMITS"
+}
+
+if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
+  # Terminale: Claude interattivo in tmux, server PTY su vsock, salva/chiudi su richiesta.
+  install -d -m 700 /run/agentvm
+  (umask 077; printf '%s' "$TOKEN" > /run/agentvm/token)
+  unset TOKEN
+  (umask 077; jq -r .prompt "$JOB/task.json" > /run/agentvm/prompt)
+  [ -s /run/agentvm/prompt ] && [ "$(tr -d '[:space:]' < /run/agentvm/prompt)" != "" ] || rm -f /run/agentvm/prompt
+  /usr/local/bin/agentvm-pty &
+  runuser -u "$AGENT" -- env -i HOME=/home/$AGENT USER=$AGENT LANG=C.UTF-8 TERM=xterm-256color \
+    PATH=/home/$AGENT/.local/bin:/usr/local/bin:/usr/bin:/bin \
+    tmux -f /etc/agentvm/tmux.conf new-session -d -s claude -c "$WORK" -x 160 -y 48 /usr/local/bin/agentvm-claude
+  log "terminal ready"
+
+  while [ ! -e "$JOB/close.request" ]; do
+    if [ -e "$JOB/save.request" ]; then
+      rm -f "$JOB/save.request"
+      save_work
+      jq -n --argjson c "$COMMITS" '{commits:$c}' > "$JOB/save.done"
+    fi
+    sleep 0.3
+  done
+  log "close requested"
+  save_work
+  if [ "$COMMITS" -gt 0 ]; then write_result ok 0 "$COMMITS"; else write_result no_changes 0 0; fi
+  log "job done"
+  exit 0
+fi
+
 # Prompt da stdin: mai interpretato come opzione (es. "- elenco") né limitato da ARG_MAX.
 # runuser (a differenza di sudo) lascia aperto il fd 3 con il token.
 set +e
@@ -68,18 +113,7 @@ set -e
 unset TOKEN
 log "claude exit $CLAUDE_EXIT"
 
-# Se l'agente ha cambiato branch, il lavoro che conta è quello su HEAD: riportalo su $BRANCH.
-if [ "$(as_agent git symbolic-ref -q --short HEAD || true)" != "$BRANCH" ]; then
-  log "HEAD non su $BRANCH: lo riallineo"
-  as_agent git checkout -q -B "$BRANCH"
-fi
-as_agent git add -A
-as_agent git diff --cached --quiet || as_agent git commit -q -m "agentvm: $ID (auto-commit)"
-COMMITS=$(as_agent git rev-list --count "$BASE..$BRANCH")
-if [ "$COMMITS" -gt 0 ]; then
-  as_agent git bundle create -q "$JOB/out.bundle" "$BASE..$BRANCH"
-fi
-log "commits $COMMITS"
+save_work
 
 if [ "$CLAUDE_EXIT" -ne 0 ]; then
   write_result failed "$CLAUDE_EXIT" "$COMMITS"

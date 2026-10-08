@@ -25,6 +25,14 @@ pub struct JobWorkspace {
 }
 
 impl JobWorkspace {
+    /// Percorsi di un job esistente, senza assumerne la proprietà (nessuna pulizia al drop).
+    pub fn share_of(jobs_root: &Path, id: &TaskId) -> PathBuf {
+        jobs_root.join(id.as_str()).join("share")
+    }
+    pub fn pty_socket_of(jobs_root: &Path, id: &TaskId) -> PathBuf {
+        jobs_root.join(id.as_str()).join("pty.sock")
+    }
+
     pub fn create(jobs_root: &Path, id: &TaskId) -> io::Result<Self> {
         let dir = jobs_root.join(id.as_str());
         let share = dir.join("share");
@@ -60,6 +68,14 @@ impl JobWorkspace {
     }
     pub fn repo_bundle(&self) -> PathBuf {
         self.share().join("repo.bundle")
+    }
+    pub fn pty_socket(&self) -> PathBuf {
+        self.dir.join("pty.sock")
+    }
+    pub fn activity(&self) -> Option<String> {
+        let s = fs::read_to_string(self.share().join("activity")).ok()?;
+        let s = s.trim();
+        (!s.is_empty()).then(|| s.to_owned())
     }
     pub fn out_bundle(&self) -> PathBuf {
         self.share().join("out.bundle")
@@ -110,7 +126,7 @@ impl JobWorkspace {
 
 impl Drop for JobWorkspace {
     fn drop(&mut self) {
-        for p in [self.disk(), self.efivars(), self.share().join(".token"), self.repo_bundle(), self.pid_path()] {
+        for p in [self.disk(), self.efivars(), self.share().join(".token"), self.repo_bundle(), self.pid_path(), self.pty_socket()] {
             let _ = fs::remove_file(p);
         }
     }

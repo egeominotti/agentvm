@@ -1,0 +1,87 @@
+// Ponte socket Unix (sul Mac) → porta vsock del guest: ogni connessione accettata diventa un
+// canale verso il server PTY nella VM.
+import Foundation
+import Virtualization
+
+final class VsockBridge {
+    static let ptyPort: UInt32 = 5000
+
+    private let path: String
+    private let port: UInt32
+    private let device: VZVirtioSocketDevice
+    /// Le connessioni vsock vanno tenute in vita finché il canale è aperto.
+    private var connections: [ObjectIdentifier: VZVirtioSocketConnection] = [:]
+
+    init(path: String, port: UInt32, device: VZVirtioSocketDevice) {
+        self.path = path
+        self.port = port
+        self.device = device
+    }
+
+    func start() throws {
+        unlink(path)
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw ConfigError("socket(): \(errno)") }
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let bytes = Array(path.utf8CString)
+        guard bytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else { throw ConfigError("percorso troppo lungo: \(path)") }
+        withUnsafeMutableBytes(of: &addr.sun_path) { raw in
+            raw.copyBytes(from: bytes.map { UInt8(bitPattern: $0) })
+        }
+        let bound = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard bound == 0, listen(fd, 16) == 0 else { throw ConfigError("bind/listen \(path): \(errno)") }
+        chmod(path, 0o600)
+        Thread.detachNewThread { [self] in
+            while true {
+                let client = accept(fd, nil, nil)
+                if client < 0 { continue }
+                DispatchQueue.main.async { self.connect(client) }
+            }
+        }
+    }
+
+    /// Da chiamare sulla coda principale (quella della VM).
+    private func connect(_ client: Int32) {
+        device.connect(toPort: port) { [self] result in
+            switch result {
+            case .failure:
+                close(client)
+            case .success(let conn):
+                let key = ObjectIdentifier(conn)
+                connections[key] = conn
+                let guest = conn.fileDescriptor
+                let group = DispatchGroup()
+                for (from, to) in [(client, guest), (guest, client)] {
+                    group.enter()
+                    Thread.detachNewThread {
+                        Self.pump(from: from, to: to)
+                        shutdown(to, SHUT_WR)
+                        group.leave()
+                    }
+                }
+                group.notify(queue: .main) { [self] in
+                    close(client)
+                    conn.close()
+                    connections[key] = nil
+                }
+            }
+        }
+    }
+
+    private static func pump(from: Int32, to: Int32) {
+        var buf = [UInt8](repeating: 0, count: 65536)
+        while true {
+            let n = read(from, &buf, buf.count)
+            if n <= 0 { return }
+            var off = 0
+            while off < n {
+                let w = buf.withUnsafeBytes { write(to, $0.baseAddress! + off, n - off) }
+                if w <= 0 { return }
+                off += w
+            }
+        }
+    }
+}

@@ -18,6 +18,7 @@ enum MachineFactory {
         cfg.directorySharingDevices = [share(c.share)]
         cfg.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
         cfg.memoryBalloonDevices = [VZVirtioTraditionalMemoryBalloonDeviceConfiguration()]
+        cfg.socketDevices = [VZVirtioSocketDeviceConfiguration()]
         try cfg.validate()
         return cfg
     }

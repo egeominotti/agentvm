@@ -44,11 +44,23 @@ pub enum SubmitError {
     Token(#[from] KeychainError),
 }
 
+pub struct NewTask<'a> {
+    pub repo: &'a str,
+    pub prompt: String,
+    pub base_ref: Option<&'a str>,
+    /// Terminale con Claude Code interattivo; il prompt diventa facoltativo.
+    pub interactive: bool,
+}
+
 /// Valida la richiesta, accoda il task e avvia il suo supervisor.
-pub fn submit(ctx: &Arc<AppCtx>, repo: &str, prompt: String, base_ref: Option<&str>) -> Result<TaskId, SubmitError> {
-    let repo = RepoPath::new(expand_home(repo))?;
-    let prompt = Prompt::new(prompt)?;
-    let base_ref = base_ref.map(str::trim).filter(|r| !r.is_empty()).unwrap_or("HEAD");
+pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError> {
+    let repo = RepoPath::new(expand_home(req.repo))?;
+    let prompt = match Prompt::new(req.prompt) {
+        Ok(p) => Some(p),
+        Err(_) if req.interactive => None,
+        Err(e) => return Err(e.into()),
+    };
+    let base_ref = req.base_ref.map(str::trim).filter(|r| !r.is_empty()).unwrap_or("HEAD");
     let base_sha = Git::new(repo.clone()).rev_parse(base_ref).map_err(SubmitError::UnknownRef)?;
     if !ctx.config.golden().is_file() {
         return Err(SubmitError::NoGolden(ctx.config.golden().display().to_string()));
@@ -56,7 +68,7 @@ pub fn submit(ctx: &Arc<AppCtx>, repo: &str, prompt: String, base_ref: Option<&s
     ctx.keychain.read_token()?;
 
     let id = TaskId::generate(SystemTime::now(), random_bytes());
-    ctx.store.insert(TaskRecord::new(id.clone(), repo, prompt, base_sha));
+    ctx.store.insert(TaskRecord::new(id.clone(), repo, prompt, base_sha, req.interactive));
     tokio::spawn(run(ctx.clone(), id.clone()));
     Ok(id)
 }
@@ -87,10 +99,11 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
     git.bundle_all(&ws.repo_bundle()).map_err(|e| e.to_string())?;
     ws.write_spec(&TaskSpec {
         id: id.to_string(),
-        prompt: record.prompt.as_str().to_owned(),
+        prompt: record.prompt.as_ref().map(|p| p.as_str().to_owned()).unwrap_or_default(),
         branch: branch.clone(),
         base_sha: record.base_sha.as_str().to_owned(),
         timeout_s: ctx.config.timeout_s,
+        interactive: record.interactive,
     })
     .map_err(|e| format!("task.json: {e}"))?;
     let token = ctx.keychain.read_token().map_err(|e| e.to_string())?;
@@ -104,7 +117,7 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
         return apply(TaskEvent::Finished(Final::Stopped, branch));
     }
 
-    let mut vm = VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &vm_config(&ctx.config, &ws))
+    let mut vm = VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &vm_config(&ctx.config, &ws, record.interactive))
         .map_err(|e| e.to_string())?;
     let _ = ws.write_pid(vm.pid());
     let follower = Follower::start(ctx.store.log(id).ok_or("task scomparso")?, ws.stream(), token);
@@ -112,7 +125,10 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
     let on_started = || {
         let _ = ctx.store.apply(id, TaskEvent::VmStarted);
     };
-    let (exit, stop_requested, timed_out) = wait_for_vm(ctx, id, &mut vm, on_started).await;
+    let on_tick = || ctx.store.set_activity(id, ws.activity());
+    let timeout = (!record.interactive).then(|| Duration::from_secs(ctx.config.timeout_s));
+    let (exit, stop_requested, timed_out) = wait_for_vm(ctx, id, &mut vm, timeout, on_started, on_tick).await;
+    ctx.store.set_activity(id, None);
     apply(TaskEvent::VmExited)?;
     follower.finish().await;
 
@@ -166,12 +182,20 @@ impl Follower {
 }
 
 /// Segue la VM dall'avvio allo spegnimento. Stop e timeout valgono anche durante il boot;
-/// se l'helper ignora SIGTERM per `KILL_GRACE`, riceve SIGKILL.
-async fn wait_for_vm(ctx: &AppCtx, id: &TaskId, vm: &mut VmProcess, on_started: impl Fn()) -> (VmExit, bool, bool) {
+/// se l'helper ignora SIGTERM per `KILL_GRACE`, riceve SIGKILL. `on_tick` gira ogni secondo.
+async fn wait_for_vm(
+    ctx: &AppCtx,
+    id: &TaskId,
+    vm: &mut VmProcess,
+    timeout: Option<Duration>,
+    on_started: impl Fn(),
+    on_tick: impl Fn(),
+) -> (VmExit, bool, bool) {
     let (_never, fallback) = watch::channel(false);
     let mut stop = ctx.store.stop_signal(id).unwrap_or(fallback);
-    let deadline = tokio::time::sleep(Duration::from_secs(ctx.config.timeout_s));
+    let deadline = tokio::time::sleep(timeout.unwrap_or(Duration::MAX / 4));
     let kill_timer = tokio::time::sleep(Duration::MAX / 4);
+    let mut ticks = tokio::time::interval(Duration::from_secs(1));
     tokio::pin!(deadline, kill_timer);
     let (mut stop_requested, mut timed_out) = (false, false);
     loop {
@@ -185,6 +209,7 @@ async fn wait_for_vm(ctx: &AppCtx, id: &TaskId, vm: &mut VmProcess, on_started: 
             _ = stop.wait_for(|s| *s), if !terminating => stop_requested = true,
             _ = &mut deadline, if !terminating => timed_out = true,
             _ = &mut kill_timer, if terminating => vm.kill(),
+            _ = ticks.tick() => on_tick(),
         }
         if !terminating && (stop_requested || timed_out) {
             vm.terminate();
@@ -194,7 +219,7 @@ async fn wait_for_vm(ctx: &AppCtx, id: &TaskId, vm: &mut VmProcess, on_started: 
     (vm.wait().await, stop_requested, timed_out)
 }
 
-fn vm_config(config: &Config, ws: &JobWorkspace) -> VmConfig {
+fn vm_config(config: &Config, ws: &JobWorkspace, interactive: bool) -> VmConfig {
     VmConfig {
         disk: ws.disk(),
         efivars: ws.efivars(),
@@ -203,6 +228,7 @@ fn vm_config(config: &Config, ws: &JobWorkspace) -> VmConfig {
         cpus: config.cpus,
         memory_mb: config.memory_mb,
         seed_iso: None,
+        pty_socket: interactive.then(|| ws.pty_socket()),
     }
 }
 

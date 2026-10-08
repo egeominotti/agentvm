@@ -175,3 +175,14 @@ fn secret_redacts_its_own_value() {
     assert_eq!(secret.redact("token=sk-ant-oat01-abc fine"), "token=[REDACTED] fine");
     assert_eq!(secret.redact("niente da nascondere"), "niente da nascondere");
 }
+
+#[test]
+fn pty_frames_are_type_length_payload() {
+    use agentvm::adapters::pty::{Frame, encode};
+    assert_eq!(encode(&Frame::Input(b"ls\n".to_vec())), [0, 0, 0, 0, 3, b'l', b's', b'\n']);
+    let resize = encode(&Frame::Resize { cols: 120, rows: 40 });
+    assert_eq!(&resize[..1], &[1]);
+    let len = u32::from_be_bytes(resize[1..5].try_into().unwrap()) as usize;
+    let body: serde_json::Value = serde_json::from_slice(&resize[5..5 + len]).unwrap();
+    assert_eq!(body, serde_json::json!({"cols": 120, "rows": 40}));
+}

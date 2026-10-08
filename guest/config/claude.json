@@ -1,0 +1,11 @@
+{
+  "hasCompletedOnboarding": true,
+  "theme": "dark",
+  "bypassPermissionsModeAccepted": true,
+  "projects": {
+    "/home/agent/work": {
+      "hasTrustDialogAccepted": true,
+      "hasCompletedProjectOnboarding": true
+    }
+  }
+}

@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""Server PTY su vsock (porta 5000), eseguito da root nella VM.
+
+Ogni connessione si collega a una sessione tmux persistente (`claude` o `shell`) dell'utente
+agent, così ricaricare la pagina non uccide Claude. Protocollo: una riga JSON di intestazione
+`{"session","cols","rows"}`, poi frame dal client `[tipo:1][lunghezza:4 BE][payload]`
+(0 = input, 1 = resize JSON `{"cols","rows"}`); verso il client i byte grezzi del terminale.
+"""
+import fcntl
+import json
+import os
+import pty
+import pwd
+import signal
+import socket
+import struct
+import termios
+import threading
+
+PORT = 5000
+USER = "agent"
+WORK = "/home/agent/work"
+TMUX_CONF = "/etc/agentvm/tmux.conf"
+SESSIONS = {
+    "claude": ["/usr/local/bin/agentvm-claude"],
+    "shell": ["/bin/bash", "-l"],
+}
+
+
+def recv_exact(conn, n):
+    buf = b""
+    while len(buf) < n:
+        chunk = conn.recv(n - len(buf))
+        if not chunk:
+            return None
+        buf += chunk
+    return buf
+
+
+def read_header(conn):
+    buf = b""
+    while not buf.endswith(b"\n"):
+        c = conn.recv(1)
+        if not c or len(buf) > 4096:
+            return None
+        buf += c
+    return json.loads(buf)
+
+
+def set_size(fd, cols, rows):
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+
+
+def spawn(session, cols, rows):
+    pw = pwd.getpwnam(USER)
+    cmd = ["tmux", "-f", TMUX_CONF, "new-session", "-A", "-s", session, "-c", WORK] + SESSIONS[session]
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.setgroups(os.getgrouplist(USER, pw.pw_gid))
+        os.setgid(pw.pw_gid)
+        os.setuid(pw.pw_uid)
+        env = {
+            "HOME": pw.pw_dir, "USER": USER, "LOGNAME": USER, "SHELL": "/bin/bash",
+            "TERM": "xterm-256color", "COLORTERM": "truecolor", "LANG": "C.UTF-8",
+            "PATH": f"{pw.pw_dir}/.local/bin:/usr/local/bin:/usr/bin:/bin",
+        }
+        os.chdir(WORK)
+        os.execvpe(cmd[0], cmd, env)
+    set_size(fd, cols, rows)
+    return pid, fd
+
+
+def serve(conn):
+    pid = fd = None
+    try:
+        header = read_header(conn)
+        if not header or header.get("session") not in SESSIONS:
+            return
+        pid, fd = spawn(header["session"], int(header.get("cols", 120)), int(header.get("rows", 36)))
+
+        def to_client():
+            try:
+                while True:
+                    data = os.read(fd, 65536)
+                    if not data:
+                        break
+                    conn.sendall(data)
+            except OSError:
+                pass
+            finally:
+                try:
+                    conn.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+
+        threading.Thread(target=to_client, daemon=True).start()
+        while True:
+            head = recv_exact(conn, 5)
+            if head is None:
+                break
+            length = struct.unpack(">I", head[1:])[0]
+            payload = recv_exact(conn, length) if length else b""
+            if payload is None:
+                break
+            if head[0] == 0:
+                os.write(fd, payload)
+            elif head[0] == 1:
+                size = json.loads(payload)
+                set_size(fd, int(size["cols"]), int(size["rows"]))
+    except (OSError, ValueError):
+        pass
+    finally:
+        # Chiude solo il client tmux: la sessione resta viva per le riconnessioni.
+        if pid:
+            try:
+                os.kill(pid, signal.SIGHUP)
+                os.waitpid(pid, 0)
+            except OSError:
+                pass
+        if fd is not None:
+            os.close(fd)
+        conn.close()
+
+
+def main():
+    srv = socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind((socket.VMADDR_CID_ANY, PORT))
+    srv.listen(16)
+    while True:
+        conn, _ = srv.accept()
+        threading.Thread(target=serve, args=(conn,), daemon=True).start()
+
+
+if __name__ == "__main__":
+    main()

@@ -71,3 +71,17 @@ async fn same_origin_post_reaches_the_handler() {
         .unwrap();
     assert_eq!(status_of(req).await, StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn rejects_cross_origin_websocket_to_a_terminal() {
+    let req = Request::get("/api/tasks/20261008-000000-abcd/pty?session=shell")
+        .header("host", "127.0.0.1:7777")
+        .header("origin", "http://evil.example")
+        .header("connection", "upgrade")
+        .header("upgrade", "websocket")
+        .header("sec-websocket-version", "13")
+        .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(status_of(req).await, StatusCode::FORBIDDEN);
+}

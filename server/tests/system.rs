@@ -252,3 +252,35 @@ fn stop_right_after_submit_never_leaves_the_task_hanging() {
     let console = server.home.path().join(format!("jobs/{id}/console.log"));
     assert!(!console.exists() || std::fs::metadata(&console).unwrap().len() == 0, "la VM è partita comunque");
 }
+
+#[test]
+#[ignore = "richiede golden, token e Claude"]
+fn interactive_terminal_saves_to_the_branch_and_closes() {
+    let server = start_server();
+    let repo = temp_repo();
+    let created = post_json(
+        &format!("{}/api/tasks", server.base),
+        &json!({"repo_path": repo.path(), "interactive": true,
+                "prompt": "Crea il file term.txt con scritto ciao e fai commit."}),
+    );
+    let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    let t0 = Instant::now();
+    loop {
+        let task = get_json(&format!("{}/api/tasks/{id}", server.base));
+        assert_ne!(task["status"]["state"], "failed", "{task}");
+        if task["activity"] == "waiting" && task["status"]["state"] == "running" {
+            break;
+        }
+        assert!(t0.elapsed() < Duration::from_secs(240), "Claude non ha finito il turno: {task}");
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    let saved = post_json(&format!("{}/api/tasks/{id}/save", server.base), &json!({}));
+    assert!(saved["commits"].as_u64().unwrap_or(0) >= 1, "{saved}");
+    let content = git(repo.path(), &["show", &format!("agent/{id}:term.txt")]);
+    assert!(content.to_lowercase().contains("ciao"));
+
+    post_json(&format!("{}/api/tasks/{id}/close", server.base), &json!({}));
+    let task = wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(60));
+    assert_eq!(task["status"]["state"], "done", "{task}");
+    assert_no_token(&server, repo.path(), Some(&format!("agent/{id}")));
+}

@@ -9,4 +9,7 @@ pub struct TaskSpec {
     pub branch: String,
     pub base_sha: String,
     pub timeout_s: u64,
+    /// Terminale interattivo: la VM resta accesa finché l'utente non la chiude.
+    #[serde(default)]
+    pub interactive: bool,
 }

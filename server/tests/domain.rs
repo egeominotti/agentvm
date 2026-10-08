@@ -48,6 +48,7 @@ fn task_spec_roundtrips_hostile_prompt() {
         branch: "agent/20261008-154501-a3f9".into(),
         base_sha: "a".repeat(40),
         timeout_s: 1800,
+        interactive: false,
     };
     let json = serde_json::to_string(&spec).unwrap();
     let back: TaskSpec = serde_json::from_str(&json).unwrap();
@@ -238,4 +239,13 @@ fn long_summaries_are_truncated() {
 fn agent_event_serializes_with_kind() {
     let v = serde_json::to_value(AgentEvent::Retry { attempt: 1 }).unwrap();
     assert_eq!(v, serde_json::json!({"kind": "retry", "attempt": 1}));
+}
+
+#[test]
+fn task_spec_interactive_defaults_to_false() {
+    let spec: TaskSpec = serde_json::from_str(
+        r#"{"id":"x","prompt":"p","branch":"agent/x","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","timeout_s":1}"#,
+    )
+    .unwrap();
+    assert!(!spec.interactive);
 }

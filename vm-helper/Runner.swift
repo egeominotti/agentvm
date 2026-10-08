@@ -25,23 +25,35 @@ enum Events {
 
 final class Runner: NSObject, VZVirtualMachineDelegate {
     private let vm: VZVirtualMachine
+    private let ptySocket: URL?
+    private var bridge: VsockBridge?
     private let startedAt = Date()
     private var signalSources: [DispatchSourceSignal] = []
 
-    init(configuration: VZVirtualMachineConfiguration) {
+    init(configuration: VZVirtualMachineConfiguration, ptySocket: URL?) {
         vm = VZVirtualMachine(configuration: configuration)
+        self.ptySocket = ptySocket
         super.init()
         vm.delegate = self
     }
 
     func start() {
         installStopSignals()
-        vm.start { result in
+        vm.start { [self] result in
             switch result {
-            case .success: Events.emit("started")
+            case .success:
+                startBridge()
+                Events.emit("started")
             case .failure(let e): Events.fail("avvio fallito: \(e.localizedDescription)")
             }
         }
+    }
+
+    private func startBridge() {
+        guard let path = ptySocket, let device = vm.socketDevices.first as? VZVirtioSocketDevice else { return }
+        let bridge = VsockBridge(path: path.path, port: VsockBridge.ptyPort, device: device)
+        do { try bridge.start() } catch { Events.fail("socket del terminale: \(error)") }
+        self.bridge = bridge
     }
 
     func guestDidStop(_ vm: VZVirtualMachine) {

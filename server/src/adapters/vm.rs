@@ -25,6 +25,8 @@ pub struct VmConfig {
     pub cpus: u32,
     pub memory_mb: u64,
     pub seed_iso: Option<PathBuf>,
+    /// Socket Unix sul Mac inoltrato alla porta vsock del server PTY nel guest.
+    pub pty_socket: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -14,21 +14,27 @@ use crate::domain::task::{InvalidTransition, TaskEvent, TaskState, transition};
 pub struct TaskRecord {
     pub id: TaskId,
     pub repo: RepoPath,
-    pub prompt: Prompt,
+    /// Assente per un terminale aperto senza compito iniziale.
+    pub prompt: Option<Prompt>,
     pub base_sha: CommitSha,
+    pub interactive: bool,
     pub state: TaskState,
+    /// Ultima attività segnalata dagli hook di Claude Code (`working`, `waiting`).
+    pub activity: Option<String>,
     pub created_at: SystemTime,
     pub finished_at: Option<SystemTime>,
 }
 
 impl TaskRecord {
-    pub fn new(id: TaskId, repo: RepoPath, prompt: Prompt, base_sha: CommitSha) -> Self {
+    pub fn new(id: TaskId, repo: RepoPath, prompt: Option<Prompt>, base_sha: CommitSha, interactive: bool) -> Self {
         TaskRecord {
             id,
             repo,
             prompt,
             base_sha,
+            interactive,
             state: TaskState::Queued,
+            activity: None,
             created_at: SystemTime::now(),
             finished_at: None,
         }
@@ -87,6 +93,12 @@ impl Store {
             e.stop.send_replace(true);
         }
         Ok(next)
+    }
+
+    pub fn set_activity(&self, id: &TaskId, activity: Option<String>) {
+        if let Some(e) = self.tasks.lock().unwrap().get_mut(id) {
+            e.record.activity = activity;
+        }
     }
 
     pub fn stop_signal(&self, id: &TaskId) -> Option<watch::Receiver<bool>> {

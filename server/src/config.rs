@@ -18,6 +18,7 @@ impl Config {
         fn var<T: std::str::FromStr>(name: &str, default: T) -> T {
             std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
         }
+        let memory_mb = var("AGENTVM_MEMORY_MB", 4096u64);
         let user_home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into()));
         let default_helper = std::env::current_exe()
             .ok()
@@ -26,9 +27,9 @@ impl Config {
         Config {
             home: std::env::var("AGENTVM_HOME").map(PathBuf::from).unwrap_or_else(|_| user_home.join("AgentVMs")),
             port: var("AGENTVM_PORT", 7777),
-            concurrency: var("AGENTVM_CONCURRENCY", 4usize).max(1),
+            concurrency: var("AGENTVM_CONCURRENCY", vms_fitting_in_ram(memory_mb)).max(1),
             cpus: var("AGENTVM_CPUS", 4),
-            memory_mb: var("AGENTVM_MEMORY_MB", 4096),
+            memory_mb,
             timeout_s: var("AGENTVM_TIMEOUT_S", 1800),
             vm_helper: std::env::var("AGENTVM_VM_HELPER").map(PathBuf::from).unwrap_or(default_helper),
         }
@@ -41,4 +42,18 @@ impl Config {
     pub fn jobs(&self) -> PathBuf {
         self.home.join("jobs")
     }
+}
+
+/// Memoria lasciata a macOS e alle app dell'utente.
+const HOST_RESERVE_MB: u64 = 8 * 1024;
+
+/// Quante VM da `memory_mb` stanno nella RAM del Mac senza farlo andare in swap.
+fn vms_fitting_in_ram(memory_mb: u64) -> usize {
+    let ram_mb = std::process::Command::new("sysctl")
+        .args(["-n", "hw.memsize"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u64>().ok())
+        .map_or(16 * 1024, |bytes| bytes >> 20);
+    (ram_mb.saturating_sub(HOST_RESERVE_MB) / memory_mb.max(512)) as usize
 }

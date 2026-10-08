@@ -13,9 +13,37 @@ use crate::domain::task::TaskState;
 #[derive(Deserialize)]
 pub struct CreateTask {
     pub repo_path: String,
+    #[serde(default)]
     pub prompt: String,
     #[serde(default)]
     pub base_ref: Option<String>,
+    #[serde(default)]
+    pub interactive: bool,
+}
+
+#[derive(Serialize)]
+pub struct Saved {
+    pub commits: u32,
+}
+
+#[derive(Deserialize)]
+pub struct PtyQuery {
+    #[serde(default = "default_session")]
+    pub session: String,
+    #[serde(default = "default_cols")]
+    pub cols: u16,
+    #[serde(default = "default_rows")]
+    pub rows: u16,
+}
+
+fn default_session() -> String {
+    "claude".into()
+}
+fn default_cols() -> u16 {
+    120
+}
+fn default_rows() -> u16 {
+    36
 }
 
 #[derive(Serialize)]
@@ -39,6 +67,8 @@ pub struct TaskDto {
     pub prompt: String,
     pub base_sha: String,
     pub branch: String,
+    pub interactive: bool,
+    pub activity: Option<String>,
     pub status: TaskState,
     pub created_at: f64,
     pub finished_at: Option<f64>,
@@ -50,8 +80,10 @@ impl From<TaskRecord> for TaskDto {
             branch: r.id.branch(),
             id: r.id.to_string(),
             repo: r.repo.as_path().display().to_string(),
-            prompt: r.prompt.as_str().to_owned(),
+            prompt: r.prompt.map(|p| p.as_str().to_owned()).unwrap_or_default(),
             base_sha: r.base_sha.as_str().to_owned(),
+            interactive: r.interactive,
+            activity: r.activity,
             status: r.state,
             created_at: unix(r.created_at),
             finished_at: r.finished_at.map(unix),

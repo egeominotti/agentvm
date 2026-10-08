@@ -10,11 +10,14 @@ struct VMConfig: Decodable {
     let cpus: Int
     let memoryMB: UInt64
     let seedISO: URL?
+    /// Socket Unix da inoltrare alla porta vsock del server PTY nel guest.
+    let ptySocket: URL?
 
     enum CodingKeys: String, CodingKey {
         case disk, efivars, share, console, cpus
         case memoryMB = "memory_mb"
         case seedISO = "seed_iso"
+        case ptySocket = "pty_socket"
     }
 
     init(from decoder: Decoder) throws {
@@ -27,6 +30,7 @@ struct VMConfig: Decodable {
         cpus = try c.decode(Int.self, forKey: .cpus)
         memoryMB = try c.decode(UInt64.self, forKey: .memoryMB)
         seedISO = try c.decodeIfPresent(String.self, forKey: .seedISO).map { URL(fileURLWithPath: $0) }
+        ptySocket = try c.decodeIfPresent(String.self, forKey: .ptySocket).map { URL(fileURLWithPath: $0) }
     }
 
     static func load(_ path: String) throws -> VMConfig {
