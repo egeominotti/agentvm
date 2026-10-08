@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use crate::helpers::{
-    TERMINAL, curl, delete, get_json, git, post_json, put_json, start_server, temp_repo, wait_for_state,
+    TERMINAL, curl, delete, get_json, git, post_json, put_json, run_in_shell, start_server, temp_repo, wait_for_state,
 };
 
 #[test]
@@ -38,6 +38,33 @@ fn a_snapshot_restores_files_into_a_new_vm() {
     assert!(saved["commits"].as_u64().unwrap_or(0) >= 1, "{saved}");
     let content = git(repo.path(), &["show", &format!("agent/{new_id}:snap.txt")]);
     assert!(content.contains("snapshot-ok"), "{content}");
+    post_json(&format!("{}/api/tasks/{new_id}/stop", server.base), &json!({}));
+}
+
+/// A snapshot taken while git was working holds its `index.lock`: the restored VM must still
+/// boot and save (no git can be running at boot, so the lock is stale).
+#[test]
+#[ignore = "needs golden and token"]
+fn a_snapshot_taken_mid_git_still_restores() {
+    let server = start_server();
+    let repo = temp_repo();
+    let created =
+        post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo.path(), "interactive": true}));
+    let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    wait_for_state(&server, &id, |s| s == "running", Duration::from_secs(60));
+    run_in_shell(&server, &id, "cd /root/work && echo mid-git > mid.txt && touch .git/index.lock && echo locked");
+    let snap = post_json(&format!("{}/api/tasks/{id}/snapshot", server.base), &json!({"name": "mid git"}));
+    let snap_id = snap["id"].as_str().unwrap_or_else(|| panic!("{snap}")).to_owned();
+    post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
+    wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(30));
+
+    let restored = post_json(&format!("{}/api/snapshots/{snap_id}/restore", server.base), &json!({}));
+    let new_id = restored["id"].as_str().unwrap_or_else(|| panic!("{restored}")).to_owned();
+    let task = wait_for_state(&server, &new_id, |s| s == "running" || TERMINAL.contains(&s), Duration::from_secs(90));
+    assert_eq!(task["status"]["state"], "running", "the restored VM did not come up: {task}");
+    let saved = post_json(&format!("{}/api/tasks/{new_id}/save", server.base), &json!({}));
+    assert!(saved["commits"].as_u64().unwrap_or(0) >= 1, "{saved}");
+    assert!(git(repo.path(), &["show", &format!("agent/{new_id}:mid.txt")]).contains("mid-git"));
     post_json(&format!("{}/api/tasks/{new_id}/stop", server.base), &json!({}));
 }
 

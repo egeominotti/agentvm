@@ -52,7 +52,14 @@ RESTORE=$(jq -r '.restore // false' "$JOB/task.json")
 if [ "$RESTORE" = "true" ]; then
   # Disk from a snapshot: the checkout is already there; continue on this task's branch.
   cd "$WORK"
-  git checkout -q -B "$BRANCH"
+  # A snapshot taken while git was working keeps its locks; nothing runs git at boot, so they
+  # are stale and would make every git command (and this restore) fail.
+  rm -f .git/index.lock .git/HEAD.lock .git/config.lock .git/packed-refs.lock
+  find .git/refs -name '*.lock' -type f -delete 2>/dev/null || true
+  # The work is in the checkout whatever happens here: a save realigns the branch later.
+  if ! git checkout -q -B "$BRANCH" 2>> "$JOB/job.log"; then
+    log "could not switch to $BRANCH: continuing on $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
+  fi
 else
   git clone -q "$JOB/repo.bundle" "$WORK"
   cd "$WORK"
