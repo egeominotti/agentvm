@@ -2,6 +2,7 @@
 pub mod agent_event;
 pub mod hostname;
 pub mod ids;
+pub mod memory;
 pub mod metrics;
 pub mod outcome;
 pub mod s3;

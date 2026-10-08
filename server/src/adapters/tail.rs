@@ -27,12 +27,16 @@ pub fn tail_lines(path: PathBuf, mut stop: watch::Receiver<bool>) -> impl Stream
                     pending.extend_from_slice(&buf);
                 }
             }
-            while let Some(pos) = pending.iter().position(|&b| b == b'\n') {
-                let line: Vec<u8> = pending.drain(..=pos).collect();
-                if tx.send(String::from_utf8_lossy(&line[..pos]).into_owned()).await.is_err() {
+            // One pass over the new bytes, one drain at the end: linear in the size read.
+            let mut start = 0;
+            while let Some(len) = pending[start..].iter().position(|&b| b == b'\n') {
+                let line = String::from_utf8_lossy(&pending[start..start + len]).into_owned();
+                start += len + 1;
+                if tx.send(line).await.is_err() {
                     return;
                 }
             }
+            pending.drain(..start);
             if stopping {
                 if !pending.is_empty() {
                     let _ = tx.send(String::from_utf8_lossy(&pending).into_owned()).await;

@@ -258,3 +258,93 @@ fn leftover_temporary_files_are_cleaned_up_at_start() {
     assert!(!home.path().join("snapshots/.import-77").exists());
     assert!(home.path().join("snapshots").join(id.as_str()).join("disk.raw").exists(), "a real snapshot was removed");
 }
+
+fn git_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let run = |args: &[&str]| {
+        assert!(std::process::Command::new("git").arg("-C").arg(dir.path()).args(args).status().unwrap().success())
+    };
+    run(&["init", "-q", "-b", "main"]);
+    run(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "one"]);
+    dir
+}
+
+/// Twenty VMs on the same repository pack it once: later launches get an instant copy.
+#[test]
+fn launches_share_one_bundle_per_repository_state() {
+    use agentvm::app::bundles::prepare;
+    let home = tempfile::tempdir().unwrap();
+    let repo = git_repo();
+    let (a, b) = (home.path().join("a.bundle"), home.path().join("b.bundle"));
+    assert!(!prepare(home.path(), repo.path(), &a).unwrap(), "the first launch packs the repo");
+    assert!(prepare(home.path(), repo.path(), &b).unwrap(), "the second one reuses it");
+    assert_eq!(std::fs::read(&a).unwrap(), std::fs::read(&b).unwrap());
+    // New commits make a new bundle.
+    assert!(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(repo.path())
+            .args(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "two"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let c = home.path().join("c.bundle");
+    assert!(!prepare(home.path(), repo.path(), &c).unwrap());
+    assert_ne!(std::fs::read(&a).unwrap(), std::fs::read(&c).unwrap());
+}
+
+/// A long automatic task must not grow its event history without limit.
+#[tokio::test]
+async fn event_history_is_bounded_and_keeps_numbering() {
+    let log = EventLog::new();
+    for n in 0..25_000 {
+        log.push(agent(n));
+    }
+    let (history, _) = log.subscribe();
+    assert!(history.len() <= 10_000, "{}", history.len());
+    assert_eq!(history.last().unwrap().0, 25_000);
+    log.push(agent(1));
+    let mut s = std::pin::pin!(log.stream());
+    let first = s.next().await.unwrap().0;
+    assert_eq!(first, 25_001 - history.len() as u64 + 1, "the oldest kept event");
+}
+
+/// A record written by an older or newer agentvm must not make the server kill a running VM.
+#[test]
+fn records_from_other_versions_load_and_unreadable_ones_are_reported() {
+    let jobs = tempfile::tempdir().unwrap();
+    let old = jobs.path().join("20261008-120000-aaaa");
+    std::fs::create_dir_all(&old).unwrap();
+    // No cpus, memory_mb, model, label, usage: written before those fields existed.
+    std::fs::write(
+        old.join("record.json"),
+        format!(
+            r#"{{"id":"20261008-120000-aaaa","repo":"{}","prompt":null,
+        "base_sha":"{}","interactive":true,"state":{{"state":"running"}},"claude_version":null,"restore_from":null,
+        "created_at":{{"secs_since_epoch":1,"nanos_since_epoch":0}},"finished_at":null}}"#,
+            jobs.path().display(),
+            "a".repeat(40)
+        ),
+    )
+    .unwrap();
+    let broken = jobs.path().join("20261008-120000-bbbb");
+    std::fs::create_dir_all(&broken).unwrap();
+    std::fs::write(broken.join("record.json"), "{ half a reco").unwrap();
+
+    let (records, unreadable) = Store::load_all(jobs.path());
+    assert_eq!(records.len(), 1, "the old record did not load");
+    assert_eq!(records[0].state, TaskState::Running);
+    assert_eq!(unreadable, vec!["20261008-120000-bbbb".to_owned()]);
+}
+
+/// VMs found running after a restart take their slots before queued tasks may start.
+#[test]
+fn running_vms_take_their_slots_without_waiting() {
+    let s = agentvm::app::scheduler::Scheduler::new(1);
+    let first = s.try_acquire();
+    assert!(first.is_some());
+    assert!(s.try_acquire().is_none(), "a second VM got the only slot");
+    drop(first);
+    assert!(s.try_acquire().is_some());
+}

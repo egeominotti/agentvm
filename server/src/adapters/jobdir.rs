@@ -102,6 +102,17 @@ impl JobWorkspace {
     pub fn config_path(&self) -> PathBuf {
         self.dir.join("vm.json")
     }
+    /// Outside the shared folder: only the host decides how much memory the VM keeps.
+    pub fn balloon(&self) -> PathBuf {
+        self.dir.join("memory.target")
+    }
+
+    pub fn set_memory_target(&self, mb: u64) -> io::Result<()> {
+        let tmp = self.dir.join("memory.target.tmp");
+        fs::write(&tmp, mb.to_string())?;
+        fs::rename(tmp, self.balloon())
+    }
+
     pub fn pid_path(&self) -> PathBuf {
         self.dir.join("vm.pid")
     }
@@ -156,10 +167,7 @@ impl JobWorkspace {
 
     /// Instant copy-on-write copy (APFS `clonefile(2)`).
     pub fn clone_disk(&self, golden: &Path) -> io::Result<()> {
-        let src = CString::new(golden.as_os_str().as_bytes())?;
-        let dst = CString::new(self.disk().as_os_str().as_bytes())?;
-        // SAFETY: C strings valid for the duration of the call.
-        if unsafe { clonefile(src.as_ptr(), dst.as_ptr(), 0) } == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
+        clone_file(golden, &self.disk())
     }
 
     /// EFI variables of a restored machine (the snapshot keeps its own boot entries).
@@ -248,4 +256,12 @@ fn is_vm_helper(pid: i32) -> bool {
 /// Asks the guest for something by creating `<share>/<name>` (never through a planted symlink).
 pub fn write_request(share: &Path, name: &str) -> io::Result<()> {
     guestfs::create_empty(&share.join(name))
+}
+
+/// Instant copy-on-write copy (APFS `clonefile(2)`); `dst` must not exist.
+pub fn clone_file(src: &Path, dst: &Path) -> io::Result<()> {
+    let src = CString::new(src.as_os_str().as_bytes())?;
+    let dst = CString::new(dst.as_os_str().as_bytes())?;
+    // SAFETY: C strings valid for the duration of the call.
+    if unsafe { clonefile(src.as_ptr(), dst.as_ptr(), 0) } == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
 }

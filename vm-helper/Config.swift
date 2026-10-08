@@ -12,12 +12,15 @@ struct VMConfig: Decodable {
     let seedISO: URL?
     /// Unix socket to forward to the vsock port of the PTY server in the guest.
     let ptySocket: URL?
+    /// File with the memory (MB) the VM may keep; followed with the memory balloon.
+    let balloon: URL?
 
     enum CodingKeys: String, CodingKey {
         case disk, efivars, share, console, cpus
         case memoryMB = "memory_mb"
         case seedISO = "seed_iso"
         case ptySocket = "pty_socket"
+        case balloon
     }
 
     init(from decoder: Decoder) throws {
@@ -31,6 +34,7 @@ struct VMConfig: Decodable {
         memoryMB = try c.decode(UInt64.self, forKey: .memoryMB)
         seedISO = try c.decodeIfPresent(String.self, forKey: .seedISO).map { URL(fileURLWithPath: $0) }
         ptySocket = try c.decodeIfPresent(String.self, forKey: .ptySocket).map { URL(fileURLWithPath: $0) }
+        balloon = try c.decodeIfPresent(String.self, forKey: .balloon).map { URL(fileURLWithPath: $0) }
     }
 
     static func load(_ path: String) throws -> VMConfig {

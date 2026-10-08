@@ -20,6 +20,11 @@ impl Scheduler {
         self.slots.clone().acquire_owned().await.expect("semaphore is never closed")
     }
 
+    /// A slot right now, or `None` when all are taken (never waits).
+    pub fn try_acquire(&self) -> Option<OwnedSemaphorePermit> {
+        self.slots.clone().try_acquire_owned().ok()
+    }
+
     pub fn concurrency(&self) -> usize {
         self.concurrency.load(Ordering::SeqCst)
     }

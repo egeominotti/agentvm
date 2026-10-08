@@ -29,12 +29,10 @@ pub enum ProxyError {
 
 /// A connection to `port` inside the running machine called `vm`.
 pub async fn connect(ctx: &AppCtx, vm: &str, port: u16) -> Result<UnixStream, ProxyError> {
-    let record = ctx
+    let id = ctx
         .store
-        .list()
-        .into_iter()
-        .find(|r| r.interactive && r.state == TaskState::Running && vm_name(r) == vm)
+        .find_id(|r| r.interactive && r.state == TaskState::Running && vm_name(r) == vm)
         .ok_or_else(|| ProxyError::NoSuchMachine(vm.to_owned()))?;
-    let socket = JobWorkspace::pty_socket_of(&ctx.config.jobs(), &record.id);
+    let socket = JobWorkspace::pty_socket_of(&ctx.config.jobs(), &id);
     forward::connect(&socket, port).await.map_err(|source| ProxyError::Unreachable { vm: vm.to_owned(), port, source })
 }

@@ -37,7 +37,8 @@ final class VsockBridge {
         Thread.detachNewThread { [self] in
             while true {
                 let client = accept(fd, nil, nil)
-                if client < 0 { continue }
+                // Out of descriptors (EMFILE) or similar: back off instead of spinning a core.
+                if client < 0 { usleep(100_000); continue }
                 DispatchQueue.main.async { self.connect(client) }
             }
         }

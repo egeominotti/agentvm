@@ -168,18 +168,37 @@ function renderHost() {
   $("#alerts").replaceChildren(...alerts);
 }
 
-/** Every machine in the sidebar, like a list of issues: status icon, title, age. */
+/** Every machine in the sidebar, like a list of issues. Patched in place: a link replaced
+ * while the mouse button is down would swallow the click. */
+const sideItems = new Map();
 function renderSide() {
   const focused = location.hash.match(/^#\/vm\/(.+)$/)?.[1];
   const live = state.tasks.filter(t => !TERMINAL.has(t.status.state)).length;
-  $("#count-machines").textContent = live ? String(live) : "";
+  const count = live ? String(live) : "";
+  if ($("#count-machines").textContent !== count) $("#count-machines").textContent = count;
   // Running machines only: finished ones stay on the wall until cleared.
-  const items = state.tasks.filter(t => !TERMINAL.has(t.status.state) || t.id === focused).map(t => {
+  const shown = state.tasks.filter(t => !TERMINAL.has(t.status.state) || t.id === focused);
+  const box = $("#side-machines");
+  for (const [id, el] of sideItems) if (!shown.some(t => t.id === id)) { el.remove(); sideItems.delete(id); }
+  shown.forEach((t, i) => {
     const [cls, label] = kind(t);
-    return h("a", { class: `side-vm ${cls}`, href: `#/vm/${t.id}`, "aria-current": String(t.id === focused), title: `${titleOf(t)}\n${label}` },
-      h("span", { class: "dot" }), h("span", { class: "t" }, titleOf(t)), h("span", { class: "m" }, t.activity === "waiting" && t.status.state === "running" ? "waiting" : age(t)));
+    let el = sideItems.get(t.id);
+    if (!el) {
+      el = h("a", { href: `#/vm/${t.id}` }, h("span", { class: "dot" }), h("span", { class: "t" }), h("span", { class: "m" }));
+      sideItems.set(t.id, el);
+    }
+    const set = (node, text) => { if (node.textContent !== text) node.textContent = text; };
+    const className = `side-vm ${cls}`;
+    if (el.className !== className) el.className = className;
+    el.setAttribute("aria-current", String(t.id === focused));
+    el.title = `${titleOf(t)}\n${label}`;
+    set(el.children[1], titleOf(t));
+    set(el.children[2], t.activity === "waiting" && t.status.state === "running" ? "waiting" : age(t));
+    if (box.children[i] !== el) box.insertBefore(el, box.children[i] ?? null);
   });
-  $("#side-machines").replaceChildren(...(items.length ? items : [h("p", { class: "side-empty" }, "No running machines")]));
+  const empty = box.querySelector(".side-empty");
+  if (!shown.length && !empty) box.append(h("p", { class: "side-empty" }, "No running machines"));
+  if (shown.length && empty) empty.remove();
 }
 
 // ---------- models and Claude Code versions ----------
@@ -414,7 +433,20 @@ class VmTerminal {
     ws.binaryType = "arraybuffer";
     // Resizes sent while connecting are lost: send the real size once the socket is open.
     ws.onopen = () => { this.fit(); ws.send(JSON.stringify({ cols: this.xterm.cols, rows: this.xterm.rows })); };
-    ws.onmessage = e => this.xterm.write(new Uint8Array(e.data));
+    if (this.fixed) {
+      // Previews: parse at most 4 times a second, whatever the VM prints (3-5x less browser CPU).
+      ws.onmessage = e => {
+        (this.chunks ??= []).push(new Uint8Array(e.data));
+        this.flushTimer ??= setTimeout(() => {
+          this.flushTimer = null;
+          const chunks = this.chunks;
+          this.chunks = [];
+          for (const c of chunks) this.xterm.write(c);
+        }, 250);
+      };
+    } else {
+      ws.onmessage = e => this.xterm.write(new Uint8Array(e.data));
+    }
     ws.onclose = () => {
       if (this.ws !== ws) return;
       this.ws = null;
@@ -422,8 +454,16 @@ class VmTerminal {
     };
     this.ws = ws;
   }
+  /** Stops streaming (a preview nobody can see); `connect()` resumes and tmux redraws it all. */
+  pause() {
+    const ws = this.ws;
+    this.ws = null;
+    ws?.close();
+  }
+
   dispose() {
     this.disposed = true;
+    clearTimeout(this.flushTimer);
     this.resizer.disconnect();
     this.ws?.close();
     this.xterm.dispose();
@@ -436,8 +476,8 @@ class VmTerminal {
 function bootSteps(t) {
   const host = {}, guest = [];
   for (const line of t.boot_log || []) {
-    let m = line.match(/^host: (repository packed|disk ready) in (\d+) ms/);
-    if (m) { host[m[1]] = `${m[2]} ms`; continue; }
+    let m = line.match(/^host: (repository (?:packed|shared)|disk ready) in (\d+) ms/);
+    if (m) { host[m[1].startsWith("repository") ? "repository" : m[1]] = `${m[2]} ms`; continue; }
     m = line.match(/^\[([\d.]+)s\] (.*)$/);
     if (m) guest.push({ at: Number(m[1]), text: m[2] });
   }
@@ -578,15 +618,22 @@ class WallView {
     const live = tasks.filter(t => !TERMINAL.has(t.status.state)).length;
     const waiting = tasks.filter(t => t.status.state === "running" && t.activity === "waiting").length;
     const finished = tasks.filter(t => TERMINAL.has(t.status.state));
-    const clear = finished.length
-      ? h("button", { class: "btn ghost small", type: "button", onclick: async () => {
-          for (const t of finished) await api(`/api/tasks/${t.id}`, { method: "DELETE" });
-          toast(`Removed ${plural(finished.length, "finished machine")}`);
-          loadTasks();
-        } }, `Clear ${finished.length} finished`)
-      : "";
-    this.head.replaceChildren(h("h1", {}, "Machines"), h("span", { class: "sub" }, waiting ? `${plural(live, "running machine")}, ${waiting} waiting for you` : `${plural(live, "running machine")}. Click one to work in it.`),
-      h("span", { class: "spacer" }), clear);
+    if (!this.headBuilt) {
+      this.headBuilt = true;
+      this.sub = h("span", { class: "sub" });
+      this.clearBtn = h("button", { class: "btn ghost small", type: "button", onclick: async () => {
+        const done = state.tasks.filter(t => TERMINAL.has(t.status.state));
+        for (const t of done) await api(`/api/tasks/${t.id}`, { method: "DELETE" });
+        toast(`Removed ${plural(done.length, "finished machine")}`);
+        loadTasks();
+      } });
+      this.head.replaceChildren(h("h1", {}, "Machines"), this.sub, h("span", { class: "spacer" }), this.clearBtn);
+    }
+    const sub = waiting ? `${plural(live, "running machine")}, ${waiting} waiting for you` : `${plural(live, "running machine")}. Click one to work in it.`;
+    if (this.sub.textContent !== sub) this.sub.textContent = sub;
+    this.clearBtn.hidden = !finished.length;
+    const clearText = `Clear ${finished.length} finished`;
+    if (this.clearBtn.textContent !== clearText) this.clearBtn.textContent = clearText;
     for (const [id, cell] of this.cells) if (!byId(id)) { cell.destroy(); this.cells.delete(id); }
     tasks.forEach((t, i) => {
       let cell = this.cells.get(t.id);
@@ -643,9 +690,13 @@ class Cell {
         this.body.replaceChildren();
         this.term = new VmTerminal(t.id, "claude", { fontSize: 12, webgl: false, readOnly: true, fixed: { cols: 160, rows: 48 } });
         this.body.append(this.term.el);
-        new ResizeObserver(() => this.term?.fitSoon()).observe(this.body);
+        this.resize ??= new ResizeObserver(() => this.term?.fitSoon());
+        this.resize.observe(this.body);
+        // Previews stream only while on screen and while the page is visible.
+        this.seen ??= new IntersectionObserver(([e]) => { this.visible = e.isIntersecting; this.stream(); });
+        this.seen.observe(this.root);
       }
-      this.term.connect();
+      this.stream();
     } else {
       this.term?.dispose();
       this.term = null;
@@ -655,7 +706,12 @@ class Cell {
       if (this.endedFor !== label) { this.endedFor = label; this.body.replaceChildren(h("div", { class: "ended" }, ...text)); }
     }
   }
-  destroy() { this.term?.dispose(); }
+  stream() {
+    if (!this.term) return;
+    if (this.visible !== false && !document.hidden) this.term.connect();
+    else this.term.pause();
+  }
+  destroy() { this.term?.dispose(); this.resize?.disconnect(); this.seen?.disconnect(); }
 }
 
 /** A service of a VM: HTTP ones under the VM's own name, others through a TCP port on the Mac. */
@@ -1348,6 +1404,8 @@ function route() {
   }
 }
 window.addEventListener("hashchange", route);
+// A hidden tab streams nothing to its previews.
+document.addEventListener("visibilitychange", () => { if (current instanceof WallView) for (const c of current.cells.values()) c.stream(); });
 
 (async () => {
   await Promise.all([loadSettings(), loadStatus()]);

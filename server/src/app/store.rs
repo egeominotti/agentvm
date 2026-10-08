@@ -27,10 +27,13 @@ pub struct TaskRecord {
     /// Last activity reported by the Claude Code hooks (`working`, `waiting`).
     #[serde(skip)]
     pub activity: Option<String>,
+    #[serde(default)]
     pub model: Model,
     /// Claude Code version installed at boot instead of the image's one.
+    #[serde(default)]
     pub claude_version: Option<String>,
     /// Snapshot this machine was restored from.
+    #[serde(default)]
     pub restore_from: Option<SnapshotId>,
     /// Display name when there is no first task (e.g. "Restored: …").
     #[serde(default)]
@@ -39,7 +42,9 @@ pub struct TaskRecord {
     #[serde(default)]
     pub auto_snapshot_min: Option<u32>,
     /// Resources of this VM (from the launch, or the settings at launch time).
+    #[serde(default)]
     pub cpus: u32,
+    #[serde(default)]
     pub memory_mb: u64,
     /// Latest telemetry sample and the last `HISTORY` CPU and memory percentages.
     /// Claude's cost and tokens (kept across restarts).
@@ -61,6 +66,7 @@ pub struct TaskRecord {
     #[serde(skip)]
     pub mem_history: VecDeque<f32>,
     pub created_at: SystemTime,
+    #[serde(default)]
     pub finished_at: Option<SystemTime>,
 }
 
@@ -144,13 +150,24 @@ impl Store {
     }
 
     /// Tasks saved by a previous run.
+    /// Every task saved in `dir`, and the job folders whose record exists but cannot be read
+    /// (their VMs must be left alone, not treated as orphans).
+    pub fn load_all(dir: &Path) -> (Vec<TaskRecord>, Vec<String>) {
+        let (mut records, mut unreadable) = (Vec::new(), Vec::new());
+        let Ok(entries) = std::fs::read_dir(dir) else { return (records, unreadable) };
+        for e in entries.flatten() {
+            let Ok(bytes) = std::fs::read(e.path().join("record.json")) else { continue };
+            match serde_json::from_slice(&bytes) {
+                Ok(r) => records.push(r),
+                Err(_) => unreadable.push(e.file_name().to_string_lossy().into_owned()),
+            }
+        }
+        unreadable.sort();
+        (records, unreadable)
+    }
+
     pub fn load(dir: &Path) -> Vec<TaskRecord> {
-        let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
-        entries
-            .flatten()
-            .filter_map(|e| std::fs::read(e.path().join("record.json")).ok())
-            .filter_map(|bytes| serde_json::from_slice(&bytes).ok())
-            .collect()
+        Self::load_all(dir).0
     }
 
     fn persist(&self, record: &TaskRecord) {
@@ -277,6 +294,11 @@ impl Store {
     }
 
     /// Most recent first.
+    /// The first task matching `pred`, without cloning the others (proxy lookups run per request).
+    pub fn find_id(&self, pred: impl Fn(&TaskRecord) -> bool) -> Option<TaskId> {
+        self.tasks.lock().unwrap().values().find(|e| pred(&e.record)).map(|e| e.record.id.clone())
+    }
+
     pub fn list(&self) -> Vec<TaskRecord> {
         let mut all: Vec<_> = self.tasks.lock().unwrap().values().map(|e| e.record.clone()).collect();
         all.sort_by_key(|r| std::cmp::Reverse(r.created_at));

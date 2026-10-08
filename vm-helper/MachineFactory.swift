@@ -33,7 +33,11 @@ enum MachineFactory {
 
     private static func storage(_ c: VMConfig) throws -> [VZStorageDeviceConfiguration] {
         var devices: [VZStorageDeviceConfiguration] = [
-            VZVirtioBlockDeviceConfiguration(attachment: try VZDiskImageStorageDeviceAttachment(url: c.disk, readOnly: false)),
+            // A guest flush becomes a plain fsync, not a full device flush (F_FULLFSYNC, ~90x
+            // slower): apt, git and databases flush constantly. Snapshots still flush the
+            // guest (sync) and the host file (fsync) before cloning the disk.
+            VZVirtioBlockDeviceConfiguration(attachment: try VZDiskImageStorageDeviceAttachment(
+                url: c.disk, readOnly: false, cachingMode: .automatic, synchronizationMode: .fsync)),
         ]
         if let seed = c.seedISO {
             devices.append(VZVirtioBlockDeviceConfiguration(

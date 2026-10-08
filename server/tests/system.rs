@@ -187,26 +187,39 @@ fn invalid_requests_are_rejected_with_a_message() {
 
 /// Runs a command in the VM's root shell (through the real PTY socket) and returns its output.
 fn run_in_shell(server: &Server, id: &str, command: &str) -> String {
-    use agentvm::adapters::pty::{Frame, PtyConnection};
     let _ = server;
     let socket = agentvm::adapters::jobdir::JobWorkspace::pty_socket_of(
         std::path::Path::new("/"),
         &agentvm::domain::ids::TaskId::parse(id).unwrap(),
     );
     let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
-        let mut pty = PtyConnection::open(&socket, "shell", 200, 50).await.expect("shell");
-        let line = format!("clear; {command}; echo __END__\n");
-        pty.send(&Frame::Input(line.into_bytes())).await.unwrap();
-        let mut out = String::new();
-        let deadline = Instant::now() + Duration::from_secs(15);
-        while Instant::now() < deadline && out.matches("__END__").count() < 2 {
-            if let Ok(Ok(Some(bytes))) = tokio::time::timeout(Duration::from_secs(1), pty.recv()).await {
-                out.push_str(&String::from_utf8_lossy(&bytes));
-            }
+    // Input sent before the guest's shell exists is lost: wait until it answers.
+    let t0 = Instant::now();
+    while !rt.block_on(shell_once(&socket, "echo ready-$((1+1))")).contains("ready-2") {
+        assert!(t0.elapsed() < Duration::from_secs(60), "the shell never answered");
+        std::thread::sleep(Duration::from_millis(300));
+    }
+    rt.block_on(shell_once(&socket, command))
+}
+
+/// Runs `command` once; the marker only appears in the output (tmux replays old screens).
+async fn shell_once(socket: &Path, command: &str) -> String {
+    use agentvm::adapters::pty::{Frame, PtyConnection};
+    static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let marker = format!("__END_{n}__");
+    let Ok(mut pty) = PtyConnection::open(socket, "shell", 200, 50).await else { return String::new() };
+    if pty.send(&Frame::Input(format!("clear; {command}; echo __END\"_\"{n}__\n").into_bytes())).await.is_err() {
+        return String::new();
+    }
+    let mut out = String::new();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < deadline && !out.contains(&marker) {
+        if let Ok(Ok(Some(bytes))) = tokio::time::timeout(Duration::from_secs(1), pty.recv()).await {
+            out.push_str(&String::from_utf8_lossy(&bytes));
         }
-        out
-    })
+    }
+    out
 }
 
 fn run_task(server: &Server, repo: &Path, prompt: &str) -> (String, Value) {

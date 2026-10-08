@@ -29,10 +29,16 @@ final class Runner: NSObject, VZVirtualMachineDelegate {
     private var bridge: VsockBridge?
     private let startedAt = Date()
     private var signalSources: [DispatchSourceSignal] = []
+    private let balloon: URL?
+    private let memoryMB: UInt64
+    private var balloonMB: UInt64 = 0
+    private var balloonTimer: Timer?
 
-    init(configuration: VZVirtualMachineConfiguration, ptySocket: URL?) {
+    init(configuration: VZVirtualMachineConfiguration, ptySocket: URL?, balloon: URL?, memoryMB: UInt64) {
         vm = VZVirtualMachine(configuration: configuration)
         self.ptySocket = ptySocket
+        self.balloon = balloon
+        self.memoryMB = memoryMB
         super.init()
         vm.delegate = self
     }
@@ -43,6 +49,7 @@ final class Runner: NSObject, VZVirtualMachineDelegate {
             switch result {
             case .success:
                 startBridge()
+                followBalloon()
                 Events.emit("started")
             case .failure(let e): Events.fail("start failed: \(e.localizedDescription)")
             }
@@ -54,6 +61,21 @@ final class Runner: NSObject, VZVirtualMachineDelegate {
         let bridge = VsockBridge(path: path.path, port: VsockBridge.ptyPort, device: device)
         do { try bridge.start() } catch { Events.fail("terminal socket: \(error)") }
         self.bridge = bridge
+    }
+
+    /// Once a second: the memory the server lets this VM keep (idle VMs give the rest back).
+    private func followBalloon() {
+        guard let file = balloon, let device = vm.memoryBalloonDevices.first as? VZVirtioTraditionalMemoryBalloonDevice else { return }
+        balloonTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self,
+                  let text = try? String(contentsOf: file, encoding: .utf8),
+                  let mb = UInt64(text.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
+            let target = min(max(mb, 512), self.memoryMB)
+            if target != self.balloonMB {
+                self.balloonMB = target
+                device.targetVirtualMachineMemorySize = target << 20
+            }
+        }
     }
 
     func guestDidStop(_ vm: VZVirtualMachine) {

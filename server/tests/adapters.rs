@@ -601,3 +601,18 @@ fn an_s3_secret_cannot_inject_curl_options() {
     let _ = s3.put_bytes("agentvm/x", b"x");
     assert!(!stolen.exists(), "the secret added a curl option");
 }
+
+/// After a restart the whole stream of a long task is read again: splitting it must be linear.
+#[tokio::test]
+async fn tail_reads_a_large_stream_quickly() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("stream.jsonl");
+    let line = format!("{{\"type\":\"assistant\",\"text\":\"{}\"}}\n", "x".repeat(200));
+    std::fs::write(&path, line.repeat(100_000)).unwrap(); // ~21 MB
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+    stop_tx.send(true).unwrap();
+    let t0 = std::time::Instant::now();
+    let n = tail_lines(path, stop_rx).count().await;
+    assert_eq!(n, 100_000);
+    assert!(t0.elapsed() < Duration::from_secs(2), "took {:?}", t0.elapsed());
+}

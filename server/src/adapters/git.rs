@@ -29,6 +29,13 @@ impl Git {
         Ok(CommitSha::parse(&out)?)
     }
 
+    /// Every ref and HEAD: equal fingerprints mean `bundle_all` would produce the same bundle.
+    pub fn refs_fingerprint(&self) -> Result<String, GitError> {
+        let refs = self.run(&["for-each-ref", "--format=%(objectname) %(refname)"])?;
+        let head = self.run(&["rev-parse", "HEAD"]).unwrap_or_default();
+        Ok(format!("{head}{refs}"))
+    }
+
     pub fn bundle_all(&self, dest: &Path) -> Result<(), GitError> {
         self.run(&["bundle", "create", "--quiet", path_str(dest), "--all"]).map(drop)
     }

@@ -32,6 +32,8 @@ pub struct VmConfig {
     pub seed_iso: Option<PathBuf>,
     /// Unix socket on the Mac forwarded to the vsock port of the PTY server in the guest.
     pub pty_socket: Option<PathBuf>,
+    /// File holding the memory (MB) the VM may keep; the helper follows it with the balloon.
+    pub balloon: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

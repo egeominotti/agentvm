@@ -102,10 +102,15 @@ async fn dashboard() -> Html<&'static str> {
 }
 
 async fn status(State(ctx): Ctx) -> Json<Status> {
-    let token = ctx.keychain.read_token();
+    // `security` is a process: never on the async workers (every open tab polls this).
+    let keychain = ctx.clone();
+    let token =
+        tokio::task::spawn_blocking(move || keychain.keychain.read_token().map(drop).map_err(|e| e.to_string()))
+            .await
+            .unwrap_or_else(|e| Err(e.to_string()));
     Json(Status {
         golden: ctx.config.golden().is_file(),
-        token_hint: token.as_ref().err().map(ToString::to_string),
+        token_hint: token.as_ref().err().cloned(),
         token: token.is_ok(),
         concurrency: ctx.scheduler.concurrency(),
         running: ctx.store.running_count(),

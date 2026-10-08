@@ -35,6 +35,9 @@ const KILL_GRACE: Duration = Duration::from_secs(15);
 /// Claude Code releases as served to the dashboard.
 pub type ClaudeReleases = Releases;
 
+/// A VM using more CPU than this (in %) counts as busy and keeps all its memory.
+const BUSY_CPU_PCT: f64 = 10.0;
+
 /// Time the guest gets after its own time limit to save the work and power off.
 const TIMEOUT_GRACE_S: u64 = 180;
 
@@ -187,13 +190,17 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
     let record = ctx.store.get(id).ok_or("task disappeared")?;
     let settings = ctx.settings.get();
     let branch = id.branch();
-    let git = Git::new(record.repo.clone());
 
     let ws = JobWorkspace::create(&ctx.config.jobs(), id).map_err(|e| format!("job directory: {e}"))?;
     let t = std::time::Instant::now();
     if record.restore_from.is_none() {
-        git.bundle_all(&ws.repo_bundle()).map_err(|e| e.to_string())?;
-        ctx.store.push_boot(id, format!("host: repository packed in {} ms", t.elapsed().as_millis()));
+        // Off the async workers: packing a large repository takes seconds.
+        let (home, repo, dest) = (ctx.config.home.clone(), record.repo.as_path().to_path_buf(), ws.repo_bundle());
+        let cached = tokio::task::spawn_blocking(move || super::bundles::prepare(&home, &repo, &dest))
+            .await
+            .map_err(|e| e.to_string())??;
+        let how = if cached { "shared" } else { "packed" };
+        ctx.store.push_boot(id, format!("host: repository {how} in {} ms", t.elapsed().as_millis()));
     }
     ws.write_spec(&TaskSpec {
         id: id.to_string(),
@@ -252,6 +259,9 @@ async fn supervise(
     let on_started = || {
         let _ = ctx.store.apply(id, TaskEvent::VmStarted);
     };
+    // Idle terminals give memory back to the Mac (balloon); any work gets it all back at once.
+    let idle_since = std::sync::Mutex::new(std::time::Instant::now());
+    let memory_target = std::sync::atomic::AtomicU64::new(record.memory_mb);
     let on_tick = || {
         if !ctx.store.get(id).is_some_and(|r| r.ready) {
             let lines = ws.job_log();
@@ -259,8 +269,28 @@ async fn supervise(
             let ready = lines.iter().any(|l| l.ends_with(marker));
             ctx.store.set_guest_boot(id, lines, ready);
         }
-        ctx.store.set_activity(id, ws.activity());
+        let activity = ws.activity();
+        let working = activity.as_deref() == Some("working");
+        ctx.store.set_activity(id, activity);
         if let Some(m) = ws.read_metrics() {
+            if record.interactive {
+                let busy = working || m.cpu_pct > BUSY_CPU_PCT;
+                let mut since = idle_since.lock().unwrap();
+                if busy {
+                    *since = std::time::Instant::now();
+                }
+                let target = crate::domain::memory::memory_target(
+                    record.memory_mb,
+                    m.mem_used_mb,
+                    busy,
+                    since.elapsed().as_secs(),
+                );
+                if target != memory_target.load(std::sync::atomic::Ordering::Relaxed)
+                    && ws.set_memory_target(target).is_ok()
+                {
+                    memory_target.store(target, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
             if record.interactive {
                 let socket = JobWorkspace::pty_socket_of(&ctx.config.jobs(), id);
                 let vm = super::proxy::vm_name(record);
@@ -311,13 +341,16 @@ fn collect(
     let mut branch = id.branch();
     let final_ = match (outcome.fetch, outcome.final_) {
         // Imported from a copy only the Mac controls, not from the file the guest could swap.
-        (true, f) => match guestfs::copy_out(&ws.out_bundle(), &ws.dir().join("final.bundle"))
-            .map_err(|e| e.to_string())
-            .and_then(|_| {
-                Git::new(record.repo.clone())
-                    .import_bundle(&ws.dir().join("final.bundle"), &branch)
-                    .map_err(|e| e.to_string())
-            }) {
+        // git runs for seconds on big repos: tell the runtime this worker is blocked.
+        (true, f) => match tokio::task::block_in_place(|| {
+            guestfs::copy_out(&ws.out_bundle(), &ws.dir().join("final.bundle")).map_err(|e| e.to_string()).and_then(
+                |_| {
+                    Git::new(record.repo.clone())
+                        .import_bundle(&ws.dir().join("final.bundle"), &branch)
+                        .map_err(|e| e.to_string())
+                },
+            )
+        }) {
             Ok(landed) => {
                 branch = landed;
                 f
@@ -332,29 +365,34 @@ fn collect(
 /// After a restart: reload every task, re-attach to VMs that kept running, finish the others.
 /// Returns the job ids whose VM is (still) owned by a task, so orphan cleanup leaves them alone.
 pub fn recover(ctx: &Arc<AppCtx>) -> std::collections::HashSet<String> {
-    let mut live = std::collections::HashSet::new();
-    for record in Store::load(&ctx.config.jobs()) {
+    let (records, unreadable) = Store::load_all(&ctx.config.jobs());
+    // A record this version cannot read may still own a running VM: never treat it as an orphan.
+    let mut live: std::collections::HashSet<String> = unreadable.into_iter().collect();
+    let mut queued = Vec::new();
+    for record in records {
         let (id, state) = (record.id.clone(), record.state.clone());
         ctx.store.insert(record);
         match state {
             s if s.is_terminal() => {}
-            TaskState::Queued => {
-                tokio::spawn(run(ctx.clone(), id));
-            }
+            TaskState::Queued => queued.push(id),
             TaskState::Preparing => {
                 let _ = ctx.store.apply(&id, TaskEvent::Failure("interrupted while preparing: launch it again".into()));
             }
             _ => {
                 live.insert(id.to_string());
-                tokio::spawn(resume(ctx.clone(), id));
+                // The VM is already running: it takes a slot now (if any is left), before the queue.
+                let permit = ctx.scheduler.try_acquire();
+                tokio::spawn(resume(ctx.clone(), id, permit));
             }
         }
+    }
+    for id in queued {
+        tokio::spawn(run(ctx.clone(), id));
     }
     live
 }
 
-async fn resume(ctx: Arc<AppCtx>, id: TaskId) {
-    let _permit = ctx.scheduler.acquire().await;
+async fn resume(ctx: Arc<AppCtx>, id: TaskId, _permit: Option<tokio::sync::OwnedSemaphorePermit>) {
     let Some(record) = ctx.store.get(&id) else { return };
     let ws = JobWorkspace::existing(&ctx.config.jobs(), &id);
     let vm = ws.read_pid().and_then(|pid| VmProcess::attach(pid, &ws.events()));
@@ -462,6 +500,7 @@ fn vm_config(record: &TaskRecord, ws: &JobWorkspace) -> VmConfig {
         memory_mb: record.memory_mb,
         seed_iso: None,
         pty_socket: record.interactive.then(|| ws.pty_socket()),
+        balloon: Some(ws.balloon()),
     }
 }
 
