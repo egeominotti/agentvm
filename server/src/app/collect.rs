@@ -50,8 +50,14 @@ pub(super) fn collect(
     });
     let (final_, branch) = match (outcome.fetch, outcome.final_) {
         (true, f) => match import_branch(ws, record, &id.branch()) {
-            Ok(landed) => (f, landed),
-            Err(e) => (Final::Failed(format!("fetch_failed: {e}")), id.branch()),
+            Ok(landed) => {
+                tracing::info!(task = %id, branch = %landed, "work imported into the repository");
+                (f, landed)
+            }
+            Err(e) => {
+                tracing::error!(task = %id, error = %e, "the work could not be imported");
+                (Final::Failed(format!("fetch_failed: {e}")), id.branch())
+            }
         },
         (false, f) => (f, id.branch()),
     };
@@ -67,7 +73,10 @@ pub(super) fn collect(
 /// Returns the failure reason, saying where the disk went.
 fn keep_disk(ctx: &AppCtx, record: &TaskRecord, ws: &JobWorkspace, reason: String) -> String {
     match tokio::task::block_in_place(|| snapshots::keep_disk(ctx, record, ws)) {
-        Some(name) => format!("{reason}. Its disk is kept in Snapshots as \"{name}\""),
+        Some(name) => {
+            tracing::warn!(task = %record.id, snapshot = %name, "the disk of a failed VM is kept as a snapshot");
+            format!("{reason}. Its disk is kept in Snapshots as \"{name}\"")
+        }
         None => reason,
     }
 }

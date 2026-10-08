@@ -71,7 +71,8 @@ impl AppCtx {
     pub fn ensure_disk_space(&self) -> Result<(), crate::domain::disk::DiskFull> {
         let _ = std::fs::create_dir_all(&self.config.home);
         match crate::adapters::host::free_mb(&self.config.home) {
-            Some(free_mb) => crate::domain::disk::check_free(free_mb, self.config.min_free_mb),
+            Some(free_mb) => crate::domain::disk::check_free(free_mb, self.config.min_free_mb)
+                .inspect_err(|e| tracing::warn!(free_mb, min_free_mb = e.min_free_mb, "disk too full: refused")),
             None => Ok(()),
         }
     }

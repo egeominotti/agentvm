@@ -64,13 +64,16 @@ impl GuestChannel {
                     && answer_to(&bytes, &request_id).is_some()
                 {
                     let _ = std::fs::remove_file(&path);
+                    tracing::info!(task = %id, request, reply = name, ms = t0.elapsed().as_millis() as u64, "vm answered");
                     return Ok(Answer::Reply { name, bytes });
                 }
             }
             if gone() {
+                tracing::info!(task = %id, request, ms = t0.elapsed().as_millis() as u64, "vm went away before answering");
                 return Ok(Answer::Gone);
             }
             if t0.elapsed() > timeout {
+                tracing::warn!(task = %id, request, secs = timeout.as_secs(), "vm did not answer in time");
                 return Err(AskError::Timeout);
             }
             tokio::time::sleep(Duration::from_millis(100)).await;

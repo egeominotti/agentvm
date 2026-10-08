@@ -30,6 +30,7 @@ pub fn recover(ctx: &Arc<AppCtx>) -> HashSet<String> {
             TaskState::Queued => {
                 // Launched again below, before the orphan clean-up: its folder is not an orphan.
                 live.insert(id.to_string());
+                tracing::info!(task = %id, "queued before the restart: launching again");
                 queued.push(id);
             }
             TaskState::Preparing => {
@@ -39,6 +40,7 @@ pub fn recover(ctx: &Arc<AppCtx>) -> HashSet<String> {
                 live.insert(id.to_string());
                 // The VM is already running: it takes a slot now (if any is left), before the queue.
                 let slot = ctx.scheduler.try_acquire(memory_mb);
+                tracing::info!(task = %id, "found after the restart: supervising it again");
                 tokio::spawn(resume(ctx.clone(), id, slot));
             }
         }

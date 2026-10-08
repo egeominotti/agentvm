@@ -36,7 +36,16 @@ pub(super) async fn supervise(
     let mut ticker = Ticker::new(ctx, id, record, &ws);
     let mut backstop = Backstop::new(ctx, record, &ws);
     let deadline_of = || backstop.as_mut().map(Backstop::deadline);
+    let started = std::time::Instant::now();
     let end = wait_for_vm(ctx, id, &mut vm, deadline_of, on_started, || ticker.tick()).await;
+    tracing::info!(
+        task = %id,
+        exit = ?end.exit,
+        secs = started.elapsed().as_secs(),
+        stop_requested = end.stop_requested,
+        timed_out = end.timed_out,
+        "vm stopped"
+    );
     ctx.store.set_activity(id, None);
     ctx.forwards.stop_all(id);
     ctx.store.set_ports(id, Vec::new());

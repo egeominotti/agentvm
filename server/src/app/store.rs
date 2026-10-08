@@ -129,6 +129,13 @@ impl Store {
             Err(e) => (Err(e.into()), false),
             Ok(next) if next == record.state => (Ok(next), false),
             Ok(next) => {
+                let from = record.state.kind();
+                match &next {
+                    TaskState::Failed { reason } => {
+                        tracing::warn!(task = %id, from, to = next.kind(), reason = %reason, "state changed")
+                    }
+                    _ => tracing::info!(task = %id, from, to = next.kind(), "state changed"),
+                }
                 if next.is_terminal() {
                     record.finished_at = Some(SystemTime::now());
                 }

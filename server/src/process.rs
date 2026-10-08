@@ -35,6 +35,7 @@ pub fn wait_output(mut child: Child, limit: Duration, name: &str) -> io::Result<
             let _ = child.kill();
             let _ = child.wait();
             let secs = limit.as_secs_f32();
+            tracing::warn!(command = name, secs, "an external command did not finish in time: killed");
             return Err(io::Error::new(io::ErrorKind::TimedOut, format!("{name} did not finish in {secs:.0} s")));
         }
         std::thread::sleep(Duration::from_millis(20));

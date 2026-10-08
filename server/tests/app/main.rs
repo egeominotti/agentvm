@@ -10,6 +10,7 @@ mod events;
 mod golden;
 mod guest_requests;
 mod helpers;
+mod logging;
 mod persistence;
 mod recovery;
 mod scheduler;

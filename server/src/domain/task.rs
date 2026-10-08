@@ -19,6 +19,21 @@ pub enum TaskState {
 }
 
 impl TaskState {
+    /// The state's name, without its details: `queued`, `running`, `failed`…
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Preparing => "preparing",
+            Self::Booting => "booting",
+            Self::Running => "running",
+            Self::Collecting => "collecting",
+            Self::Done { .. } => "done",
+            Self::NoChanges => "no_changes",
+            Self::Failed { .. } => "failed",
+            Self::Stopped => "stopped",
+        }
+    }
+
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Done { .. } | Self::NoChanges | Self::Failed { .. } | Self::Stopped)
     }

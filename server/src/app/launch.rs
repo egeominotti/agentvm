@@ -23,6 +23,7 @@ pub(super) async fn run(ctx: Arc<AppCtx>, id: TaskId) {
     let budget_mb = ctx.settings.limits().max_memory_mb();
     if ctx.scheduler.reserved_mb() + memory_mb > budget_mb {
         ctx.store.push_boot(&id, "host: waiting for memory: other VMs are using it".into());
+        tracing::info!(task = %id, memory_mb, reserved_mb = ctx.scheduler.reserved_mb(), budget_mb, "waiting for memory");
     }
     let _slot = tokio::select! {
         slot = ctx.scheduler.acquire(memory_mb, budget_mb) => slot,
@@ -53,6 +54,7 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
     let vm = VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &vm_config(&record, &ws), &ws.events())
         .map_err(|e| e.to_string())?;
     let _ = ws.write_pid(vm.pid());
+    tracing::info!(task = %id, pid = vm.pid(), cpus = record.cpus, memory_mb = record.memory_mb, "vm started");
     supervise(ctx, id, &record, ws, vm, token).await
 }
 
