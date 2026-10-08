@@ -1,0 +1,62 @@
+//! Storia + pubblicazione degli eventi di un task, per più client contemporanei.
+
+use std::sync::Mutex;
+
+use futures::{Stream, StreamExt};
+use serde::Serialize;
+use tokio::sync::broadcast;
+use tokio_stream::wrappers::BroadcastStream;
+
+use crate::domain::agent_event::AgentEvent;
+use crate::domain::task::TaskState;
+
+const LIVE_CAPACITY: usize = 4096;
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
+pub enum StreamItem {
+    State(TaskState),
+    Agent(AgentEvent),
+}
+
+pub type Seq = u64;
+pub type Snapshot = (Vec<(Seq, StreamItem)>, broadcast::Receiver<(Seq, StreamItem)>);
+
+pub struct EventLog {
+    history: Mutex<Vec<(Seq, StreamItem)>>,
+    live: broadcast::Sender<(Seq, StreamItem)>,
+}
+
+impl Default for EventLog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl EventLog {
+    pub fn new() -> Self {
+        EventLog { history: Mutex::new(Vec::new()), live: broadcast::channel(LIVE_CAPACITY).0 }
+    }
+
+    pub fn push(&self, item: StreamItem) {
+        let mut history = self.history.lock().unwrap();
+        let seq = history.len() as Seq + 1;
+        history.push((seq, item.clone()));
+        // Inviato sotto lock: un sottoscrittore vede ogni evento o nella storia o dal vivo, mai entrambi.
+        let _ = self.live.send((seq, item));
+    }
+
+    pub fn subscribe(&self) -> Snapshot {
+        let history = self.history.lock().unwrap();
+        (history.clone(), self.live.subscribe())
+    }
+
+    /// Storia completa seguita dagli eventi dal vivo.
+    pub fn stream(&self) -> impl Stream<Item = (Seq, StreamItem)> + Send + 'static {
+        let (history, rx) = self.subscribe();
+        let last = history.last().map_or(0, |(s, _)| *s);
+        futures::stream::iter(history).chain(
+            BroadcastStream::new(rx).filter_map(move |r| async move { r.ok().filter(|(s, _)| *s > last) }),
+        )
+    }
+}

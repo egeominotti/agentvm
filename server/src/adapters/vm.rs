@@ -105,12 +105,12 @@ impl VmProcess {
     }
 
     /// Consuma gli eventi rimanenti e attende la fine del processo.
-    pub async fn wait(mut self) -> VmExit {
+    pub async fn wait(&mut self) -> VmExit {
         while self.next_event().await.is_some() {}
         match self.child.wait().await.map(|s| s.code()) {
             Ok(Some(0)) => VmExit::Clean,
             Ok(Some(130)) => VmExit::Signaled,
-            Ok(code) => VmExit::Error(self.last_error.unwrap_or_else(|| match code {
+            Ok(code) => VmExit::Error(self.last_error.clone().unwrap_or_else(|| match code {
                 Some(c) => format!("agentvm-vm è uscito con codice {c}"),
                 None => "agentvm-vm terminato da un segnale".into(),
             })),

@@ -16,13 +16,13 @@ pub fn tail_lines(path: PathBuf, mut stop: watch::Receiver<bool>) -> impl Stream
         let mut pending = Vec::new();
         loop {
             let stopping = *stop.borrow();
-            if let Ok(mut f) = tokio::fs::File::open(&path).await {
-                if f.seek(std::io::SeekFrom::Start(offset)).await.is_ok() {
-                    let mut buf = Vec::new();
-                    if let Ok(n) = f.read_to_end(&mut buf).await {
-                        offset += n as u64;
-                        pending.extend_from_slice(&buf);
-                    }
+            if let Ok(mut f) = tokio::fs::File::open(&path).await
+                && f.seek(std::io::SeekFrom::Start(offset)).await.is_ok()
+            {
+                let mut buf = Vec::new();
+                if let Ok(n) = f.read_to_end(&mut buf).await {
+                    offset += n as u64;
+                    pending.extend_from_slice(&buf);
                 }
             }
             while let Some(pos) = pending.iter().position(|&b| b == b'\n') {

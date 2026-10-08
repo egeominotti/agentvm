@@ -120,11 +120,11 @@ impl Drop for JobWorkspace {
 pub fn cleanup_orphans(jobs_root: &Path) {
     let Ok(entries) = fs::read_dir(jobs_root) else { return };
     for dir in entries.flatten().map(|e| e.path()) {
-        if let Some(pid) = fs::read_to_string(dir.join("vm.pid")).ok().and_then(|s| s.trim().parse::<i32>().ok()) {
-            if is_vm_helper(pid) {
-                // SAFETY: segnale a un PID verificato come nostro helper.
-                unsafe { kill(pid, 15) };
-            }
+        if let Some(pid) = fs::read_to_string(dir.join("vm.pid")).ok().and_then(|s| s.trim().parse::<i32>().ok())
+            && is_vm_helper(pid)
+        {
+            // SAFETY: segnale a un PID verificato come nostro helper.
+            unsafe { kill(pid, 15) };
         }
         for f in ["vm.pid", "disk.raw", "efivars", "share/.token", "share/repo.bundle"] {
             let _ = fs::remove_file(dir.join(f));
