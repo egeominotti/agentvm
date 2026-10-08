@@ -74,18 +74,28 @@ async fn loopback_only(State(ctx): Ctx, req: Request, next: Next) -> Response {
     // `<port>.<vm>.localhost`: a service inside a VM, never the dashboard or its API.
     let host = req.headers().get(header::HOST).and_then(|v| v.to_str().ok());
     if let Some((guest_port, vm)) = host.and_then(|h| crate::domain::hostname::parse_proxy_host(h, port)) {
-        return super::proxy::forward(ctx.clone(), guest_port, vm, req).await;
+        return match super::auth::proxy_access(&ctx, &req) {
+            super::auth::Access::Granted => super::proxy::forward(ctx.clone(), guest_port, vm, req).await,
+            other => other.into_response(),
+        };
     }
     if is_loopback_request(port, &req) {
-        let mut res = next.run(req).await;
-        // No other site may show the dashboard in a frame and trick clicks on it.
-        let h = res.headers_mut();
-        h.insert(header::X_FRAME_OPTIONS, header::HeaderValue::from_static("DENY"));
-        h.insert(header::CONTENT_SECURITY_POLICY, header::HeaderValue::from_static("frame-ancestors 'none'"));
-        res
+        let access = super::auth::dashboard_access(&ctx, &req);
+        if !matches!(access, super::auth::Access::Granted) {
+            return with_frame_guard(access.into_response());
+        }
+        with_frame_guard(next.run(req).await)
     } else {
         ApiError(StatusCode::FORBIDDEN, "request not allowed: use http://127.0.0.1".into()).into_response()
     }
+}
+
+/// No other site may show the dashboard in a frame and trick clicks on it.
+fn with_frame_guard(mut res: Response) -> Response {
+    let h = res.headers_mut();
+    h.insert(header::X_FRAME_OPTIONS, header::HeaderValue::from_static("DENY"));
+    h.insert(header::CONTENT_SECURITY_POLICY, header::HeaderValue::from_static("frame-ancestors 'none'"));
+    res
 }
 
 fn is_loopback_request(port: u16, req: &Request) -> bool {

@@ -13,6 +13,8 @@ pub struct Config {
     pub vm_helper: PathBuf,
     /// Folder with `build-golden.sh`, for rebuilds started from the dashboard.
     pub scripts_dir: PathBuf,
+    /// Fixed API token (`AGENTVM_API_TOKEN`); otherwise one is generated in `<home>/api-token`.
+    pub api_token: Option<String>,
 }
 
 impl Config {
@@ -38,6 +40,7 @@ impl Config {
                 .ok()
                 .and_then(|p| p.parent().and_then(|bin| bin.parent()).map(|root| root.join("scripts")))
                 .unwrap_or_else(|| PathBuf::from("scripts")),
+            api_token: std::env::var("AGENTVM_API_TOKEN").ok().filter(|t| !t.is_empty()),
         }
     }
 

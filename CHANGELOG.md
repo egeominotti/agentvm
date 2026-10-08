@@ -22,3 +22,14 @@ All notable changes to this project are documented here. The format follows
 - Settings page: resources, model, time limits, Claude token, VM image rebuilds, S3, storage,
   desktop notifications.
 - Local JSON API, CI on GitHub Actions, tests against real VMs, Claude and S3 (no mocks).
+- A browser for Claude in every VM (headless Chromium + Playwright MCP).
+- Every VM serves the same ports under its own name (`<port>.<vm>.localhost`), with a direct
+  TCP forward for non-HTTP services.
+- Automatic snapshots on a schedule and before closing; per-machine interval.
+- Copy/paste in terminals and drag-and-drop of files into VMs.
+- Private API token (cookie for the browser, Bearer for scripts).
+- Idle VMs give memory back to the Mac; cheap guest disk flushes; shared repository bundles.
+
+### Security
+- The host never follows symlinks or blocks on FIFOs planted by a guest in its shared folder.
+- Saves never power a VM off on a git error; imports never overwrite commits made by hand.

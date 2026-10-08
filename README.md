@@ -62,10 +62,12 @@ repository as a git branch, and the VM is thrown away.
 | **Claude Code, unrestricted** | Interactive Claude Code as root (`--dangerously-skip-permissions`, `bypassPermissions` by default, no prompts), plus a root shell on the same checkout. Pick the model and the exact Claude Code version per launch. |
 | **Per-VM resources** | Choose vCPUs and memory for every launch; the dashboard shows how many more VMs fit in free memory. |
 | **Work returns as git branches** | *Save to repo* turns the current state into commits on `agent/<id>` in your repository, without stopping anything. Ready-to-copy `git switch` / `git merge` commands and a per-file diff. |
-| **Snapshots** | Freeze a whole running VM (files, packages, Claude's conversation) in under a second and restore it into a new machine where Claude continues the conversation. |
+| **Snapshots, manual and automatic** | Freeze a whole running VM (files, packages, Claude's conversation) in under a second and restore it into a new machine where Claude continues the conversation. Automatic snapshots on a schedule (per machine if you like), the newest few kept, plus one just before closing. |
 | **Backups anywhere** | Download snapshots as `.tar.zst`, import them on another Mac, or back them up to any S3-compatible storage: AWS S3, Cloudflare R2, Hetzner Object Storage, Backblaze B2, MinIO, RustFS. Multipart uploads up to ~640 GB. |
 | **Survives restarts** | VMs keep running when the server restarts; the new server re-attaches to them and picks up where it left off. |
-| **Ports on localhost** | Anything listening inside a VM (dev servers, databases) is forwarded to `127.0.0.1` on the Mac, even when it binds to the VM's localhost. |
+| **Every VM has its own ports** | Web services get their own name, `http://3000.<vm>.localhost:7777`, so every VM can serve port 3000 at once (HTTP and WebSocket, hot reload included). Databases and other TCP services get a direct port on `127.0.0.1`. Works even when they bind to the VM's localhost. |
+| **A browser for Claude** | Headless Chromium and the Playwright MCP server are preinstalled and registered: Claude can open the app it is building and check it. |
+| **Terminals like a real one** | Drag to copy to the Mac's clipboard, ⌘V to paste, drop files on a terminal to copy them into the VM (their paths are typed for you). |
 | **Per-repo setup** | `.agentvm/setup.sh` runs before Claude starts: install dependencies, seed a database, start a dev server. |
 | **Telemetry** | Per VM: CPU, memory, disk, network, busiest processes, uptime. Per agent: cost at API prices, tokens in/out, lines changed, context used. |
 | **Settings, applied live** | VMs at once, vCPUs, memory, default model, time limits, Claude token (Keychain), VM image rebuilds with a chosen Claude Code version, S3, storage cleanup. |
@@ -85,11 +87,12 @@ scripts/build-golden.sh    # once, ~2 min: Debian 13 image with Claude Code prei
 claude setup-token         # once: a long-lived token for your Claude subscription
 security add-generic-password -U -s agentvm -a agentvm -w    # paste it (or use Settings later)
 
-bin/agentvm-server         # → http://127.0.0.1:7777
+bin/agentvm-server         # prints the private link to the dashboard
 ```
 
-Open **http://127.0.0.1:7777**, press **New VM** (⌘K), pick a repository and, optionally, a first
-task. A few seconds later Claude Code is running in its own machine.
+Open the link it prints (or run `bin/agentvm-server --url`) once in your browser, press
+**New VM** (⌘K), pick a repository and, optionally, a first task. A few seconds later Claude Code
+is running in its own machine.
 
 ## Using it
 
@@ -97,7 +100,8 @@ task. A few seconds later Claude Code is running in its own machine.
    *One VM per line* launches a machine for every line of the task.
 2. **Machines** shows every VM live. Click one to work in it: Claude Code full size, a **Root
    shell** on the same checkout (`/root/work`), and the telemetry panel. Reloading the page keeps
-   the sessions alive. To select text in a terminal, hold **⌥ Option** while dragging.
+   the sessions alive. Drag to copy, ⌘V to paste, drop files to copy them into the VM.
+   Web services running in the VM appear in the bar under the toolbar.
 3. **Save to repo** imports the work as commits on `agent/<id>`. **Snapshot** saves the whole VM.
    **Close VM** saves and destroys it; **Force stop** powers it off without saving.
 4. **Snapshots** lists saved machines: restore, download, back up to S3, or bring a backup back
@@ -138,8 +142,10 @@ flowchart LR
 ```
 
 - **Golden image.** `build-golden.sh` turns the official `debian-13-genericcloud-arm64` image
-  into a ready machine: Claude Code, git, build tools, Python, tmux, a job runner, no cloud-init
-  at runtime. Each VM starts from an instant copy-on-write clone (APFS `clonefile`).
+  into a ready machine: Claude Code, git, build tools, Python, Node, Chromium, tmux, no cloud-init
+  at runtime. Each VM starts from an instant copy-on-write clone (APFS `clonefile`). The guest
+  scripts come from the server at every launch, so upgrading agentvm needs no new image.
+- **arm64 only.** Native on Apple Silicon end to end: no Rosetta on the Mac or in the VMs.
 - **One process per VM.** The Swift helper owns a single VM, runs in its own session and writes
   its events to a file, so a crashing VM never takes the server down and the server can restart
   without stopping VMs.
@@ -160,6 +166,9 @@ Measured on an M5 Max (18 cores, 64 GB):
 | Keystroke echo through the VM terminal | 0.12 ms median, 1.4 ms p95 |
 | Snapshot of a running VM | < 1 s |
 | Snapshot archive (3 GB used on disk) | ~600 MB, ~1 s to compress |
+| 2000 synchronous 4 KB writes inside a VM | 0.6 s (guest flushes are a plain fsync) |
+| Launching more VMs on the same repository | the repository is packed once and shared |
+| Idle VM (60 s without work) | gives back all but its used memory + 1 GB to the Mac |
 | Small task end to end ("create a file and commit") | 12–20 s, mostly Claude thinking |
 
 By default agentvm runs as many VMs at once as fit in RAM, keeping 8 GB for macOS (14 VMs of
@@ -169,12 +178,18 @@ By default agentvm runs as many VMs at once as fit in RAM, keeping 8 GB for macO
 
 - **The VM is the sandbox.** Inside it Claude is root with every permission (`IS_SANDBOX=1`).
   A VM sees only its own job folder; your real checkout never enters it.
-- **The Claude token** is read from the macOS Keychain, handed to Claude on a file descriptor
-  (never in the environment of the commands it runs), redacted from logs, and destroyed with the VM.
+- **The Claude token** is read from the macOS Keychain and handed to Claude on a file
+  descriptor (never in the environment of the commands it runs) and redacted from logs. Be aware
+  that in a terminal VM the token stays in the VM while it runs and everything there is root:
+  any code in the VM (including `.agentvm/setup.sh` and what the agent downloads) could read it.
+  Only restore snapshots you trust, for the same reason.
 - **The S3 secret key** lives in the Keychain and reaches `curl` on stdin, never on a command line.
-- **Local only.** The dashboard binds to `127.0.0.1` and rejects requests whose `Host` or
-  `Origin` is not local, so other websites cannot reach the API or the terminals (DNS rebinding,
-  cross-site WebSockets).
+- **Local and private.** The dashboard binds to `127.0.0.1`. Every API call, terminal and VM
+  web service needs a token stored `0600` in `~/AgentVMs` (other users of the Mac cannot use it),
+  given to your browser once as an HttpOnly cookie. Requests whose `Host` or `Origin` is not
+  local are rejected (DNS rebinding, cross-site WebSockets) and the dashboard cannot be framed.
+- **The guest cannot reach the Mac through the shared folder.** The host never follows a symlink
+  or blocks on a FIFO the guest planted there, and caps what it reads.
 - One server instance per data folder, enforced with a lock. VMs reach the internet through NAT.
 
 ## Configuration
@@ -190,10 +205,12 @@ variables provide the defaults:
 | `AGENTVM_CPUS` / `AGENTVM_MEMORY_MB` | `4` / `4096` | Default resources per VM |
 | `AGENTVM_TIMEOUT_S` | `1800` | Time limit for automatic (non-interactive) tasks |
 | `AGENTVM_S3_SECRET` | — | S3 secret key, overriding the Keychain (CI) |
+| `AGENTVM_API_TOKEN` | generated | Fixed API token (tests, scripts) instead of `~/AgentVMs/api-token` |
 
 ## HTTP API
 
-Everything the dashboard does is available over a local JSON API.
+Everything the dashboard does is available over a local JSON API, with
+`Authorization: Bearer $(cat ~/AgentVMs/api-token)`.
 
 | Method | Path | |
 |---|---|---|
@@ -202,6 +219,8 @@ Everything the dashboard does is available over a local JSON API.
 | `GET` | `/api/tasks/{id}/pty?session=claude\|shell` | WebSocket to a terminal in the VM |
 | `POST` | `/api/tasks/{id}/save` · `/close` · `/stop` · `/snapshot` | Act on a running VM |
 | `GET` | `/api/tasks/{id}/diff` · `/events` | Branch diff · server-sent events |
+| `POST` | `/api/tasks/{id}/upload` | Copy a file into the VM (`x-file-name` header, raw body) |
+| `PUT` | `/api/tasks/{id}/auto-snapshots` | This machine's snapshot interval: `{every_min}` or `null` |
 | `GET` | `/api/snapshots` | Local snapshots |
 | `POST` | `/api/snapshots/{id}/restore` · `/backup` | New VM from a snapshot · upload to S3 |
 | `GET`/`POST` | `/api/snapshots/{id}/export` · `/api/snapshots/import` | Download / upload an archive |
@@ -218,9 +237,9 @@ which is handy for scripting.
 server/      Rust: domain (pure) → app (use cases) → http, plus adapters for git, VMs, PTY,
              Keychain, S3, archives; the dashboard (vanilla JS, xterm.js) is embedded
 vm-helper/   Swift: one VM per process, vsock bridge for terminals
-guest/       Installed in the golden image: job runner, PTY server, Claude wrapper,
-             status line, telemetry collector
-scripts/     build.sh, build-golden.sh, dev-s3.sh
+guest/       Golden image setup, plus the job runner, PTY server, Claude wrapper, status line
+             and telemetry collector that the server ships to every VM at launch
+scripts/     build.sh, build-golden.sh, dev-s3.sh, test.sh (all test binaries in parallel)
 dev/s3/      docker-compose.yml with RustFS for local S3
 docs/        Design specs and implementation plan
 ```
@@ -230,9 +249,9 @@ VMs, real Claude and a real S3 server. An architecture test enforces the layerin
 touches adapters, the domain does no I/O, adapters do not know each other.
 
 ```bash
-cargo test --manifest-path server/Cargo.toml                 # domain, adapters, app, HTTP, architecture
+scripts/test.sh               # domain, adapters, app, HTTP, architecture (all in parallel)
 scripts/dev-s3.sh up
-cargo test --manifest-path server/Cargo.toml -- --ignored    # real VMs, Claude and S3
+scripts/test.sh --ignored     # real VMs, Claude and S3
 ```
 
 CI runs formatting, clippy, the tests that need no VM, the Swift build and script checks on every

@@ -23,8 +23,8 @@ AGENTVM_HOME=/tmp/agentvm-dev AGENTVM_PORT=7788 bin/agentvm-server
 ## Tests
 
 ```bash
-cargo test --manifest-path server/Cargo.toml                 # fast: domain, adapters, app, HTTP, architecture
-cargo test --manifest-path server/Cargo.toml -- --ignored    # real VMs, Claude and S3
+scripts/test.sh               # fast: domain, adapters, app, HTTP, architecture (in parallel)
+scripts/test.sh --ignored     # real VMs, Claude and S3
 ```
 
 **No mocks, stubs or fakes.** Tests use real git repositories, files, a temporary Keychain, real

@@ -26,6 +26,8 @@ async function api(path, opts = {}) {
   if (opts.body && typeof opts.body !== "string") init.body = JSON.stringify(opts.body);
   try {
     const res = await fetch(path, init);
+    // The cookie is gone or the token changed: the page at / explains how to get back in.
+    if (res.status === 401) location.replace("/");
     const text = await res.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
@@ -718,7 +720,7 @@ class Cell {
 function portLink(p) {
   const name = p.name || "service";
   if (p.kind === "http") {
-    const host = p.url.replace(/^http:\/\//, "");
+    const host = p.url.replace(/^http:\/\//, "").replace(/\/?\?.*$/, "");
     return h("a", { class: "port-link", href: p.url, target: "_blank", rel: "noopener",
       title: `${name} on port ${p.port} of this VM.\nEvery VM has its own name, so they can all use port ${p.port}.\nOpens ${p.url}` },
       h("span", { class: "live" }), h("b", {}, name), h("span", { class: "addr" }, host),

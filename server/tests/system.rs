@@ -43,6 +43,7 @@ fn spawn_server_env(home: &Path, env: &[(&str, &str)]) -> (Child, String) {
     let child = Command::new(bin)
         .env("AGENTVM_PORT", port.to_string())
         .env("AGENTVM_HOME", home)
+        .env("AGENTVM_API_TOKEN", TEST_TOKEN)
         .envs(env.iter().copied())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -76,8 +77,18 @@ fn assert_no_token(server: &Server, repo: &Path, branch: Option<&str>) {
     }
 }
 
+const TEST_TOKEN: &str = "system-test-token";
+
+/// curl with the test server's API token.
+fn authed_curl() -> Command {
+    let mut c = Command::new("curl");
+    c.args(["-H", &format!("Authorization: Bearer {TEST_TOKEN}")]);
+    c
+}
+
 fn curl(args: &[&str]) -> Option<String> {
-    let out = Command::new("curl").args(args).output().unwrap();
+    let out =
+        Command::new("curl").args(["-H", &format!("Authorization: Bearer {TEST_TOKEN}")]).args(args).output().unwrap();
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
@@ -145,7 +156,7 @@ fn task_produces_a_branch_in_the_local_repo() {
     assert!(curl(&["-sf", &format!("{}/api/tasks/{id}/diff", server.base)]).unwrap().contains("hello.txt"));
 
     // curl exits with an error when --max-time expires, but the output received is valid.
-    let out = Command::new("curl")
+    let out = authed_curl()
         .args(["-sN", "--max-time", "2", &format!("{}/api/tasks/{id}/events", server.base)])
         .output()
         .unwrap();
@@ -396,7 +407,7 @@ fn a_launch_can_pin_another_claude_code_version() {
     let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
     let task = wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(300));
     assert_ne!(task["status"]["state"], "failed", "{task}");
-    let out = Command::new("curl")
+    let out = authed_curl()
         .args(["-sN", "--max-time", "2", &format!("{}/api/tasks/{id}/events", server.base)])
         .output()
         .unwrap();
@@ -438,10 +449,8 @@ fn a_snapshot_restores_files_into_a_new_vm() {
 }
 
 fn delete(url: &str) -> u16 {
-    let out = Command::new("curl")
-        .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "DELETE", url])
-        .output()
-        .unwrap();
+    let out =
+        authed_curl().args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "DELETE", url]).output().unwrap();
     String::from_utf8_lossy(&out.stdout).parse().unwrap_or(0)
 }
 
@@ -457,7 +466,7 @@ fn snapshots_go_to_s3_and_come_back() {
     std::fs::write(home.path().join("settings.json"), settings.to_string()).unwrap();
     let server = start_server_with(home, &[("AGENTVM_S3_SECRET", "agentvm-local-secret")]);
     let base = server.base.clone();
-    let out = Command::new("curl")
+    let out = authed_curl()
         .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", &format!("{base}/api/settings/s3/test")])
         .output()
         .unwrap();
@@ -491,14 +500,14 @@ fn snapshots_go_to_s3_and_come_back() {
 
     let tmp = tempfile::tempdir().unwrap();
     let file = tmp.path().join("snap.tar.zst");
-    let out = Command::new("curl")
+    let out = authed_curl()
         .args(["-sf", "-o"])
         .arg(&file)
         .arg(format!("{base}/api/snapshots/{sid}/export"))
         .output()
         .unwrap();
     assert!(out.status.success() && std::fs::metadata(&file).unwrap().len() > 1 << 20, "export");
-    let imported = Command::new("curl")
+    let imported = authed_curl()
         .args(["-s", "-X", "POST", "--data-binary"])
         .arg(format!("@{}", file.display()))
         .arg(format!("{base}/api/snapshots/import"))
@@ -667,8 +676,11 @@ fn vms_serve_the_same_ports_under_their_own_names() {
         let ports = wait_for_ports(&server, id);
         let http = ports.iter().find(|p| p["port"] == 3000).unwrap();
         assert_eq!(http["kind"], "http", "{http}");
-        let url = http["url"].as_str().unwrap_or_else(|| panic!("no url: {http}"));
-        let host = url.trim_start_matches("http://").trim_end_matches('/');
+        let link = http["url"].as_str().unwrap_or_else(|| panic!("no url: {http}"));
+        // The link opens the service with the proxy token, which is not the API token.
+        assert!(link.contains("agentvm_token=") && !link.contains(TEST_TOKEN), "{link}");
+        let url = link.split('?').next().unwrap().trim_end_matches('/');
+        let host = url.trim_start_matches("http://");
         let (name, port) = host.rsplit_once(':').unwrap();
         assert!(name.starts_with("3000.") && name.ends_with(".localhost"), "{url}");
         let body = curl(&[
@@ -721,7 +733,7 @@ fn claude_has_a_browser_out_of_the_box() {
          (nothing else) into title.txt. Commit title.txt.",
     );
     assert_eq!(task["status"]["state"], "done", "{task}");
-    let out = Command::new("curl")
+    let out = authed_curl()
         .args(["-sN", "--max-time", "2", &format!("{}/api/tasks/{id}/events", server.base)])
         .output()
         .unwrap();
