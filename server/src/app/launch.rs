@@ -1,0 +1,115 @@
+//! Launching a queued task: wait for a VM slot, prepare the job folder, boot the VM.
+
+use std::sync::Arc;
+use std::time::Instant;
+
+use super::bundles;
+use super::context::AppCtx;
+use super::record::TaskRecord;
+use super::supervise::supervise;
+use crate::adapters::jobdir::JobWorkspace;
+use crate::adapters::vm::{VmConfig, VmProcess};
+use crate::domain::ids::TaskId;
+use crate::domain::outcome::Final;
+use crate::domain::spec::TaskSpec;
+use crate::domain::task::{TaskEvent, TaskState};
+use crate::secret::Secret;
+
+/// Runs a queued task once a VM slot is free; a stop while it waits ends it there.
+pub(super) async fn run(ctx: Arc<AppCtx>, id: TaskId) {
+    let Some(mut stop) = ctx.store.stop_signal(&id) else { return };
+    let _permit = tokio::select! {
+        permit = ctx.scheduler.acquire() => permit,
+        _ = stop.wait_for(|s| *s) => return, // stopped while queued
+    };
+    if ctx.store.get(&id).is_none_or(|r| r.state != TaskState::Queued) {
+        return;
+    }
+    if let Err(reason) = execute(&ctx, &id).await {
+        let _ = ctx.store.apply(&id, TaskEvent::Failure(reason));
+    }
+}
+
+/// Errors before the VM shuts down → `Err(reason)`; the normal outcome goes through `Finished`.
+async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
+    let apply = |e| ctx.store.apply(id, e).map(drop).map_err(|e| e.to_string());
+    apply(TaskEvent::SlotAcquired)?;
+    let record = ctx.store.get(id).ok_or("task disappeared")?;
+    let (ws, token) = prepare(ctx, id, &record).await?;
+    apply(TaskEvent::Prepared)?;
+
+    let stop_requested_early = ctx.store.stop_signal(id).is_some_and(|s| *s.borrow());
+    if stop_requested_early {
+        apply(TaskEvent::VmExited)?;
+        return apply(TaskEvent::Finished(Final::Stopped, id.branch()));
+    }
+
+    let vm = VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &vm_config(&record, &ws), &ws.events())
+        .map_err(|e| e.to_string())?;
+    let _ = ws.write_pid(vm.pid());
+    supervise(ctx, id, &record, ws, vm, token).await
+}
+
+/// Fills the job folder with everything the VM boots from: repository, task spec, token, disk.
+async fn prepare(ctx: &AppCtx, id: &TaskId, record: &TaskRecord) -> Result<(JobWorkspace, Secret), String> {
+    let timeout_s = ctx.settings.get().timeout_s;
+    let ws = JobWorkspace::create(&ctx.config.jobs(), id).map_err(|e| format!("job directory: {e}"))?;
+    let t = Instant::now();
+    if record.restore_from.is_none() {
+        let how = if pack_repo(ctx, record, &ws).await? { "shared" } else { "packed" };
+        ctx.store.push_boot(id, format!("host: repository {how} in {} ms", t.elapsed().as_millis()));
+    }
+    ws.write_spec(&task_spec(id, record, timeout_s)).map_err(|e| format!("task.json: {e}"))?;
+    let token = ctx.keychain.read_token().map_err(|e| e.to_string())?;
+    ws.write_token(&token).map_err(|e| format!("token: {e}"))?;
+    install_disk(ctx, record, &ws)?;
+    ctx.store.push_boot(id, format!("host: disk ready in {} ms", t.elapsed().as_millis()));
+    Ok((ws, token))
+}
+
+/// Puts the repository bundle in the job folder; `true` when a shared bundle was reused.
+async fn pack_repo(ctx: &AppCtx, record: &TaskRecord, ws: &JobWorkspace) -> Result<bool, String> {
+    // Off the async workers: packing a large repository takes seconds.
+    let (home, repo, dest) = (ctx.config.home.clone(), record.repo.as_path().to_path_buf(), ws.repo_bundle());
+    tokio::task::spawn_blocking(move || bundles::prepare(&home, &repo, &dest)).await.map_err(|e| e.to_string())?
+}
+
+/// The VM's disk: a clone of the snapshot it is restored from, or of the golden image.
+fn install_disk(ctx: &AppCtx, record: &TaskRecord, ws: &JobWorkspace) -> Result<(), String> {
+    match &record.restore_from {
+        Some(snap) => {
+            ws.clone_disk(&ctx.snapshots.disk(snap)).map_err(|e| format!("snapshot disk clone: {e}"))?;
+            ws.copy_efivars(&ctx.snapshots.efivars(snap)).map_err(|e| format!("snapshot EFI variables: {e}"))
+        }
+        None => ws.clone_disk(&ctx.config.golden()).map_err(|e| format!("disk clone: {e}")),
+    }
+}
+
+/// What the guest job reads from `task.json`.
+fn task_spec(id: &TaskId, record: &TaskRecord, timeout_s: u64) -> TaskSpec {
+    TaskSpec {
+        id: id.to_string(),
+        prompt: record.prompt.as_ref().map(|p| p.as_str().to_owned()).unwrap_or_default(),
+        branch: id.branch(),
+        base_sha: record.base_sha.as_str().to_owned(),
+        timeout_s,
+        interactive: record.interactive,
+        model: record.model.cli_name().map(str::to_owned),
+        claude_version: record.claude_version.clone(),
+        restore: record.restore_from.is_some(),
+    }
+}
+
+fn vm_config(record: &TaskRecord, ws: &JobWorkspace) -> VmConfig {
+    VmConfig {
+        disk: ws.disk(),
+        efivars: ws.efivars(),
+        share: ws.share(),
+        console: ws.console(),
+        cpus: record.cpus,
+        memory_mb: record.memory_mb,
+        seed_iso: None,
+        pty_socket: record.interactive.then(|| ws.pty_socket()),
+        balloon: Some(ws.balloon()),
+    }
+}

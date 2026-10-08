@@ -1,6 +1,6 @@
 //! Reads that involve external systems, exposed to HTTP without it knowing about the adapters.
 
-use super::supervisor::AppCtx;
+use super::context::AppCtx;
 use crate::adapters::git::Git;
 use crate::domain::ids::TaskId;
 use crate::domain::task::TaskState;

@@ -1,14 +1,22 @@
 //! Use cases and task orchestration.
 pub mod backups;
 pub mod bundles;
+mod collect;
+pub mod context;
 pub mod events;
 pub mod golden;
+mod launch;
 pub mod ports;
 pub mod proxy;
 pub mod queries;
+pub mod random;
+pub mod record;
+pub mod recover;
 pub mod scheduler;
 pub mod session;
 pub mod settings;
 pub mod snapshots;
 pub mod store;
+pub mod submission;
+mod supervise;
 pub mod supervisor;

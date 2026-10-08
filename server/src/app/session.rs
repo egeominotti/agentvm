@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use super::supervisor::AppCtx;
+use super::context::AppCtx;
 use crate::adapters::git::Git;
 use crate::adapters::jobdir::{JobWorkspace, write_request};
 use crate::adapters::pty::PtyConnection;
@@ -30,7 +30,7 @@ pub enum SessionError {
     SaveFailed(String),
 }
 
-fn running_terminal(ctx: &AppCtx, id: &TaskId) -> Result<crate::app::store::TaskRecord, SessionError> {
+fn running_terminal(ctx: &AppCtx, id: &TaskId) -> Result<crate::app::record::TaskRecord, SessionError> {
     let record = ctx.store.get(id).ok_or(SessionError::NotFound)?;
     if !record.interactive {
         return Err(SessionError::NotInteractive);

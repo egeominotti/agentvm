@@ -2,8 +2,8 @@
 
 use tokio::net::UnixStream;
 
-use super::store::TaskRecord;
-use super::supervisor::AppCtx;
+use super::context::AppCtx;
+use super::record::TaskRecord;
 use crate::adapters::forward;
 use crate::adapters::jobdir::JobWorkspace;
 use crate::domain::hostname;
