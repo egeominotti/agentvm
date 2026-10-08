@@ -115,3 +115,34 @@ fn an_s3_secret_cannot_inject_curl_options() {
     let _ = s3.put_bytes("agentvm/x", b"x");
     assert!(!stolen.exists(), "the secret added a curl option");
 }
+
+/// A server that promises 1000 bytes, sends 10 and hangs up: the download fails, and no
+/// truncated file is left in place of the backup (it used to be accepted on the 200 status).
+#[test]
+fn a_truncated_download_is_an_error_not_a_file() {
+    use agentvm::domain::s3::S3Config;
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().take(4).flatten() {
+            let mut stream = stream;
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n0123456789");
+        }
+    });
+    let cfg = S3Config {
+        endpoint: format!("http://127.0.0.1:{port}"),
+        region: "us-east-1".into(),
+        bucket: "agentvm-backups".into(),
+        prefix: "t".into(),
+        access_key: "k".into(),
+        path_style: true,
+    };
+    let s3 = agentvm::adapters::s3::S3Client::new(cfg, Secret::new("s".into())).with_stall_timeout(2);
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("backup.tar.zst");
+    assert!(s3.get_file("t/backup.tar.zst", &file).is_err());
+    assert!(!file.exists(), "a truncated backup was put in place");
+}
