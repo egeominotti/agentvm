@@ -9,6 +9,7 @@ mod outcome;
 mod s3;
 mod save;
 mod settings;
+mod settings_recovery;
 mod snapshot;
 mod spec;
 mod task;

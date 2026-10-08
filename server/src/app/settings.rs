@@ -3,8 +3,9 @@
 use std::path::PathBuf;
 use std::sync::RwLock;
 
-use crate::adapters::settings_file;
+use crate::adapters::settings_file::{self, Saved};
 use crate::domain::settings::{HostLimits, Settings, SettingsError};
+use crate::domain::settings_recovery::recover;
 
 pub struct SettingsService {
     path: PathBuf,
@@ -21,10 +22,20 @@ pub enum UpdateError {
 }
 
 impl SettingsService {
-    /// Saved settings win over `defaults`, unless they no longer fit this Mac.
+    /// Saved settings win over `defaults`, field by field: one that no longer fits this Mac (or
+    /// this version) falls back to its default alone. The file is copied aside first, if so.
     pub fn load(path: PathBuf, defaults: Settings, limits: HostLimits) -> Self {
-        let saved = settings_file::load(&path).filter(|s| s.validate(&limits).is_ok());
-        SettingsService { path, limits, current: RwLock::new(saved.unwrap_or(defaults)) }
+        let (current, reset) = match settings_file::load(&path) {
+            Saved::Missing => (defaults, vec![]),
+            Saved::Corrupt => (defaults, vec!["(the whole file)".to_owned()]),
+            Saved::Json(saved) => recover(&saved, &defaults, &limits),
+        };
+        if !reset.is_empty() {
+            let copy = settings_file::keep_copy(&path)
+                .map_or_else(|e| format!("not copied: {e}"), |p| p.display().to_string());
+            eprintln!("settings: reset to default {} (the file as it was: {copy})", reset.join(", "));
+        }
+        SettingsService { path, limits, current: RwLock::new(current) }
     }
 
     pub fn get(&self) -> Settings {

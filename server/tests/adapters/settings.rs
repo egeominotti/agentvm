@@ -6,7 +6,7 @@ fn settings_file_roundtrips_and_is_absent_at_first() {
     use agentvm::domain::settings::{Model, Settings};
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("settings.json");
-    assert!(settings_file::load(&path).is_none());
+    assert_eq!(settings_file::load(&path), settings_file::Saved::Missing);
     let s = Settings {
         max_vms: 6,
         cpus: 2,
@@ -19,7 +19,20 @@ fn settings_file_roundtrips_and_is_absent_at_first() {
         auto_snapshots: Default::default(),
     };
     settings_file::save(&path, &s).unwrap();
-    assert_eq!(settings_file::load(&path).unwrap(), s);
+    assert_eq!(settings_file::load(&path), settings_file::Saved::Json(serde_json::to_value(&s).unwrap()));
+}
+
+/// A settings file that is not JSON is reported as such and can be kept aside as it was.
+#[test]
+fn a_corrupt_settings_file_is_kept_aside() {
+    use agentvm::adapters::settings_file;
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("settings.json");
+    std::fs::write(&path, "{\"max_vms\": 4,").unwrap();
+    assert_eq!(settings_file::load(&path), settings_file::Saved::Corrupt);
+    let copy = settings_file::keep_copy(&path).unwrap();
+    assert_eq!(copy, tmp.path().join("settings.json.bad"));
+    assert_eq!(std::fs::read_to_string(copy).unwrap(), "{\"max_vms\": 4,");
 }
 
 #[test]

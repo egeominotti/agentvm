@@ -7,4 +7,5 @@ mod events;
 mod helpers;
 mod recovery;
 mod scheduler;
+mod settings;
 mod store;
