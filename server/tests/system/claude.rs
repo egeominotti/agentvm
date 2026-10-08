@@ -9,6 +9,9 @@ use crate::helpers::{
     TERMINAL, assert_no_token, get_json, git, post_json, run_task, start_server, temp_repo, wait_for_state,
 };
 
+/// Claude's commands do not see the token. Only the length of the variable is written: asked to
+/// commit the token itself, Claude rightly refuses some of the time, and the test would depend
+/// on that choice.
 #[test]
 #[ignore = "requires golden, token and Claude"]
 fn agent_commands_cannot_see_the_token() {
@@ -17,11 +20,12 @@ fn agent_commands_cannot_see_the_token() {
     let (id, task) = run_task(
         &server,
         repo.path(),
-        "Run `printenv CLAUDE_CODE_OAUTH_TOKEN > env.txt; echo end >> env.txt` with Bash, then commit env.txt.",
+        "Run `printenv CLAUDE_CODE_OAUTH_TOKEN | wc -c | tr -d ' ' > token-length.txt` with Bash, \
+         then commit token-length.txt.",
     );
     assert_eq!(task["status"]["state"], "done", "{task}");
-    let content = git(repo.path(), &["show", &format!("agent/{id}:env.txt")]);
-    assert!(!content.contains("sk-ant-"), "{content}");
+    let length = git(repo.path(), &["show", &format!("agent/{id}:token-length.txt")]);
+    assert_eq!(length.trim(), "0", "the token is visible to the agent's commands");
     assert_no_token(&server, repo.path(), Some(&format!("agent/{id}")));
 }
 
