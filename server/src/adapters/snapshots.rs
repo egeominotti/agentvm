@@ -77,6 +77,30 @@ impl SnapshotStore {
         all
     }
 
+    /// Folder of a snapshot, e.g. to archive it.
+    pub fn folder(&self, id: &SnapshotId) -> PathBuf {
+        self.dir(id)
+    }
+
+    /// Scratch folder inside the store (same volume, so a rename is instant).
+    pub fn scratch(&self, name: &str) -> io::Result<PathBuf> {
+        let dir = self.root.join(format!(".{name}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir)?;
+        Ok(dir)
+    }
+
+    /// Turns an extracted folder (with `disk.raw`, `efivars`, `meta.json`) into the snapshot `meta.id`.
+    pub fn adopt(&self, dir: &Path, meta: SnapshotMeta) -> io::Result<SnapshotMeta> {
+        if !dir.join("disk.raw").is_file() || !dir.join("efivars").is_file() {
+            return Err(io::Error::other("the archive is not an agentvm snapshot"));
+        }
+        fs::write(dir.join("meta.json"), serde_json::to_vec_pretty(&meta)?)?;
+        fs::create_dir_all(&self.root)?;
+        fs::rename(dir, self.dir(&meta.id))?;
+        Ok(self.get(&meta.id).unwrap_or(meta))
+    }
+
     pub fn delete(&self, id: &SnapshotId) -> io::Result<()> {
         fs::remove_dir_all(self.dir(id))
     }

@@ -83,6 +83,21 @@ lives in `~/AgentVMs`.
 When a machine is closed you get the branch, the diff per file, and ready-to-copy
 `git switch` / `git merge` commands. To select text in a terminal, hold **⌥ Option** while dragging.
 
+### Snapshots and backups
+
+**Snapshot** on a running machine saves an instant copy of the whole VM (files, installed
+packages, Claude's conversation) without stopping it. The **Snapshots** page restores any of them
+into a new VM, where Claude continues the conversation. Snapshots can be:
+
+- **downloaded** as a `.tar.zst` archive and **imported** on any Mac running agentvm;
+- **backed up to S3**: AWS S3, Cloudflare R2, Hetzner Object Storage, Backblaze B2, MinIO,
+  RustFS or any other S3-compatible storage (Settings → Backups to S3; the secret key stays in the
+  Keychain). Backups in the bucket can be brought back to this or another Mac.
+
+To try everything locally, `scripts/dev-s3.sh up` starts RustFS in Docker
+(`dev/s3/docker-compose.yml`, S3 on `http://127.0.0.1:9100`, console on `:9101`) and prints the
+values to paste in Settings.
+
 ### Settings
 
 Everything is editable from the **Settings** page and saved in `~/AgentVMs/settings.json`:
@@ -123,6 +138,13 @@ from the Settings page take precedence.
 | `PUT` | `/api/settings/token` | Save the Claude token in the Keychain |
 | `GET` | `/api/golden`, `POST` `/api/golden/rebuild` | VM image status and rebuild |
 | `GET` | `/api/storage`, `POST` `/api/storage/cleanup` | Disk usage and cleanup of closed jobs |
+| `POST` | `/api/tasks/{id}/snapshot` | Snapshot a running terminal |
+| `GET` | `/api/snapshots` | Local snapshots |
+| `POST` | `/api/snapshots/{id}/restore` | New VM from a snapshot |
+| `GET` | `/api/snapshots/{id}/export`, `POST` `/api/snapshots/import` | Download / upload a snapshot archive |
+| `POST` | `/api/snapshots/{id}/backup` | Upload a snapshot to S3 |
+| `GET` | `/api/backups`, `POST` `/api/backups/{id}/restore`, `DELETE` `/api/backups/{id}` | Snapshots in S3 |
+| `GET`/`PUT` | `/api/settings/s3`, `POST` `/api/settings/s3/test` | S3 settings and connection test |
 
 Non-interactive tasks (`interactive: false`) run `claude -p` to completion and return a branch,
 which is handy for scripting.
@@ -156,7 +178,7 @@ real VMs and real Claude.
 
 ```bash
 cargo test --manifest-path server/Cargo.toml                 # domain, adapters, app, HTTP, architecture rules
-cargo test --manifest-path server/Cargo.toml -- --ignored    # real VMs and full system (needs golden + token)
+cargo test --manifest-path server/Cargo.toml -- --ignored    # real VMs, Claude and S3 (golden + token + scripts/dev-s3.sh up)
 ```
 
 An architecture test enforces the dependency rules: `http` never uses adapters directly, the

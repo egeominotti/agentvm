@@ -1,0 +1,28 @@
+# Local S3-compatible storage for trying agentvm backups end to end.
+# RustFS (Apache-2.0) speaks the S3 API like AWS S3, Cloudflare R2 or Hetzner Object Storage.
+#
+#   docker compose -f dev/s3/docker-compose.yml up -d     # or: scripts/dev-s3.sh up
+#
+# S3 endpoint: http://127.0.0.1:9100   console: http://127.0.0.1:9101
+# Credentials below are for local testing only.
+name: agentvm-s3
+
+services:
+  rustfs:
+    image: rustfs/rustfs:1.0.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9100:9000"
+      - "127.0.0.1:9101:9001"
+    environment:
+      RUSTFS_ACCESS_KEY: agentvm
+      RUSTFS_SECRET_KEY: agentvm-local-secret
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+    volumes:
+      - data:/data
+    command: ["/data"]
+
+volumes:
+  data:

@@ -120,6 +120,9 @@ pub struct Settings {
     /// Claude Code release installed when the VM image is (re)built.
     #[serde(default)]
     pub claude_version: ClaudeVersion,
+    /// Where snapshots are backed up; the secret key is in the Keychain.
+    #[serde(default)]
+    pub s3: Option<super::s3::S3Config>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -153,6 +156,8 @@ pub enum SettingsError {
     ClaudeVersion(String),
     #[error("invalid model {0:?}: use an alias like opus or sonnet[1m], or a model ID like claude-opus-5-5")]
     Model(String),
+    #[error("S3: {0}")]
+    S3(String),
 }
 
 impl Settings {
@@ -168,6 +173,9 @@ impl Settings {
         }
         if !(60..=86_400).contains(&self.timeout_s) {
             return Err(SettingsError::Timeout);
+        }
+        if let Some(s3) = &self.s3 {
+            s3.validate().map_err(|e| SettingsError::S3(e.to_string()))?;
         }
         Ok(())
     }

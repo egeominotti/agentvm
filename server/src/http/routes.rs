@@ -51,6 +51,14 @@ pub fn router(ctx: Arc<AppCtx>) -> Router {
         .route("/api/snapshots", get(list_snapshots))
         .route("/api/snapshots/{sid}", axum::routing::delete(delete_snapshot))
         .route("/api/snapshots/{sid}/restore", post(restore_snapshot))
+        .route("/api/snapshots/{sid}/export", get(export_snapshot))
+        .route("/api/snapshots/{sid}/backup", post(backup_snapshot))
+        .route("/api/snapshots/import", post(import_snapshot).layer(axum::extract::DefaultBodyLimit::disable()))
+        .route("/api/backups", get(list_backups))
+        .route("/api/backups/{sid}", axum::routing::delete(delete_backup))
+        .route("/api/backups/{sid}/restore", post(restore_backup))
+        .route("/api/settings/s3", get(get_s3).put(put_s3))
+        .route("/api/settings/s3/test", post(test_s3))
         .route("/api/golden/rebuild", post(golden_rebuild))
         .route("/api/storage", get(storage))
         .route("/api/storage/cleanup", post(storage_cleanup))
@@ -368,5 +376,99 @@ async fn restore_snapshot(State(ctx): Ctx, Path(sid): Path<String>) -> Result<(S
 async fn delete_snapshot(State(ctx): Ctx, Path(sid): Path<String>) -> Result<StatusCode, ApiError> {
     let sid = snapshot_id(&sid)?;
     crate::app::snapshots::delete(&ctx, &sid).map_err(snapshot_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn backup_error(e: crate::app::backups::BackupError) -> ApiError {
+    use crate::app::backups::BackupError as E;
+    let code = match e {
+        E::NoSnapshot => StatusCode::NOT_FOUND,
+        E::NotConfigured | E::Invalid(_) => StatusCode::BAD_REQUEST,
+        E::S3(_) => StatusCode::BAD_GATEWAY,
+        E::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    ApiError(code, e.to_string())
+}
+
+/// Streams the archive; the temporary file is unlinked once open.
+async fn export_snapshot(State(ctx): Ctx, Path(sid): Path<String>) -> Result<Response, ApiError> {
+    let sid = snapshot_id(&sid)?;
+    let path = crate::app::backups::export(&ctx, &sid).await.map_err(backup_error)?;
+    let file = tokio::fs::File::open(&path).await.map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let len = file.metadata().await.map(|m| m.len()).unwrap_or(0);
+    let _ = std::fs::remove_file(&path);
+    let body = axum::body::Body::from_stream(tokio_util::io::ReaderStream::new(file));
+    Ok((
+        [
+            ("content-type", "application/zstd".to_owned()),
+            ("content-length", len.to_string()),
+            ("content-disposition", format!("attachment; filename=\"{sid}.tar.zst\"")),
+        ],
+        body,
+    )
+        .into_response())
+}
+
+async fn import_snapshot(State(ctx): Ctx, body: axum::body::Body) -> Result<Json<crate::domain::snapshot::SnapshotMeta>, ApiError> {
+    let internal = |e: std::io::Error| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
+    let dir = ctx.config.home.join("tmp");
+    std::fs::create_dir_all(&dir).map_err(internal)?;
+    let path = dir.join(format!("upload-{}.tar.zst", crate::app::supervisor::random_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>()));
+    {
+        use tokio::io::AsyncWriteExt;
+        let mut file = tokio::fs::File::create(&path).await.map_err(internal)?;
+        let mut stream = body.into_data_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?;
+            file.write_all(&chunk).await.map_err(internal)?;
+        }
+        file.flush().await.map_err(internal)?;
+    }
+    let result = crate::app::backups::import(&ctx, &path).await;
+    let _ = std::fs::remove_file(&path);
+    result.map(Json).map_err(backup_error)
+}
+
+async fn backup_snapshot(State(ctx): Ctx, Path(sid): Path<String>) -> Result<Json<crate::app::backups::RemoteBackup>, ApiError> {
+    let sid = snapshot_id(&sid)?;
+    crate::app::backups::backup(&ctx, &sid).await.map(Json).map_err(backup_error)
+}
+
+async fn list_backups(State(ctx): Ctx) -> Result<Json<Vec<crate::app::backups::RemoteBackup>>, ApiError> {
+    crate::app::backups::list(&ctx).await.map(Json).map_err(backup_error)
+}
+
+async fn restore_backup(State(ctx): Ctx, Path(sid): Path<String>) -> Result<Json<crate::domain::snapshot::SnapshotMeta>, ApiError> {
+    let sid = snapshot_id(&sid)?;
+    crate::app::backups::restore(&ctx, &sid).await.map(Json).map_err(backup_error)
+}
+
+async fn delete_backup(State(ctx): Ctx, Path(sid): Path<String>) -> Result<StatusCode, ApiError> {
+    let sid = snapshot_id(&sid)?;
+    crate::app::backups::delete(&ctx, &sid).await.map_err(backup_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(serde::Deserialize)]
+struct S3Update {
+    config: crate::domain::s3::S3Config,
+    #[serde(default)]
+    secret: Option<String>,
+}
+
+async fn get_s3(State(ctx): Ctx) -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "config": ctx.settings.get().s3,
+        "secret_saved": ctx.keychain.read_s3_secret().is_ok(),
+    }))
+}
+
+async fn put_s3(State(ctx): Ctx, Json(req): Json<S3Update>) -> Result<StatusCode, ApiError> {
+    crate::app::backups::configure_s3(&ctx, req.config, req.secret).await.map_err(backup_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn test_s3(State(ctx): Ctx) -> Result<StatusCode, ApiError> {
+    crate::app::backups::test_s3(&ctx).await.map_err(backup_error)?;
     Ok(StatusCode::NO_CONTENT)
 }

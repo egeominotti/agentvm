@@ -30,11 +30,16 @@ fn test_home() -> tempfile::TempDir {
 }
 
 fn spawn_server(home: &Path) -> (Child, String) {
+    spawn_server_env(home, &[])
+}
+
+fn spawn_server_env(home: &Path, env: &[(&str, &str)]) -> (Child, String) {
     let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
     let bin = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../bin/agentvm-server");
     let child = Command::new(bin)
         .env("AGENTVM_PORT", port.to_string())
         .env("AGENTVM_HOME", home)
+        .envs(env.iter().copied())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
@@ -43,8 +48,11 @@ fn spawn_server(home: &Path) -> (Child, String) {
 }
 
 fn start_server() -> Server {
-    let home = test_home();
-    let (child, base) = spawn_server(home.path());
+    start_server_with(test_home(), &[])
+}
+
+fn start_server_with(home: tempfile::TempDir, env: &[(&str, &str)]) -> Server {
+    let (child, base) = spawn_server_env(home.path(), env);
     let server = Server { child, base, home };
     let t0 = Instant::now();
     while curl(&["-sf", &format!("{}/api/status", server.base)]).is_none() {
@@ -354,4 +362,57 @@ fn a_snapshot_restores_files_into_a_new_vm() {
     let content = git(repo.path(), &["show", &format!("agent/{new_id}:snap.txt")]);
     assert!(content.contains("snapshot-ok"), "{content}");
     post_json(&format!("{}/api/tasks/{new_id}/stop", server.base), &json!({}));
+}
+
+fn delete(url: &str) -> u16 {
+    let out = Command::new("curl").args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "DELETE", url]).output().unwrap();
+    String::from_utf8_lossy(&out.stdout).parse().unwrap_or(0)
+}
+
+#[test]
+#[ignore = "needs golden, token and the dev S3 server (scripts/dev-s3.sh up)"]
+fn snapshots_go_to_s3_and_come_back() {
+    let home = test_home();
+    let prefix = format!("system-test-{}", std::process::id());
+    let settings = json!({"max_vms": 4, "cpus": 2, "memory_mb": 2048, "timeout_s": 1800, "model": "default",
+        "default_repo": null, "claude_version": "latest",
+        "s3": {"endpoint": "http://127.0.0.1:9100", "region": "us-east-1", "bucket": "agentvm-backups",
+               "prefix": prefix, "access_key": "agentvm", "path_style": true}});
+    std::fs::write(home.path().join("settings.json"), settings.to_string()).unwrap();
+    let server = start_server_with(home, &[("AGENTVM_S3_SECRET", "agentvm-local-secret")]);
+    let base = server.base.clone();
+    let out = Command::new("curl").args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", &format!("{base}/api/settings/s3/test")]).output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "204", "S3 connection test");
+
+    let repo = temp_repo();
+    let created = post_json(&format!("{base}/api/tasks"), &json!({"repo_path": repo.path(), "interactive": true}));
+    let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    wait_for_state(&server, &id, |s| s == "running", Duration::from_secs(60));
+    std::thread::sleep(Duration::from_secs(2));
+    let snap = post_json(&format!("{base}/api/tasks/{id}/snapshot"), &json!({"name": "to s3"}));
+    let sid = snap["id"].as_str().unwrap_or_else(|| panic!("{snap}")).to_owned();
+    post_json(&format!("{base}/api/tasks/{id}/stop"), &json!({}));
+
+    let backed = post_json(&format!("{base}/api/snapshots/{sid}/backup"), &json!({}));
+    assert!(backed["archive_mb"].as_u64().unwrap_or(0) > 0, "{backed}");
+    assert_eq!(delete(&format!("{base}/api/snapshots/{sid}")), 204);
+    let remote = get_json(&format!("{base}/api/backups"));
+    let entry = remote.as_array().unwrap().iter().find(|b| b["snapshot"]["id"] == sid.as_str()).unwrap_or_else(|| panic!("{remote}")).clone();
+    assert_eq!(entry["local"], false);
+
+    let restored = post_json(&format!("{base}/api/backups/{sid}/restore"), &json!({}));
+    assert_eq!(restored["id"], sid.as_str(), "{restored}");
+    assert!(get_json(&format!("{base}/api/snapshots")).as_array().unwrap().iter().any(|s| s["id"] == sid.as_str()));
+
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("snap.tar.zst");
+    let out = Command::new("curl").args(["-sf", "-o"]).arg(&file).arg(format!("{base}/api/snapshots/{sid}/export")).output().unwrap();
+    assert!(out.status.success() && std::fs::metadata(&file).unwrap().len() > 1 << 20, "export");
+    let imported = Command::new("curl").args(["-s", "-X", "POST", "--data-binary"]).arg(format!("@{}", file.display())).arg(format!("{base}/api/snapshots/import")).output().unwrap();
+    let imported: Value = serde_json::from_slice(&imported.stdout).unwrap();
+    assert_ne!(imported["id"], sid.as_str(), "{imported}");
+    assert_eq!(imported["name"], "to s3");
+
+    assert_eq!(delete(&format!("{base}/api/backups/{sid}")), 204);
+    assert!(!get_json(&format!("{base}/api/backups")).as_array().unwrap().iter().any(|b| b["snapshot"]["id"] == sid.as_str()));
 }

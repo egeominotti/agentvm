@@ -42,7 +42,7 @@ fn adapters_do_not_know_each_other_or_outer_layers() {
     for (file, text) in sources("adapters") {
         assert!(!text.contains("crate::app") && !text.contains("crate::http"), "{file}");
         let own = Path::new(&file).file_stem().unwrap().to_str().unwrap().to_owned();
-        for other in ["git", "host", "jobdir", "keychain", "lock", "pty", "releases", "settings_file", "snapshots", "tail", "vm"] {
+        for other in ["archive", "git", "host", "jobdir", "keychain", "lock", "pty", "releases", "s3", "settings_file", "snapshots", "tail", "vm"] {
             if other != own {
                 assert!(!text.contains(&format!("adapters::{other}")), "{file} uses adapters::{other}");
             }

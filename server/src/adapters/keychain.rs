@@ -6,6 +6,7 @@ use std::process::Command;
 use crate::secret::Secret;
 
 const SERVICE: &str = "agentvm";
+const S3_SERVICE: &str = "agentvm-s3";
 const ENV_FALLBACK: &str = "CLAUDE_CODE_OAUTH_TOKEN";
 
 #[derive(Debug, thiserror::Error)]
@@ -19,6 +20,10 @@ pub enum KeychainError {
     InvalidToken,
     #[error("could not save the token in the Keychain: {0}")]
     WriteFailed(String),
+    #[error("no S3 secret key saved yet")]
+    MissingS3Secret,
+    #[error("the S3 secret key contains unsupported characters")]
+    InvalidS3Secret,
 }
 
 pub struct Keychain {
@@ -56,7 +61,41 @@ impl Keychain {
         if !well_formed {
             return Err(KeychainError::InvalidToken);
         }
-        let mut line = format!("add-generic-password -U -s {SERVICE} -a {SERVICE} -w {t}");
+        self.write(SERVICE, t)
+    }
+
+    /// `AGENTVM_S3_SECRET` wins over the Keychain (handy for CI and tests).
+    pub fn read_s3_secret(&self) -> Result<Secret, KeychainError> {
+        if let Ok(s) = std::env::var("AGENTVM_S3_SECRET")
+            && !s.trim().is_empty()
+        {
+            return Ok(Secret::new(s.trim().to_owned()));
+        }
+        self.read(S3_SERVICE).ok_or(KeychainError::MissingS3Secret)
+    }
+
+    pub fn write_s3_secret(&self, secret: &Secret) -> Result<(), KeychainError> {
+        let s = secret.expose();
+        if s.is_empty() || !s.bytes().all(|c| c.is_ascii_graphic() && c != b'"' && c != b'\\') {
+            return Err(KeychainError::InvalidS3Secret);
+        }
+        self.write(S3_SERVICE, &format!("\"{s}\""))
+    }
+
+    fn read(&self, service: &str) -> Option<Secret> {
+        let mut cmd = Command::new("security");
+        cmd.args(["find-generic-password", "-s", service, "-w"]);
+        if let Some(kc) = &self.keychain {
+            cmd.arg(kc);
+        }
+        let out = cmd.output().ok()?;
+        let value = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+        (out.status.success() && !value.is_empty()).then(|| Secret::new(value))
+    }
+
+    /// `value` is already quoted when needed; it reaches `security` on stdin.
+    fn write(&self, service: &str, value: &str) -> Result<(), KeychainError> {
+        let mut line = format!("add-generic-password -U -s {service} -a {service} -w {value}");
         if let Some(kc) = &self.keychain {
             line.push_str(&format!(" \"{}\"", kc.display()));
         }

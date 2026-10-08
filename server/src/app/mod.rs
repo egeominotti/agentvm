@@ -1,4 +1,5 @@
 //! Use cases and task orchestration.
+pub mod backups;
 pub mod events;
 pub mod golden;
 pub mod queries;

@@ -675,6 +675,7 @@ class SettingsView {
       ["account", "Claude account", this.account()],
       ["notifications", "Notifications", this.notifications()],
       ["image", "VM image", this.image()],
+      ["backups", "Backups to S3", this.backups()],
       ["storage", "Storage", this.storage()],
     ];
     this.navLinks = sections.map(([id, label]) => h("a", { href: `#/settings`, "data-target": id, onclick: e => { e.preventDefault(); this.scrollTo(id); } }, label));
@@ -788,6 +789,63 @@ class SettingsView {
       h("div", { class: "row-actions" }, this.rebuildBtn, this.goldenMsg), this.goldenLog];
   }
 
+  backups() {
+    const presets = {
+      aws: { label: "AWS S3", endpoint: "https://s3.eu-central-1.amazonaws.com", region: "eu-central-1", path_style: false, hint: "Endpoint s3.<region>.amazonaws.com." },
+      r2: { label: "Cloudflare R2", endpoint: "https://<account-id>.r2.cloudflarestorage.com", region: "auto", path_style: true, hint: "Region is always auto. Use an R2 API token's access key and secret." },
+      hetzner: { label: "Hetzner", endpoint: "https://fsn1.your-objectstorage.com", region: "fsn1", path_style: false, hint: "Locations: fsn1, nbg1, hel1. Region matches the location." },
+      b2: { label: "Backblaze B2", endpoint: "https://s3.eu-central-003.backblazeb2.com", region: "eu-central-003", path_style: false, hint: "Use an application key; the region is in the endpoint." },
+      local: { label: "Local (RustFS / MinIO)", endpoint: "http://127.0.0.1:9100", region: "us-east-1", path_style: true, hint: "Start it with scripts/dev-s3.sh up. Access key agentvm, secret agentvm-local-secret." },
+    };
+    const f = {};
+    const input = (name, attrs = {}) => (f[name] = h("input", { name, spellcheck: "false", autocomplete: "off", ...attrs }));
+    this.s3Hint = h("p", { class: "hint" });
+    this.s3Msg = h("span", { class: "msg" });
+    this.s3Pill = h("span", { class: "pill" });
+    const presetSeg = h("div", { class: "seg wide presets", role: "radiogroup", "aria-label": "Provider" },
+      Object.entries(presets).map(([key, p]) => h("button", { type: "button", role: "radio", "data-value": key, onclick: () => applyPreset(key) }, p.label)));
+    const applyPreset = key => {
+      const p = presets[key];
+      for (const b of presetSeg.children) b.setAttribute("aria-checked", String(b.dataset.value === key));
+      f.endpoint.value = p.endpoint;
+      f.region.value = p.region;
+      f.path_style.checked = p.path_style;
+      this.s3Hint.textContent = p.hint;
+      if (key === "local") { f.bucket.value ||= "agentvm-backups"; f.access_key.value ||= "agentvm"; }
+    };
+    const form = h("form", { class: "s3-form", onsubmit: e => this.saveS3(e, f) },
+      h("div", { class: "set" }, h("label", {}, "Provider"), presetSeg, this.s3Hint),
+      h("div", { class: "grid3" },
+        h("div", { class: "set" }, h("label", {}, "Endpoint"), input("endpoint", { placeholder: "https://…" })),
+        h("div", { class: "set" }, h("label", {}, "Region"), input("region", { placeholder: "auto" })),
+        h("div", { class: "set" }, h("label", {}, "Bucket"), input("bucket", { placeholder: "agentvm-backups" })),
+        h("div", { class: "set" }, h("label", {}, "Folder in the bucket"), input("prefix", { placeholder: "agentvm", value: "agentvm" })),
+        h("div", { class: "set" }, h("label", {}, "Access key"), input("access_key")),
+        h("div", { class: "set" }, h("label", {}, "Secret key"), input("secret", { type: "password", placeholder: "kept in the Keychain" }))),
+      h("label", { class: "check" }, (f.path_style = h("input", { type: "checkbox", name: "path_style" })), "Path-style addresses (endpoint/bucket/key)"),
+      h("div", { class: "row-actions" }, h("button", { class: "btn primary", type: "submit" }, "Test & save"), this.s3Msg));
+    api("/api/settings/s3").then(r => {
+      const c = r.ok ? r.data.config : null;
+      this.s3Pill.className = `pill ${c ? "ok" : "err"}`;
+      this.s3Pill.textContent = c ? "Connected" : "Not set up";
+      if (c) { for (const k of ["endpoint", "region", "bucket", "prefix", "access_key"]) f[k].value = c[k]; f.path_style.checked = c.path_style; }
+      if (r.ok && r.data.secret_saved) f.secret.placeholder = "saved in the Keychain; leave empty to keep it";
+      if (!c) applyPreset("local");
+    });
+    return [h("div", { class: "status-line" }, this.s3Pill, h("span", { class: "lede" }, "Back up snapshots to any S3-compatible storage and restore them on this or another Mac.")), form];
+  }
+
+  async saveS3(e, f) {
+    e.preventDefault();
+    const config = { endpoint: f.endpoint.value.trim(), region: f.region.value.trim(), bucket: f.bucket.value.trim(), prefix: f.prefix.value.trim(), access_key: f.access_key.value.trim(), path_style: f.path_style.checked };
+    this.s3Msg.className = "msg";
+    this.s3Msg.textContent = "Testing the connection…";
+    const r = await api("/api/settings/s3", { method: "PUT", body: { config, secret: f.secret.value || null } });
+    this.s3Msg.className = `msg ${r.ok ? "ok" : "err"}`;
+    this.s3Msg.textContent = r.ok ? "Connected: the bucket accepts uploads. Saved." : r.data?.error || "Could not connect.";
+    if (r.ok) { f.secret.value = ""; f.secret.placeholder = "saved in the Keychain; leave empty to keep it"; this.s3Pill.className = "pill ok"; this.s3Pill.textContent = "Connected"; }
+  }
+
   storage() {
     this.storageFacts = h("div", { class: "facts" });
     this.cleanMsg = h("span", { class: "msg" });
@@ -892,14 +950,20 @@ class SnapshotsView {
   async refresh() {
     const r = await api("/api/snapshots");
     const list = r.ok ? r.data : [];
+    const fileInput = h("input", { type: "file", accept: ".zst,.tar,.gz", hidden: true, onchange: e => this.importFile(e.target.files[0]) });
+    this.importMsg = h("span", { class: "msg" });
     const head = h("header", { class: "settings-head" }, h("h1", {}, "Snapshots"),
-      h("span", { class: "save-state" }, "A snapshot is an instant copy of a whole VM: files, installed packages, Claude's conversation. Take one from a running machine."));
+      h("span", { class: "save-state" }, "Instant copies of whole VMs: files, installed packages, Claude's conversation."),
+      h("span", { class: "spacer" }), this.importMsg,
+      h("button", { class: "btn", type: "button", onclick: () => fileInput.click() }, "Import from file"), fileInput);
+    this.remote = h("section", { class: "remote" });
+    this.loadRemote();
     if (!list.length) {
       this.root.replaceChildren(h("div", { class: "snap-inner" }, head, h("div", { class: "card empty-card" },
-        h("b", {}, "No snapshots yet"), h("p", { class: "hint" }, "Open a running machine and press Snapshot. Restoring starts a new VM exactly from that point, with Claude continuing its conversation."))));
+        h("b", {}, "No snapshots yet"), h("p", { class: "hint" }, "Open a running machine and press Snapshot. Restoring starts a new VM exactly from that point, with Claude continuing its conversation.")), this.remote));
       return;
     }
-    this.root.replaceChildren(h("div", { class: "snap-inner" }, head, h("div", { class: "snap-list" }, list.map(sn => this.row(sn)))));
+    this.root.replaceChildren(h("div", { class: "snap-inner" }, head, h("div", { class: "snap-list" }, list.map(sn => this.row(sn))), this.remote));
   }
   row(sn) {
     const msg = h("span", { class: "msg" });
@@ -914,6 +978,15 @@ class SnapshotsView {
       const r = await api(`/api/snapshots/${sn.id}`, { method: "DELETE" });
       if (r.ok) this.refresh(); else { msg.className = "msg err"; msg.textContent = r.data?.error || "Delete failed"; }
     } }, "Delete");
+    const download = h("a", { class: "btn ghost", href: `/api/snapshots/${sn.id}/export`, download: `${sn.id}.tar.zst`, title: "Download a .tar.zst you can import elsewhere" }, "Download");
+    const backup = h("button", { class: "btn ghost", type: "button", onclick: async () => {
+      backup.disabled = true; msg.className = "msg"; msg.textContent = "Uploading to S3…";
+      const r = await api(`/api/snapshots/${sn.id}/backup`, { method: "POST" });
+      msg.className = `msg ${r.ok ? "ok" : "err"}`;
+      msg.textContent = r.ok ? `Backed up (${gb(r.data.archive_mb)} compressed)` : r.data?.error || "Backup failed";
+      backup.disabled = false;
+      if (r.ok) this.loadRemote();
+    } }, "Back up to S3");
     return h("article", { class: "snap" },
       h("div", { class: "snap-main" },
         h("b", { class: "snap-name" }, sn.name),
@@ -922,7 +995,46 @@ class SnapshotsView {
           h("span", {}, new Date(sn.created_at * 1000).toLocaleString()),
           h("span", {}, `${gb(sn.size_mb)} on disk`),
           h("span", {}, modelLabel(sn.model)))),
-      msg, del, restore);
+      msg, download, backup, del, restore);
+  }
+  async importFile(file) {
+    if (!file) return;
+    this.importMsg.className = "msg";
+    this.importMsg.textContent = `Importing ${file.name}…`;
+    try {
+      const res = await fetch("/api/snapshots/import", { method: "POST", body: file, headers: { "content-type": "application/octet-stream" } });
+      const data = await res.json().catch(() => ({}));
+      this.importMsg.className = `msg ${res.ok ? "ok" : "err"}`;
+      this.importMsg.textContent = res.ok ? `Imported ${data.name}` : data.error || "Import failed";
+      if (res.ok) this.refresh();
+    } catch { this.importMsg.className = "msg err"; this.importMsg.textContent = "Import failed"; }
+  }
+  async loadRemote() {
+    const r = await api("/api/backups");
+    if (!r.ok) {
+      const notSet = /not configured/i.test(r.data?.error || "");
+      this.remote.replaceChildren(h("h2", {}, "In S3"), h("p", { class: "hint" }, notSet ? "Set up a bucket in Settings → Backups to S3 to keep copies off this Mac." : r.data?.error || "Could not reach S3."));
+      return;
+    }
+    const rows = r.data.map(b => {
+      const msg = h("span", { class: "msg" });
+      const restore = h("button", { class: "btn", type: "button", disabled: b.local, title: b.local ? "Already on this Mac" : "", onclick: async () => {
+        restore.disabled = true; msg.className = "msg"; msg.textContent = "Downloading…";
+        const x = await api(`/api/backups/${b.snapshot.id}/restore`, { method: "POST" });
+        msg.className = `msg ${x.ok ? "ok" : "err"}`; msg.textContent = x.ok ? "Now in your snapshots" : x.data?.error || "Download failed";
+        if (x.ok) { this.built = false; this.update(); }
+      } }, b.local ? "On this Mac" : "Bring to this Mac");
+      const del = h("button", { class: "btn ghost danger", type: "button", onclick: async () => {
+        if (del.dataset.confirm !== "1") { del.dataset.confirm = "1"; del.textContent = "Click again to delete"; setTimeout(() => { del.dataset.confirm = ""; del.textContent = "Delete from S3"; }, 3000); return; }
+        const x = await api(`/api/backups/${b.snapshot.id}`, { method: "DELETE" });
+        if (x.ok) this.loadRemote(); else { msg.className = "msg err"; msg.textContent = x.data?.error || "Delete failed"; }
+      } }, "Delete from S3");
+      return h("article", { class: "snap remote-snap" },
+        h("div", { class: "snap-main" }, h("b", { class: "snap-name" }, b.snapshot.name),
+          h("div", { class: "snap-meta" }, h("span", {}, repoName(b.snapshot.repo)), h("span", {}, new Date(b.snapshot.created_at * 1000).toLocaleString()), h("span", {}, `${gb(b.archive_mb)} compressed`))),
+        msg, del, restore);
+    });
+    this.remote.replaceChildren(h("h2", {}, "In S3"), rows.length ? h("div", { class: "snap-list" }, rows) : h("p", { class: "hint" }, "No backups in the bucket yet."));
   }
   destroy() {}
 }

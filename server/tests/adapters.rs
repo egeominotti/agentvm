@@ -194,7 +194,7 @@ fn settings_file_roundtrips_and_is_absent_at_first() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("settings.json");
     assert!(settings_file::load(&path).is_none());
-    let s = Settings { max_vms: 6, cpus: 2, memory_mb: 2048, timeout_s: 900, model: Model::parse("opus").unwrap(), default_repo: Some("~/x".into()), claude_version: agentvm::domain::settings::ClaudeVersion::parse("2.1.290").unwrap() };
+    let s = Settings { max_vms: 6, cpus: 2, memory_mb: 2048, timeout_s: 900, model: Model::parse("opus").unwrap(), default_repo: Some("~/x".into()), claude_version: agentvm::domain::settings::ClaudeVersion::parse("2.1.290").unwrap(), s3: None };
     settings_file::save(&path, &s).unwrap();
     assert_eq!(settings_file::load(&path).unwrap(), s);
 }
@@ -280,4 +280,64 @@ fn snapshot_ids_reject_path_tricks() {
     for bad in ["../etc", "snap-x", "20261008-120000-abcd", "snap-20261008-120000-abcd/.."] {
         assert!(SnapshotId::parse(bad).is_none(), "{bad}");
     }
+}
+
+#[test]
+fn archives_pack_and_unpack_a_folder_exactly() {
+    use agentvm::adapters::archive;
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+    std::fs::write(src.join("disk.raw"), vec![9u8; 3 << 20]).unwrap();
+    std::fs::write(src.join("meta.json"), "{\"a\":1}").unwrap();
+    let file = tmp.path().join("snap.tar.zst");
+    archive::pack(&src, &file).unwrap();
+    let out = tmp.path().join("out");
+    archive::unpack(&file, &out).unwrap();
+    assert_eq!(std::fs::read(out.join("disk.raw")).unwrap(), std::fs::read(src.join("disk.raw")).unwrap());
+    assert_eq!(std::fs::read_to_string(out.join("meta.json")).unwrap(), "{\"a\":1}");
+}
+
+fn dev_s3() -> agentvm::adapters::s3::S3Client {
+    use agentvm::domain::s3::S3Config;
+    let cfg = S3Config {
+        endpoint: "http://127.0.0.1:9100".into(),
+        region: "us-east-1".into(),
+        bucket: "agentvm-backups".into(),
+        prefix: format!("test-{}", std::process::id()),
+        access_key: "agentvm".into(),
+        path_style: true,
+    };
+    agentvm::adapters::s3::S3Client::new(cfg, Secret::new("agentvm-local-secret".into()))
+}
+
+#[test]
+#[ignore = "needs the dev S3 server: scripts/dev-s3.sh up"]
+fn s3_client_round_trips_objects_on_a_real_server() {
+    let s3 = dev_s3();
+    s3.ensure_bucket().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let up = tmp.path().join("up.bin");
+    std::fs::write(&up, vec![7u8; 2 << 20]).unwrap();
+    s3.put_file(&s3.config().key("a/b.bin"), &up).unwrap();
+    s3.put_bytes(&s3.config().key("a/b.json"), b"{\"ok\":true}").unwrap();
+    let listed = s3.list(&s3.config().key("a/")).unwrap();
+    assert_eq!(listed.len(), 2, "{listed:?}");
+    assert!(listed.iter().any(|o| o.key.ends_with("b.bin") && o.size == 2 << 20), "{listed:?}");
+    let down = tmp.path().join("down.bin");
+    s3.get_file(&s3.config().key("a/b.bin"), &down).unwrap();
+    assert_eq!(std::fs::read(&down).unwrap(), std::fs::read(&up).unwrap());
+    assert_eq!(s3.get_bytes(&s3.config().key("a/b.json")).unwrap(), b"{\"ok\":true}");
+    s3.delete(&s3.config().key("a/b.bin")).unwrap();
+    s3.delete(&s3.config().key("a/b.json")).unwrap();
+    assert!(s3.list(&s3.config().key("a/")).unwrap().is_empty());
+}
+
+#[test]
+#[ignore = "needs the dev S3 server: scripts/dev-s3.sh up"]
+fn s3_client_reports_bad_credentials() {
+    use agentvm::domain::s3::S3Config;
+    let good = dev_s3();
+    let bad = agentvm::adapters::s3::S3Client::new(S3Config { ..good.config().clone() }, Secret::new("wrong-secret".into()));
+    assert!(bad.list("x/").is_err());
 }
