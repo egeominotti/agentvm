@@ -5,6 +5,9 @@ use std::process::Command;
 
 use crate::secret::Secret;
 
+/// A locked Keychain may wait for an unlock dialog nobody answers: never block on it forever.
+const KEYCHAIN_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
+
 const SERVICE: &str = "agentvm";
 const S3_SERVICE: &str = "agentvm-s3";
 const ENV_FALLBACK: &str = "CLAUDE_CODE_OAUTH_TOKEN";
@@ -42,7 +45,7 @@ impl Keychain {
         if let Some(kc) = &self.keychain {
             cmd.arg(kc);
         }
-        if let Ok(out) = cmd.output() {
+        if let Ok(out) = crate::process::output(&mut cmd, KEYCHAIN_LIMIT) {
             let token = String::from_utf8_lossy(&out.stdout).trim().to_owned();
             if out.status.success() && !token.is_empty() {
                 return Ok(Secret::new(token));
@@ -89,7 +92,7 @@ impl Keychain {
         if let Some(kc) = &self.keychain {
             cmd.arg(kc);
         }
-        let out = cmd.output().ok()?;
+        let out = crate::process::output(&mut cmd, KEYCHAIN_LIMIT).ok()?;
         let value = String::from_utf8_lossy(&out.stdout).trim().to_owned();
         (out.status.success() && !value.is_empty()).then(|| Secret::new(value))
     }
@@ -113,7 +116,8 @@ impl Keychain {
             let mut stdin = child.stdin.take().expect("stdin is piped");
             stdin.write_all(line.as_bytes()).map_err(|e| KeychainError::WriteFailed(e.to_string()))?;
         }
-        let out = child.wait_with_output().map_err(|e| KeychainError::WriteFailed(e.to_string()))?;
+        let out = crate::process::wait_output(child, KEYCHAIN_LIMIT, "security")
+            .map_err(|e| KeychainError::WriteFailed(e.to_string()))?;
         let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
         if out.status.success() && stderr.is_empty() { Ok(()) } else { Err(KeychainError::WriteFailed(stderr)) }
     }

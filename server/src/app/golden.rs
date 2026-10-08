@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, UNIX_EPOCH};
 
 use serde::Serialize;
 
@@ -30,7 +30,12 @@ pub struct GoldenService {
     home: PathBuf,
     script: PathBuf,
     state: Arc<Mutex<RebuildState>>,
+    /// A build still running after this is stuck: it is stopped, with all it started.
+    limit: Duration,
 }
+
+/// Downloading Debian, installing Claude Code, booting the VM twice: well under an hour.
+const REBUILD_LIMIT: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug, thiserror::Error)]
 pub enum GoldenError {
@@ -42,7 +47,11 @@ pub enum GoldenError {
 
 impl GoldenService {
     pub fn new(home: PathBuf, script: PathBuf) -> Self {
-        GoldenService { home, script, state: Arc::default() }
+        GoldenService { home, script, state: Arc::default(), limit: REBUILD_LIMIT }
+    }
+
+    pub fn with_time_limit(self, limit: Duration) -> Self {
+        GoldenService { limit, ..self }
     }
 
     fn disk(&self) -> PathBuf {
@@ -89,16 +98,26 @@ impl GoldenService {
             .stdin(Stdio::null())
             .stdout(log)
             .stderr(err)
+            // Its own process group: stopping a stuck build stops the VM it booted too.
+            .process_group(0)
             .spawn()
             .map_err(|e| GoldenError::Spawn(self.script.display().to_string(), e))?;
         state.running = true;
         state.last_result = None;
         let shared = self.state.clone();
+        let limit = self.limit;
         tokio::spawn(async move {
-            let result = match child.wait().await {
-                Ok(s) if s.success() => "ok".to_owned(),
-                Ok(s) => format!("failed ({s})"),
-                Err(e) => format!("failed ({e})"),
+            let result = match tokio::time::timeout(limit, child.wait()).await {
+                Ok(Ok(s)) if s.success() => "ok".to_owned(),
+                Ok(Ok(s)) => format!("failed ({s})"),
+                Ok(Err(e)) => format!("failed ({e})"),
+                Err(_) => {
+                    if let Some(pid) = child.id() {
+                        kill_group(pid);
+                    }
+                    let _ = child.wait().await;
+                    format!("failed: took longer than {} minutes", limit.as_secs().div_ceil(60))
+                }
             };
             let mut state = shared.lock().unwrap();
             state.running = false;
@@ -106,4 +125,13 @@ impl GoldenService {
         });
         Ok(())
     }
+}
+
+/// SIGKILL to the whole process group `pid` leads.
+fn kill_group(pid: u32) {
+    unsafe extern "C" {
+        fn kill(pid: i32, sig: i32) -> i32;
+    }
+    // SAFETY: plain syscall; a negative pid names the process group.
+    unsafe { kill(-(pid as i32), 9) };
 }

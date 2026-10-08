@@ -5,6 +5,10 @@ use std::process::Command;
 
 use crate::domain::ids::{CommitSha, IdError, RepoPath};
 
+/// Longest a git command may take: bundling a huge repository on a busy Mac takes minutes; a
+/// git stuck on a hook or a lock must not hold a task (and its VM slot) forever.
+const GIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
 #[derive(Debug, thiserror::Error)]
 pub enum GitError {
     #[error("cannot run git: {0}")]
@@ -96,7 +100,9 @@ impl Git {
     }
 
     fn run(&self, args: &[&str]) -> Result<String, GitError> {
-        let out = Command::new("git").arg("-C").arg(self.repo.as_path()).args(args).output()?;
+        let mut cmd = Command::new("git");
+        cmd.arg("-C").arg(self.repo.as_path()).args(args);
+        let out = crate::process::output(&mut cmd, GIT_LIMIT)?;
         if out.status.success() {
             Ok(String::from_utf8_lossy(&out.stdout).into_owned())
         } else {

@@ -8,6 +8,8 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::process::OutputWithin;
+
 use crate::domain::ids::TaskId;
 use crate::domain::outcome::GuestResult;
 use crate::domain::spec::TaskSpec;
@@ -255,7 +257,7 @@ pub fn cleanup_orphans(jobs_root: &Path, keep: &std::collections::HashSet<String
 fn is_vm_helper(pid: i32) -> bool {
     Command::new("ps")
         .args(["-p", &pid.to_string(), "-o", "comm="])
-        .output()
+        .output_within(std::time::Duration::from_secs(5))
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().ends_with("agentvm-vm"))
         .unwrap_or(false)
 }

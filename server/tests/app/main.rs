@@ -6,6 +6,7 @@ mod bundles;
 mod cleanup;
 mod closing;
 mod events;
+mod golden;
 mod guest_requests;
 mod helpers;
 mod persistence;
