@@ -46,5 +46,7 @@ update-grub
 # The apt indexes are kept: Claude installs packages right away, without apt-get update.
 apt-get clean
 truncate -s 0 /etc/machine-id
+# Keep the machine id transient (new each boot): restored snapshots must not share DHCP leases.
+systemctl mask systemd-machine-id-commit.service
 rm -f /var/lib/dbus/machine-id /var/lib/systemd/network/* 2>/dev/null || true
 echo GOLDEN_OK

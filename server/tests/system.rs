@@ -322,3 +322,36 @@ fn a_launch_can_pin_another_claude_code_version() {
     let sse = String::from_utf8_lossy(&out.stdout);
     assert!(sse.contains(&format!("\"claude_code_version\":\"{other}\"")), "wanted {other}: {sse}");
 }
+
+#[test]
+#[ignore = "needs golden, token and Claude"]
+fn a_snapshot_restores_files_into_a_new_vm() {
+    let server = start_server();
+    let repo = temp_repo();
+    let created = post_json(
+        &format!("{}/api/tasks", server.base),
+        &json!({"repo_path": repo.path(), "interactive": true,
+                "prompt": "Create the file snap.txt containing snapshot-ok. Do not commit it."}),
+    );
+    let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    let t0 = Instant::now();
+    while get_json(&format!("{}/api/tasks/{id}", server.base))["activity"] != "waiting" {
+        assert!(t0.elapsed() < Duration::from_secs(240), "Claude did not finish its turn");
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    let snap = post_json(&format!("{}/api/tasks/{id}/snapshot", server.base), &json!({"name": "with snap.txt"}));
+    let snap_id = snap["id"].as_str().unwrap_or_else(|| panic!("{snap}")).to_owned();
+    post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
+    wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(30));
+
+    let listed = get_json(&format!("{}/api/snapshots", server.base));
+    assert!(listed.as_array().unwrap().iter().any(|s| s["id"] == snap_id.as_str()), "{listed}");
+    let restored = post_json(&format!("{}/api/snapshots/{snap_id}/restore", server.base), &json!({}));
+    let new_id = restored["id"].as_str().unwrap_or_else(|| panic!("{restored}")).to_owned();
+    wait_for_state(&server, &new_id, |s| s == "running", Duration::from_secs(60));
+    let saved = post_json(&format!("{}/api/tasks/{new_id}/save", server.base), &json!({}));
+    assert!(saved["commits"].as_u64().unwrap_or(0) >= 1, "{saved}");
+    let content = git(repo.path(), &["show", &format!("agent/{new_id}:snap.txt")]);
+    assert!(content.contains("snapshot-ok"), "{content}");
+    post_json(&format!("{}/api/tasks/{new_id}/stop", server.base), &json!({}));
+}

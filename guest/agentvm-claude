@@ -4,6 +4,8 @@
 # The initial prompt is used only once.
 set -euo pipefail
 args=(--dangerously-skip-permissions)
+# A restored machine picks up its last conversation.
+if [ -e /run/agentvm/continue ]; then rm -f /run/agentvm/continue; args+=(--continue); fi
 if [ -s /run/agentvm/model ]; then args+=(--model "$(cat /run/agentvm/model)"); fi
 if [ -s /run/agentvm/prompt ]; then
   prompt=$(cat /run/agentvm/prompt)

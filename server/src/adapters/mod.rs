@@ -7,5 +7,6 @@ pub mod lock;
 pub mod pty;
 pub mod releases;
 pub mod settings_file;
+pub mod snapshots;
 pub mod tail;
 pub mod vm;

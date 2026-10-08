@@ -46,11 +46,18 @@ MODEL=$(jq -r '.model // empty' "$JOB/task.json")
 TOKEN=$(cat "$JOB/.token")
 rm -f "$JOB/.token"
 
-git clone -q "$JOB/repo.bundle" "$WORK"
-cd "$WORK"
-git checkout -q -b "$BRANCH" "$BASE"
-git config user.name agentvm
-git config user.email agentvm@localhost
+RESTORE=$(jq -r '.restore // false' "$JOB/task.json")
+if [ "$RESTORE" = "true" ]; then
+  # Disk from a snapshot: the checkout is already there; continue on this task's branch.
+  cd "$WORK"
+  git checkout -q -B "$BRANCH"
+else
+  git clone -q "$JOB/repo.bundle" "$WORK"
+  cd "$WORK"
+  git checkout -q -b "$BRANCH" "$BASE"
+  git config user.name agentvm
+  git config user.email agentvm@localhost
+fi
 log "repo ready on $BRANCH"
 
 for _ in $(seq 100); do getent hosts api.anthropic.com >/dev/null && break; sleep 0.1; done
@@ -90,6 +97,7 @@ if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
   (umask 077; printf '%s' "$TOKEN" > /run/agentvm/token)
   unset TOKEN
   (umask 077; jq -r .prompt "$JOB/task.json" > /run/agentvm/prompt)
+  [ "$RESTORE" = "true" ] && touch /run/agentvm/continue
   [ -s /run/agentvm/prompt ] && [ "$(tr -d '[:space:]' < /run/agentvm/prompt)" != "" ] || rm -f /run/agentvm/prompt
   if [ -n "$MODEL" ]; then printf '%s' "$MODEL" > /run/agentvm/model; fi
   /usr/local/bin/agentvm-pty &
@@ -98,6 +106,12 @@ if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
   log "terminal ready"
 
   while [ ! -e "$JOB/close.request" ]; do
+    if [ -e "$JOB/sync.request" ]; then
+      # Snapshot: flush everything to the disk image before the host clones it.
+      rm -f "$JOB/sync.request"
+      sync
+      touch "$JOB/sync.done"
+    fi
     if [ -e "$JOB/save.request" ]; then
       rm -f "$JOB/save.request"
       save_work

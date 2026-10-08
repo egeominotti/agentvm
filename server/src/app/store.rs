@@ -10,6 +10,7 @@ use super::events::{EventLog, StreamItem};
 use crate::domain::ids::{CommitSha, Prompt, RepoPath, TaskId};
 use crate::domain::metrics::VmMetrics;
 use crate::domain::settings::Model;
+use crate::domain::snapshot::SnapshotId;
 use crate::domain::task::{InvalidTransition, TaskEvent, TaskState, transition};
 
 #[derive(Debug, Clone)]
@@ -26,6 +27,8 @@ pub struct TaskRecord {
     pub model: Model,
     /// Claude Code version installed at boot instead of the image's one.
     pub claude_version: Option<String>,
+    /// Snapshot this machine was restored from.
+    pub restore_from: Option<SnapshotId>,
     /// Latest telemetry sample and the last `HISTORY` CPU and memory percentages.
     pub metrics: Option<VmMetrics>,
     pub cpu_history: VecDeque<f32>,
@@ -49,6 +52,7 @@ impl TaskRecord {
             activity: None,
             model: Model::default_choice(),
             claude_version: None,
+            restore_from: None,
             metrics: None,
             cpu_history: VecDeque::with_capacity(HISTORY),
             mem_history: VecDeque::with_capacity(HISTORY),

@@ -33,6 +33,12 @@ impl JobWorkspace {
     }
     /// Unix socket paths are limited to 104 bytes on macOS, so sockets live in a short
     /// per-user folder instead of the (possibly deep) jobs root. Task ids are unique.
+    pub fn disk_of(jobs_root: &Path, id: &TaskId) -> PathBuf {
+        jobs_root.join(id.as_str()).join("disk.raw")
+    }
+    pub fn efivars_of(jobs_root: &Path, id: &TaskId) -> PathBuf {
+        jobs_root.join(id.as_str()).join("efivars")
+    }
     pub fn pty_socket_of(_jobs_root: &Path, id: &TaskId) -> PathBuf {
         socket_dir().join(format!("{id}.sock"))
     }
@@ -116,6 +122,11 @@ impl JobWorkspace {
         let dst = CString::new(self.disk().as_os_str().as_bytes())?;
         // SAFETY: C strings valid for the duration of the call.
         if unsafe { clonefile(src.as_ptr(), dst.as_ptr(), 0) } == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
+    }
+
+    /// EFI variables of a restored machine (the snapshot keeps its own boot entries).
+    pub fn copy_efivars(&self, from: &Path) -> io::Result<()> {
+        fs::copy(from, self.efivars()).map(drop)
     }
 
     pub fn write_pid(&self, pid: u32) -> io::Result<()> {

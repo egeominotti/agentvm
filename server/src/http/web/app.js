@@ -494,11 +494,12 @@ class FocusView {
     this.note = h("span", { class: "note" });
     this.segBtns = ["claude", "shell"].map(s => h("button", { type: "button", "aria-pressed": String(s === "claude"), onclick: () => this.show(s) }, s === "claude" ? "Claude" : "Root shell"));
     this.saveBtn = h("button", { class: "btn", type: "button", onclick: () => this.save() }, "Save to repo");
+    this.snapBtn = h("button", { class: "btn", type: "button", title: "Save a copy of this whole VM that you can restore later", onclick: () => this.snapshot() }, "Snapshot");
     this.closeBtn = h("button", { class: "btn", type: "button", onclick: () => this.close() }, "Close VM");
     this.stopBtn = h("button", { class: "btn ghost danger", type: "button", title: "Power off now without saving", onclick: () => this.stop() }, "Force stop");
     this.panelBtn = h("button", { class: "btn ghost", type: "button", onclick: () => this.togglePanel() }, "Telemetry");
     this.seg = h("div", { class: "seg" }, this.segBtns);
-    this.toolbar = h("div", { class: "toolbar" }, h("span", { class: "dot" }), this.titleEl, this.seg, h("span", { class: "spacer" }), this.note, this.saveBtn, this.closeBtn, this.stopBtn, this.panelBtn);
+    this.toolbar = h("div", { class: "toolbar" }, h("span", { class: "dot" }), this.titleEl, this.seg, h("span", { class: "spacer" }), this.note, this.snapBtn, this.saveBtn, this.closeBtn, this.stopBtn, this.panelBtn);
     this.overlay = h("div", { class: "overlay" });
     this.screen = h("div", { class: "screen" }, this.overlay);
     this.result = h("div", { class: "result" });
@@ -520,8 +521,8 @@ class FocusView {
     this.titleEl.title = `${t.prompt || "(no first task)"}\n${t.repo}`;
     const s = t.status.state;
     const ended = TERMINAL.has(s);
-    for (const b of [this.saveBtn, this.closeBtn, this.seg]) b.hidden = !t.interactive || ended;
-    this.saveBtn.disabled = this.closeBtn.disabled = s !== "running";
+    for (const b of [this.saveBtn, this.closeBtn, this.snapBtn, this.seg]) b.hidden = !t.interactive || ended;
+    this.saveBtn.disabled = this.closeBtn.disabled = this.snapBtn.disabled = s !== "running";
     this.stopBtn.hidden = ended;
     this.renderPanel(t, label);
     if (ended) return this.ended(t);
@@ -614,6 +615,16 @@ class FocusView {
     this.note.textContent = r.ok ? (r.data.commits ? `Saved: ${plural(r.data.commits, "commit")} on agent/${this.id}` : "Nothing to save yet") : r.data?.error || "Save failed";
     if (!r.ok) this.note.style.color = "var(--fail)";
     this.saveBtn.disabled = false;
+    this.terms[this.session]?.xterm.focus();
+  }
+  async snapshot() {
+    this.snapBtn.disabled = true;
+    this.note.style.color = "";
+    this.note.textContent = "Taking a snapshot…";
+    const r = await api(`/api/tasks/${this.id}/snapshot`, { method: "POST", body: {} });
+    this.note.textContent = r.ok ? `Snapshot saved: ${r.data.name}` : r.data?.error || "Snapshot failed";
+    if (!r.ok) this.note.style.color = "var(--fail)";
+    this.snapBtn.disabled = false;
     this.terms[this.session]?.xterm.focus();
   }
   async close() {
@@ -867,6 +878,55 @@ class SettingsView {
   destroy() { clearTimeout(this.saveTimer); }
 }
 
+/** Saved copies of whole VMs, restorable into new machines. */
+class SnapshotsView {
+  constructor() {
+    this.root = h("div", { class: "snapshots" });
+    this.built = false;
+  }
+  async update() {
+    if (this.built) return;
+    this.built = true;
+    await this.refresh();
+  }
+  async refresh() {
+    const r = await api("/api/snapshots");
+    const list = r.ok ? r.data : [];
+    const head = h("header", { class: "settings-head" }, h("h1", {}, "Snapshots"),
+      h("span", { class: "save-state" }, "A snapshot is an instant copy of a whole VM: files, installed packages, Claude's conversation. Take one from a running machine."));
+    if (!list.length) {
+      this.root.replaceChildren(h("div", { class: "snap-inner" }, head, h("div", { class: "card empty-card" },
+        h("b", {}, "No snapshots yet"), h("p", { class: "hint" }, "Open a running machine and press Snapshot. Restoring starts a new VM exactly from that point, with Claude continuing its conversation."))));
+      return;
+    }
+    this.root.replaceChildren(h("div", { class: "snap-inner" }, head, h("div", { class: "snap-list" }, list.map(sn => this.row(sn)))));
+  }
+  row(sn) {
+    const msg = h("span", { class: "msg" });
+    const restore = h("button", { class: "btn primary", type: "button", onclick: async () => {
+      restore.disabled = true;
+      const r = await api(`/api/snapshots/${sn.id}/restore`, { method: "POST" });
+      if (r.ok) { await loadTasks(); location.hash = `#/vm/${r.data.id}`; }
+      else { msg.className = "msg err"; msg.textContent = r.data?.error || "Restore failed"; restore.disabled = false; }
+    } }, "Restore");
+    const del = h("button", { class: "btn ghost danger", type: "button", onclick: async () => {
+      if (del.dataset.confirm !== "1") { del.dataset.confirm = "1"; del.textContent = "Click again to delete"; setTimeout(() => { del.dataset.confirm = ""; del.textContent = "Delete"; }, 3000); return; }
+      const r = await api(`/api/snapshots/${sn.id}`, { method: "DELETE" });
+      if (r.ok) this.refresh(); else { msg.className = "msg err"; msg.textContent = r.data?.error || "Delete failed"; }
+    } }, "Delete");
+    return h("article", { class: "snap" },
+      h("div", { class: "snap-main" },
+        h("b", { class: "snap-name" }, sn.name),
+        h("div", { class: "snap-meta" },
+          h("span", {}, repoName(sn.repo)),
+          h("span", {}, new Date(sn.created_at * 1000).toLocaleString()),
+          h("span", {}, `${gb(sn.size_mb)} on disk`),
+          h("span", {}, modelLabel(sn.model)))),
+      msg, del, restore);
+  }
+  destroy() {}
+}
+
 // ---------- routing ----------
 function route() {
   const hash = location.hash || "#/wall";
@@ -875,6 +935,8 @@ function route() {
   if (vm) {
     if (current instanceof FocusView && current.id === vm[1]) return;
     mount(new FocusView(vm[1]));
+  } else if (hash.startsWith("#/snapshots")) {
+    if (!(current instanceof SnapshotsView)) mount(new SnapshotsView());
   } else if (hash.startsWith("#/settings")) {
     if (!(current instanceof SettingsView)) mount(new SettingsView());
   } else if (!(current instanceof WallView)) {

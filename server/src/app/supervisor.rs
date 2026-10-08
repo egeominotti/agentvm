@@ -17,6 +17,8 @@ use crate::adapters::jobdir::JobWorkspace;
 use crate::adapters::keychain::{Keychain, KeychainError};
 use crate::adapters::tail::tail_lines;
 use crate::adapters::releases::Releases;
+use crate::adapters::snapshots::SnapshotStore;
+use crate::domain::snapshot::SnapshotId;
 use crate::adapters::vm::{VmConfig, VmEvent, VmProcess};
 use crate::secret::Secret;
 use crate::config::Config;
@@ -39,6 +41,7 @@ pub struct AppCtx {
     pub keychain: Keychain,
     pub settings: SettingsService,
     pub golden: GoldenService,
+    pub snapshots: SnapshotStore,
     releases: tokio::sync::Mutex<Option<(std::time::Instant, Releases)>>,
 }
 
@@ -62,8 +65,9 @@ impl AppCtx {
             golden: GoldenService::new(config.home.clone(), config.scripts_dir.join("build-golden.sh")),
             keychain,
             settings,
-            config,
+            snapshots: SnapshotStore::new(config.home.join("snapshots")),
             releases: tokio::sync::Mutex::new(None),
+            config,
         }
     }
 
@@ -112,6 +116,8 @@ pub struct NewTask<'a> {
     pub model: Option<Model>,
     /// `None` keeps the Claude Code version of the VM image.
     pub claude_version: Option<ClaudeVersion>,
+    /// Boot from this snapshot instead of the golden image.
+    pub restore_from: Option<SnapshotId>,
 }
 
 /// Validates the request, queues the task and starts its supervisor.
@@ -124,7 +130,7 @@ pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError
     };
     let base_ref = req.base_ref.map(str::trim).filter(|r| !r.is_empty()).unwrap_or("HEAD");
     let base_sha = Git::new(repo.clone()).rev_parse(base_ref).map_err(SubmitError::UnknownRef)?;
-    if !ctx.config.golden().is_file() {
+    if req.restore_from.is_none() && !ctx.config.golden().is_file() {
         return Err(SubmitError::NoGolden(ctx.config.golden().display().to_string()));
     }
     ctx.keychain.read_token()?;
@@ -133,6 +139,7 @@ pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError
     let model = req.model.unwrap_or(ctx.settings.get().model);
     let mut record = TaskRecord::new(id.clone(), repo, prompt, base_sha, req.interactive).with_model(model);
     record.claude_version = req.claude_version.map(|v| v.as_str().to_owned());
+    record.restore_from = req.restore_from;
     ctx.store.insert(record);
     tokio::spawn(run(ctx.clone(), id.clone()));
     Ok(id)
@@ -162,7 +169,9 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
     let git = Git::new(record.repo.clone());
 
     let ws = JobWorkspace::create(&ctx.config.jobs(), id).map_err(|e| format!("job directory: {e}"))?;
-    git.bundle_all(&ws.repo_bundle()).map_err(|e| e.to_string())?;
+    if record.restore_from.is_none() {
+        git.bundle_all(&ws.repo_bundle()).map_err(|e| e.to_string())?;
+    }
     ws.write_spec(&TaskSpec {
         id: id.to_string(),
         prompt: record.prompt.as_ref().map(|p| p.as_str().to_owned()).unwrap_or_default(),
@@ -172,11 +181,18 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
         interactive: record.interactive,
         model: record.model.cli_name().map(str::to_owned),
         claude_version: record.claude_version.clone(),
+        restore: record.restore_from.is_some(),
     })
     .map_err(|e| format!("task.json: {e}"))?;
     let token = ctx.keychain.read_token().map_err(|e| e.to_string())?;
     ws.write_token(&token).map_err(|e| format!("token: {e}"))?;
-    ws.clone_disk(&ctx.config.golden()).map_err(|e| format!("disk clone: {e}"))?;
+    match &record.restore_from {
+        Some(snap) => {
+            ws.clone_disk(&ctx.snapshots.disk(snap)).map_err(|e| format!("snapshot disk clone: {e}"))?;
+            ws.copy_efivars(&ctx.snapshots.efivars(snap)).map_err(|e| format!("snapshot EFI variables: {e}"))?;
+        }
+        None => ws.clone_disk(&ctx.config.golden()).map_err(|e| format!("disk clone: {e}"))?,
+    }
     apply(TaskEvent::Prepared)?;
 
     let stop_requested_early = ctx.store.stop_signal(id).is_some_and(|s| *s.borrow());
@@ -316,7 +332,7 @@ fn expand_home(path: &str) -> PathBuf {
     }
 }
 
-fn random_bytes() -> [u8; 2] {
+pub fn random_bytes() -> [u8; 2] {
     use std::io::Read;
     let mut b = [0u8; 2];
     if std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut b)).is_err() {

@@ -18,4 +18,7 @@ pub struct TaskSpec {
     /// Claude Code version to install at boot (`latest`, `stable` or `x.y.z`); absent keeps the image's.
     #[serde(default)]
     pub claude_version: Option<String>,
+    /// The disk comes from a snapshot: keep `/root/work` and continue the last conversation.
+    #[serde(default)]
+    pub restore: bool,
 }

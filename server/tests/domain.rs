@@ -51,6 +51,7 @@ fn task_spec_roundtrips_hostile_prompt() {
         interactive: false,
         model: None,
         claude_version: None,
+        restore: false,
     };
     let json = serde_json::to_string(&spec).unwrap();
     let back: TaskSpec = serde_json::from_str(&json).unwrap();

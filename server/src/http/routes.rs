@@ -47,6 +47,10 @@ pub fn router(ctx: Arc<AppCtx>) -> Router {
         .route("/api/settings/token", put(put_token))
         .route("/api/golden", get(golden_status))
         .route("/api/claude/versions", get(claude_versions))
+        .route("/api/tasks/{id}/snapshot", post(snapshot_task))
+        .route("/api/snapshots", get(list_snapshots))
+        .route("/api/snapshots/{sid}", axum::routing::delete(delete_snapshot))
+        .route("/api/snapshots/{sid}/restore", post(restore_snapshot))
         .route("/api/golden/rebuild", post(golden_rebuild))
         .route("/api/storage", get(storage))
         .route("/api/storage/cleanup", post(storage_cleanup))
@@ -101,6 +105,7 @@ async fn create(State(ctx): Ctx, Json(req): Json<CreateTask>) -> Result<(StatusC
         interactive: req.interactive,
         model: req.model,
         claude_version,
+        restore_from: None,
     };
     let id = submit(&ctx, new).map_err(|e| {
         let code = match e {
@@ -317,4 +322,51 @@ async fn storage_cleanup(State(ctx): Ctx) -> Json<serde_json::Value> {
 
 async fn claude_versions(State(ctx): Ctx) -> Result<Json<crate::app::supervisor::ClaudeReleases>, ApiError> {
     ctx.claude_releases().await.map(Json).map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e))
+}
+
+fn snapshot_error(e: crate::app::snapshots::SnapshotError) -> ApiError {
+    use crate::app::snapshots::SnapshotError as E;
+    let code = match e {
+        E::NotFound | E::NoSnapshot => StatusCode::NOT_FOUND,
+        E::NotRunning => StatusCode::CONFLICT,
+        E::Submit(_) => StatusCode::BAD_REQUEST,
+        E::SyncTimeout | E::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    ApiError(code, e.to_string())
+}
+
+fn snapshot_id(s: &str) -> Result<crate::domain::snapshot::SnapshotId, ApiError> {
+    crate::domain::snapshot::SnapshotId::parse(s).ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "snapshot not found".into()))
+}
+
+#[derive(serde::Deserialize, Default)]
+struct SnapshotRequest {
+    #[serde(default)]
+    name: Option<String>,
+}
+
+async fn snapshot_task(
+    State(ctx): Ctx,
+    Path(id): Path<String>,
+    body: Option<Json<SnapshotRequest>>,
+) -> Result<Json<crate::domain::snapshot::SnapshotMeta>, ApiError> {
+    let (id, _) = find(&ctx, &id)?;
+    let name = body.and_then(|Json(b)| b.name);
+    crate::app::snapshots::take_snapshot(&ctx, &id, name).await.map(Json).map_err(snapshot_error)
+}
+
+async fn list_snapshots(State(ctx): Ctx) -> Json<Vec<crate::domain::snapshot::SnapshotMeta>> {
+    Json(tokio::task::spawn_blocking(move || crate::app::snapshots::list(&ctx)).await.expect("list snapshots"))
+}
+
+async fn restore_snapshot(State(ctx): Ctx, Path(sid): Path<String>) -> Result<(StatusCode, Json<Created>), ApiError> {
+    let sid = snapshot_id(&sid)?;
+    let id = crate::app::snapshots::restore(&ctx, &sid).map_err(snapshot_error)?;
+    Ok((StatusCode::CREATED, Json(Created { id: id.to_string() })))
+}
+
+async fn delete_snapshot(State(ctx): Ctx, Path(sid): Path<String>) -> Result<StatusCode, ApiError> {
+    let sid = snapshot_id(&sid)?;
+    crate::app::snapshots::delete(&ctx, &sid).map_err(snapshot_error)?;
+    Ok(StatusCode::NO_CONTENT)
 }
