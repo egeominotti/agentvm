@@ -36,6 +36,8 @@ pub enum SnapshotError {
     #[error("could not save the snapshot: {0}")]
     Io(#[from] std::io::Error),
     #[error(transparent)]
+    DiskFull(#[from] crate::domain::disk::DiskFull),
+    #[error(transparent)]
     Submit(#[from] SubmitError),
 }
 
@@ -100,6 +102,7 @@ async fn take(
     if !record.interactive || record.state != TaskState::Running {
         return Err(SnapshotError::NotRunning);
     }
+    ctx.ensure_disk_space()?;
     let jobs = ctx.config.jobs();
     let not_running = || ctx.store.get(id).is_none_or(|r| r.state != TaskState::Running);
     match ctx.guest.ask(&jobs, id, "sync", &["sync.done"], SYNC_TIMEOUT, not_running).await {

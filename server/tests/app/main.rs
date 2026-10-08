@@ -5,6 +5,7 @@ mod balloon;
 mod bundles;
 mod cleanup;
 mod closing;
+mod disk_space;
 mod events;
 mod golden;
 mod guest_requests;

@@ -25,6 +25,8 @@ pub enum BackupError {
     S3(String),
     #[error("{0}")]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    DiskFull(#[from] crate::domain::disk::DiskFull),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -67,6 +69,7 @@ pub async fn export(ctx: &AppCtx, sid: &SnapshotId) -> Result<PathBuf, BackupErr
 
 /// Adds an archive as a local snapshot. Keeps its id unless that id already exists here.
 pub async fn import(ctx: &AppCtx, file: &Path) -> Result<SnapshotMeta, BackupError> {
+    ctx.ensure_disk_space()?;
     let scratch = ctx.snapshots.scratch(&format!("import-{}", unique()))?;
     let adopted = adopt(ctx, file, &scratch).await;
     // Whatever happened, the scratch folder (possibly gigabytes) does not wait for a restart.

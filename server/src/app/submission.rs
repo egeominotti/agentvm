@@ -26,6 +26,8 @@ pub enum SubmitError {
     Token(#[from] KeychainError),
     #[error(transparent)]
     Resources(#[from] SettingsError),
+    #[error(transparent)]
+    DiskFull(#[from] crate::domain::disk::DiskFull),
 }
 
 pub struct NewTask<'a> {
@@ -49,6 +51,7 @@ pub struct NewTask<'a> {
 
 /// Validates the request, queues the task and starts its supervisor.
 pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError> {
+    ctx.ensure_disk_space()?;
     let settings = ctx.settings.get();
     let (cpus, memory_mb) = (req.cpus.unwrap_or(settings.cpus), req.memory_mb.unwrap_or(settings.memory_mb));
     ctx.settings.limits().check_vm(cpus, memory_mb)?;

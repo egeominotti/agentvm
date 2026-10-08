@@ -66,6 +66,16 @@ impl AppCtx {
         }
     }
 
+    /// Refuses to start anything new on a nearly full disk. A disk whose free space cannot be
+    /// read does not stop anything.
+    pub fn ensure_disk_space(&self) -> Result<(), crate::domain::disk::DiskFull> {
+        let _ = std::fs::create_dir_all(&self.config.home);
+        match crate::adapters::host::free_mb(&self.config.home) {
+            Some(free_mb) => crate::domain::disk::check_free(free_mb, self.config.min_free_mb),
+            None => Ok(()),
+        }
+    }
+
     /// Published Claude Code versions, cached for 10 minutes.
     pub async fn claude_releases(&self) -> Result<Releases, String> {
         let mut cache = self.releases.lock().await;

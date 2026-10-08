@@ -17,6 +17,15 @@ pub fn host_limits() -> HostLimits {
     }
 }
 
+/// Free space (MB) on the volume holding `path`, as `df` reports it.
+pub fn free_mb(path: &Path) -> Option<u64> {
+    use crate::process::OutputWithin;
+    let out = Command::new("df").arg("-k").arg("-P").arg(path).output_within(std::time::Duration::from_secs(5)).ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let available_kb: u64 = text.lines().nth(1)?.split_whitespace().nth(3)?.parse().ok()?;
+    Some(available_kb >> 10)
+}
+
 /// Bytes actually allocated on disk (sparse VM disks count only what they use).
 pub fn disk_usage(path: &Path) -> u64 {
     use std::os::unix::fs::MetadataExt;

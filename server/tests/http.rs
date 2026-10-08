@@ -19,6 +19,7 @@ fn app(home: &std::path::Path) -> axum::Router {
         timeout_s: 60,
         vm_helper: "agentvm-vm".into(),
         scripts_dir: "scripts".into(),
+        min_free_mb: 0,
     };
     agentvm::http::router(Arc::new(AppCtx::new(config, Keychain::new(Some(home.join("none.keychain-db"))))))
 }

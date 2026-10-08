@@ -24,6 +24,11 @@ pub(crate) fn record(repo: &tempfile::TempDir) -> TaskRecord {
 }
 
 pub(crate) fn ctx(home: &std::path::Path) -> std::sync::Arc<agentvm::app::supervisor::AppCtx> {
+    ctx_with(home, 0)
+}
+
+/// `min_free_mb`: the free disk space below which launches, snapshots and imports are refused.
+pub(crate) fn ctx_with(home: &std::path::Path, min_free_mb: u64) -> std::sync::Arc<agentvm::app::supervisor::AppCtx> {
     let config = agentvm::config::Config {
         home: home.to_path_buf(),
         port: 7777,
@@ -33,6 +38,7 @@ pub(crate) fn ctx(home: &std::path::Path) -> std::sync::Arc<agentvm::app::superv
         timeout_s: 60,
         vm_helper: "agentvm-vm".into(),
         scripts_dir: "scripts".into(),
+        min_free_mb,
     };
     let keychain = agentvm::adapters::keychain::Keychain::new(Some(home.join("none.keychain-db")));
     std::sync::Arc::new(agentvm::app::supervisor::AppCtx::new(config, keychain))

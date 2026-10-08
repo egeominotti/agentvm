@@ -48,6 +48,7 @@ impl From<SubmitError> for ApiError {
     fn from(e: SubmitError) -> Self {
         let code = match e {
             SubmitError::NoGolden(_) | SubmitError::Token(_) => StatusCode::SERVICE_UNAVAILABLE,
+            SubmitError::DiskFull(_) => StatusCode::INSUFFICIENT_STORAGE,
             _ => StatusCode::BAD_REQUEST,
         };
         ApiError::new(code, e)
@@ -96,6 +97,7 @@ impl From<SnapshotError> for ApiError {
             E::NotRunning => StatusCode::CONFLICT,
             E::Submit(_) | E::Interval => StatusCode::BAD_REQUEST,
             E::SyncTimeout | E::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            E::DiskFull(_) => StatusCode::INSUFFICIENT_STORAGE,
         };
         ApiError::new(code, e)
     }
@@ -109,6 +111,7 @@ impl From<BackupError> for ApiError {
             E::NotConfigured | E::Invalid(_) => StatusCode::BAD_REQUEST,
             E::S3(_) => StatusCode::BAD_GATEWAY,
             E::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            E::DiskFull(_) => StatusCode::INSUFFICIENT_STORAGE,
         };
         ApiError::new(code, e)
     }

@@ -1,5 +1,6 @@
 //! Pure core: types and decisions, no I/O.
 pub mod agent_event;
+pub mod disk;
 pub mod guest_reply;
 pub mod hostname;
 pub mod ids;

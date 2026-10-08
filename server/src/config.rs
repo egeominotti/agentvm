@@ -13,6 +13,8 @@ pub struct Config {
     pub vm_helper: PathBuf,
     /// Folder with `build-golden.sh`, for rebuilds started from the dashboard.
     pub scripts_dir: PathBuf,
+    /// Free disk space below which launches, snapshots and imports are refused.
+    pub min_free_mb: u64,
 }
 
 impl Config {
@@ -38,6 +40,7 @@ impl Config {
                 .ok()
                 .and_then(|p| p.parent().and_then(|bin| bin.parent()).map(|root| root.join("scripts")))
                 .unwrap_or_else(|| PathBuf::from("scripts")),
+            min_free_mb: var("AGENTVM_MIN_FREE_GB", 10u64) * 1024,
         }
     }
 

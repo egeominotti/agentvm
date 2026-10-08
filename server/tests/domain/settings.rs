@@ -96,3 +96,12 @@ fn per_vm_resources_are_checked_against_the_mac() {
     assert!(host.check_vm(4, 512).is_err());
     assert!(host.check_vm(4, 65536).is_err());
 }
+
+#[test]
+fn the_disk_must_keep_its_free_space() {
+    use agentvm::domain::disk::{DiskFull, check_free};
+    assert!(check_free(20 * 1024, 10 * 1024).is_ok());
+    let err = check_free(3 * 1024, 10 * 1024).unwrap_err();
+    assert_eq!(err, DiskFull { free_mb: 3 * 1024, min_free_mb: 10 * 1024 });
+    assert_eq!(err.to_string(), "only 3 GB free on this Mac's disk (agentvm keeps at least 10 GB free): free some space");
+}
