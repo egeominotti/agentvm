@@ -235,6 +235,31 @@ fn task_id_of(share: &Path) -> TaskId {
     TaskId::parse(&share.parent().unwrap().file_name().unwrap().to_string_lossy()).unwrap()
 }
 
+/// Files dropped on a terminal go to `<share>/uploads`, a folder the guest can replace with a
+/// symlink to anywhere on the Mac: the host must refuse to write through it.
+#[test]
+fn uploads_never_land_outside_the_shared_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let share = tmp.path().join("share");
+    std::fs::create_dir(&share).unwrap();
+    let mut f = agentvm::guestfs::create_in(&share.join("uploads"), "notes.txt").unwrap();
+    std::io::Write::write_all(&mut f, b"one").unwrap();
+    // Same name again: a new file next to it, never an overwrite.
+    let (_, second) = agentvm::guestfs::create_unique(&share.join("uploads"), "notes.txt").unwrap();
+    assert_eq!(second, "notes (2).txt");
+    assert_eq!(std::fs::read_to_string(share.join("uploads/notes.txt")).unwrap(), "one");
+
+    let elsewhere = tmp.path().join("LaunchAgents");
+    std::fs::create_dir(&elsewhere).unwrap();
+    std::fs::remove_dir_all(share.join("uploads")).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, share.join("uploads")).unwrap();
+    assert!(agentvm::guestfs::create_in(&share.join("uploads"), "evil.plist").is_err());
+    assert!(std::fs::read_dir(&elsewhere).unwrap().next().is_none(), "wrote through the symlink");
+    for bad in ["../x", "a/b", "..", ".", ""] {
+        assert!(agentvm::guestfs::create_unique(&tmp.path().join("u2"), bad).is_err(), "{bad:?}");
+    }
+}
+
 #[tokio::test]
 async fn tail_ignores_a_stream_that_is_a_symlink() {
     let tmp = tempfile::tempdir().unwrap();

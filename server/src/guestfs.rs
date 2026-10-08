@@ -7,8 +7,16 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 // macOS <fcntl.h>.
+const O_WRONLY: i32 = 0x0001;
 const O_NONBLOCK: i32 = 0x0004;
 const O_NOFOLLOW: i32 = 0x0100;
+const O_CREAT: i32 = 0x0200;
+const O_EXCL: i32 = 0x0800;
+const O_DIRECTORY: i32 = 0x0010_0000;
+
+unsafe extern "C" {
+    fn openat(dirfd: std::ffi::c_int, path: *const std::ffi::c_char, flags: std::ffi::c_int, ...) -> std::ffi::c_int;
+}
 
 /// Opens `path` for reading only if it is a regular file: symlinks are refused by the kernel and
 /// FIFOs neither block (O_NONBLOCK) nor pass the type check.
@@ -47,4 +55,44 @@ pub fn copy_out(from: &Path, to: &Path) -> io::Result<u64> {
         open_regular(from).ok_or_else(|| io::Error::other(format!("{} is not a regular file", from.display())))?;
     let mut dst = File::create(to)?;
     io::copy(&mut src, &mut dst)
+}
+
+/// Creates the new file `name` in `dir` (created if missing). `dir` is opened without following a
+/// symlink and the file is created relative to that handle, so a guest that swaps `dir` for a
+/// symlink cannot make the host write anywhere else; an existing file is never overwritten.
+pub fn create_in(dir: &Path, name: &str) -> io::Result<File> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\0']) || name.len() > 255 {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("invalid file name {name:?}")));
+    }
+    match fs::create_dir(dir) {
+        Err(e) if e.kind() != io::ErrorKind::AlreadyExists => return Err(e),
+        _ => {}
+    }
+    let dir = OpenOptions::new().read(true).custom_flags(O_NOFOLLOW | O_DIRECTORY).open(dir)?;
+    let cname = std::ffi::CString::new(name)?;
+    // SAFETY: valid directory descriptor and NUL-terminated name; mode is the variadic argument.
+    let fd = unsafe { openat(dir.as_raw_fd(), cname.as_ptr(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o644) };
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: `fd` was just opened and is owned by nobody else.
+    Ok(unsafe { File::from_raw_fd(fd) })
+}
+
+/// `create_in`, picking `notes (2).txt`, `notes (3).txt`… when `name` is taken.
+pub fn create_unique(dir: &Path, name: &str) -> io::Result<(File, String)> {
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 => (&name[..i], &name[i..]),
+        _ => (name, ""),
+    };
+    for n in 1..1000 {
+        let candidate = if n == 1 { name.to_owned() } else { format!("{stem} ({n}){ext}") };
+        match create_in(dir, &candidate) {
+            Ok(f) => return Ok((f, candidate)),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("too many files called {name}")))
 }

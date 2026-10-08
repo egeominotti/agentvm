@@ -17,6 +17,10 @@ impl Drop for Server {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        // VMs outlive their server by design: a test that ends (or panics) must not leave its VMs running.
+        let _ = Command::new("pkill")
+            .args(["-TERM", "-f", &format!("agentvm-vm --config {}", self.home.path().display())])
+            .status();
     }
 }
 
@@ -600,45 +604,87 @@ fn restore_keeps_resources_and_finished_tasks_can_be_removed() {
     assert!(!server.home.path().join("jobs").join(&id).exists(), "job folder deleted");
 }
 
-#[test]
-#[ignore = "needs golden and token"]
-fn repo_setup_runs_and_vm_ports_are_forwarded_to_the_mac() {
-    let server = start_server();
+/// A repo whose `.agentvm/setup.sh` serves `who.txt` over HTTP on port 3000 and a raw TCP
+/// greeting on port 4000, both bound to the VM's own localhost.
+fn serving_repo(who: &str) -> tempfile::TempDir {
     let repo = temp_repo();
     std::fs::create_dir_all(repo.path().join(".agentvm")).unwrap();
     std::fs::write(
         repo.path().join(".agentvm/setup.sh"),
-        "echo hello-from-setup > /root/work/served.txt\nnohup python3 -m http.server 8765 --bind 127.0.0.1 --directory /root/work >/dev/null 2>&1 &\n",
+        format!(
+            "echo {who} > /root/work/who.txt\n\
+             nohup python3 -m http.server 3000 --bind 127.0.0.1 --directory /root/work >/dev/null 2>&1 &\n\
+             nohup python3 -c \"import socket\ns=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\n\
+             s.bind(('127.0.0.1', 4000)); s.listen()\nwhile True:\n    c, _ = s.accept(); c.sendall(b'tcp-{who}\\\\n'); c.close()\" >/dev/null 2>&1 &\n"
+        ),
     )
     .unwrap();
     git(repo.path(), &["add", "."]);
     git(repo.path(), &["commit", "-qm", "setup"]);
-    let created =
-        post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo.path(), "interactive": true}));
-    let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    repo
+}
+
+fn wait_for_ports(server: &Server, id: &str) -> Vec<Value> {
     let t0 = Instant::now();
-    let host_port = loop {
+    loop {
         let task = get_json(&format!("{}/api/tasks/{id}", server.base));
-        let found = task["ports"]
-            .as_array()
-            .and_then(|ps| ps.iter().find(|p| p["port"] == 8765))
-            .and_then(|p| p["host_port"].as_u64());
-        if let Some(port) = found {
-            break port;
+        let ports = task["ports"].as_array().cloned().unwrap_or_default();
+        if [3000, 4000].iter().all(|p| ports.iter().any(|x| x["port"] == *p)) {
+            return ports;
         }
-        assert!(t0.elapsed() < Duration::from_secs(60), "port 8765 never forwarded: {task}");
+        assert!(t0.elapsed() < Duration::from_secs(90), "ports never appeared: {task}");
         std::thread::sleep(Duration::from_millis(500));
+    }
+}
+
+/// Every VM has its own network: two VMs serve the same ports at once, HTTP ones under their own
+/// name `<port>.<vm>.localhost`, the others through a direct TCP forward.
+#[test]
+#[ignore = "needs golden and token"]
+fn vms_serve_the_same_ports_under_their_own_names() {
+    let server = start_server();
+    let (repo_a, repo_b) = (serving_repo("vm-a"), serving_repo("vm-b"));
+    let launch = |repo: &Path| {
+        let created =
+            post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo, "interactive": true}));
+        created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned()
     };
-    let body = curl(&["-sf", "--max-time", "5", &format!("http://127.0.0.1:{host_port}/served.txt")])
-        .expect("forwarded port answers");
-    assert_eq!(body.trim(), "hello-from-setup");
-    post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
-    wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(30));
-    std::thread::sleep(Duration::from_millis(500));
-    assert!(
-        curl(&["-sf", "--max-time", "2", &format!("http://127.0.0.1:{host_port}/")]).is_none(),
-        "forward closed with the VM"
-    );
+    let (a, b) = (launch(repo_a.path()), launch(repo_b.path()));
+    for (id, who) in [(&a, "vm-a"), (&b, "vm-b")] {
+        let ports = wait_for_ports(&server, id);
+        let http = ports.iter().find(|p| p["port"] == 3000).unwrap();
+        assert_eq!(http["kind"], "http", "{http}");
+        let url = http["url"].as_str().unwrap_or_else(|| panic!("no url: {http}"));
+        let host = url.trim_start_matches("http://").trim_end_matches('/');
+        let (name, port) = host.rsplit_once(':').unwrap();
+        assert!(name.starts_with("3000.") && name.ends_with(".localhost"), "{url}");
+        let body = curl(&[
+            "-sf",
+            "--max-time",
+            "5",
+            "--resolve",
+            &format!("{name}:{port}:127.0.0.1"),
+            &format!("{url}/who.txt"),
+        ])
+        .unwrap_or_else(|| panic!("{url} does not answer"));
+        assert_eq!(body.trim(), who);
+
+        let tcp = ports.iter().find(|p| p["port"] == 4000).unwrap();
+        assert_eq!(tcp["kind"], "tcp", "{tcp}");
+        let host_port = tcp["host_port"].as_u64().unwrap();
+        let mut conn = std::net::TcpStream::connect(("127.0.0.1", host_port as u16)).unwrap();
+        let mut greeting = String::new();
+        std::io::Read::read_to_string(&mut conn, &mut greeting).unwrap();
+        assert_eq!(greeting.trim(), format!("tcp-{who}"));
+    }
+    // A proxied name never reaches the dashboard's API.
+    let fake = format!("3000.nothing-0000.localhost:{}", server.base.rsplit(':').next().unwrap());
+    let out = curl(&["-s", "-H", &format!("Host: {fake}"), &format!("{}/api/status", server.base)]).unwrap();
+    assert!(!out.contains("golden"), "{out}");
+    for id in [&a, &b] {
+        post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
+        wait_for_state(&server, id, |s| TERMINAL.contains(&s), Duration::from_secs(30));
+    }
 }
 
 #[test]
@@ -669,4 +715,39 @@ fn claude_has_a_browser_out_of_the_box() {
     let sse = String::from_utf8_lossy(&out.stdout);
     assert!(sse.contains("mcp__playwright__browser_navigate"), "Claude did not use the browser: {sse}");
     assert_eq!(git(repo.path(), &["show", &format!("agent/{id}:title.txt")]).trim(), "agentvm-42");
+}
+
+/// Files dropped on a terminal land inside the VM, where Claude can open them.
+#[test]
+#[ignore = "needs golden and token"]
+fn files_dropped_on_a_terminal_reach_the_vm() {
+    let server = start_server();
+    let repo = temp_repo();
+    let created =
+        post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo.path(), "interactive": true}));
+    let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    wait_for_state(&server, &id, |s| s == "running", Duration::from_secs(60));
+    let out = curl(&[
+        "-s",
+        "-X",
+        "POST",
+        "-H",
+        "x-file-name: my%20notes.txt",
+        "--data-binary",
+        "dropped-ok",
+        &format!("{}/api/tasks/{id}/upload", server.base),
+    ])
+    .unwrap();
+    let path =
+        serde_json::from_str::<Value>(&out).unwrap()["path"].as_str().unwrap_or_else(|| panic!("{out}")).to_owned();
+    assert_eq!(path, "/mnt/job/uploads/my notes.txt");
+    let t0 = Instant::now();
+    loop {
+        if run_in_shell(&server, &id, &format!("cat '{path}'")).contains("dropped-ok") {
+            break;
+        }
+        assert!(t0.elapsed() < Duration::from_secs(60), "the file never showed up in the VM");
+    }
+    post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
+    wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(30));
 }

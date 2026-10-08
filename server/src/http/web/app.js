@@ -622,9 +622,13 @@ class Cell {
     this.cpu.replaceChildren(h("b", {}, m ? `${m.cpu_pct.toFixed(0)}%` : "—"), "CPU", sparkline(t.cpu_history, { width: 70, height: 16 }));
     this.mem.replaceChildren(h("b", {}, m ? gb(m.mem_used_mb) : "—"), "RAM", sparkline(t.mem_history, { width: 70, height: 16, color: "var(--ink-3)" }));
     this.portChip ??= h("a", { class: "port-chip", target: "_blank", rel: "noopener", onclick: e => e.stopPropagation() });
-    const p0 = t.ports?.[0];
+    const p0 = t.ports?.find(p => p.kind === "http") ?? t.ports?.[0];
     this.portChip.hidden = !p0;
-    if (p0) { this.portChip.href = `http://localhost:${p0.host_port}`; this.portChip.textContent = `:${p0.port}${t.ports.length > 1 ? ` +${t.ports.length - 1}` : ""}`; }
+    if (p0) {
+      this.portChip.href = p0.url ?? `http://localhost:${p0.host_port}`;
+      this.portChip.title = p0.url ?? `localhost:${p0.host_port}`;
+      this.portChip.textContent = `:${p0.port}${t.ports.length > 1 ? ` +${t.ports.length - 1}` : ""}`;
+    }
     if (!this.portChip.isConnected) this.proc.before(this.portChip);
     const u = t.usage;
     this.proc.textContent = u?.output_tokens ? `${money(u.cost_usd)}  ${tokens(u.input_tokens + u.output_tokens)} tokens` : m?.top?.[0] ? `${m.top[0].name} ${m.top[0].cpu_pct.toFixed(0)}%` : repoName(t.repo);
@@ -654,6 +658,27 @@ class Cell {
   destroy() { this.term?.dispose(); }
 }
 
+/** A service of a VM: HTTP ones under the VM's own name, others through a TCP port on the Mac. */
+function portLink(p) {
+  const name = p.name || "service";
+  if (p.kind === "http") {
+    const host = p.url.replace(/^http:\/\//, "");
+    return h("a", { class: "port-link", href: p.url, target: "_blank", rel: "noopener",
+      title: `${name} on port ${p.port} of this VM.\nEvery VM has its own name, so they can all use port ${p.port}.\nOpens ${p.url}` },
+      h("span", { class: "live" }), h("b", {}, name), h("span", { class: "addr" }, host),
+      svg("svg", { class: "i ext", viewBox: "0 0 16 16", "aria-hidden": "true" }, svg("path", { d: "M6 3.5H3.5v9h9V10M9 3.5h3.5V7M12.5 3.5 7 9" })));
+  }
+  const addr = `localhost:${p.host_port}`;
+  const copy = h("button", { class: "port-link tcp", type: "button",
+    title: `${name} on port ${p.port} of this VM is not a web page: connect to ${addr} (click to copy).` },
+    h("span", { class: "live" }), h("b", {}, name), h("span", { class: "addr" }, addr),
+    p.host_port !== p.port ? h("span", { class: "moved" }, `${p.port} in the VM`) : null, h("span", { class: "moved" }, "TCP"));
+  copy.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(addr); toast(`Copied ${addr}`); } catch { toast(addr); }
+  });
+  return copy;
+}
+
 /** One machine, full size, with its telemetry. */
 class FocusView {
   constructor(id) {
@@ -675,7 +700,16 @@ class FocusView {
       h("span", { class: "dot" }), this.titleEl, this.seg, this.snapBtn, this.saveBtn, this.closeBtn, this.stopBtn, this.panelBtn);
     this.overlay = h("div", { class: "overlay" });
     this.portsBar = h("div", { class: "ports-bar", "aria-label": "Ports open on this Mac" });
-    this.screen = h("div", { class: "screen" }, this.overlay);
+    this.dropHint = h("div", { class: "drop-hint" }, h("b", {}, "Drop to copy into the VM"), h("span", {}, "The files go to /mnt/job/uploads and their paths are typed in the terminal."));
+    this.screen = h("div", { class: "screen" }, this.overlay, this.dropHint);
+    this.screen.addEventListener("dragover", e => {
+      if (![...e.dataTransfer.types].includes("Files") || byId(this.id)?.status.state !== "running") return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      this.screen.classList.add("dropping");
+    });
+    this.screen.addEventListener("dragleave", e => { if (!this.screen.contains(e.relatedTarget)) this.screen.classList.remove("dropping"); });
+    this.screen.addEventListener("drop", e => { e.preventDefault(); this.screen.classList.remove("dropping"); this.drop([...e.dataTransfer.files]); });
     this.result = h("div", { class: "result" });
     this.result.hidden = true;
     this.stage = h("section", { class: "stage" }, this.toolbar, this.portsBar, this.screen, this.result);
@@ -717,20 +751,10 @@ class FocusView {
   /** What the VM serves, reachable from the Mac: always in view, right under the toolbar. */
   renderPorts(ports) {
     this.portsBar.hidden = !ports.length;
-    const key = ports.map(p => `${p.port}:${p.host_port}:${p.name}`).join(",");
+    const key = ports.map(p => `${p.port}:${p.url}:${p.host_port}:${p.name}`).join(",");
     if (key === this.portsKey) return;
     this.portsKey = key;
-    this.portsBar.replaceChildren(h("span", { class: "ports-label" }, "Open on this Mac"),
-      ...ports.map(p => {
-        const url = `http://localhost:${p.host_port}`;
-        const moved = p.host_port !== p.port;
-        return h("a", { class: "port-link", href: url, target: "_blank", rel: "noopener",
-          title: `${p.name || "A service"} listens on port ${p.port} inside the VM.${moved ? ` Port ${p.port} is taken on this Mac, so it is on ${p.host_port}.` : ""}\nOpens ${url}` },
-          h("span", { class: "live" }), h("b", {}, p.name || "service"),
-          h("span", { class: "addr" }, `localhost:${p.host_port}`),
-          moved ? h("span", { class: "moved" }, `${p.port} in the VM`) : null,
-          svg("svg", { class: "i ext", viewBox: "0 0 16 16", "aria-hidden": "true" }, svg("path", { d: "M6 3.5H3.5v9h9V10M9 3.5h3.5V7M12.5 3.5 7 9" })));
-      }));
+    this.portsBar.replaceChildren(h("span", { class: "ports-label" }, "Open on this Mac"), ...ports.map(portLink));
   }
 
   renderPanel(t, label) {
@@ -809,6 +833,27 @@ class FocusView {
     try { localStorage.setItem("agentvm.panel", this.showPanel ? "on" : "off"); } catch {}
     this.update();
     this.terms[this.session]?.fitSoon();
+  }
+
+  /** Copies dropped files into the VM, then types their paths, as the Mac's Terminal does. */
+  async drop(files) {
+    if (!files.length) return;
+    const paths = [];
+    for (const f of files) {
+      toast(`Copying ${f.name} into the VM…`);
+      try {
+        const res = await fetch(`/api/tasks/${this.id}/upload`, { method: "POST", body: f, headers: { "x-file-name": encodeURIComponent(f.name) } });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(data.error || `Could not copy ${f.name}`, "err"); continue; }
+        paths.push(data.path);
+      } catch { toast(`Could not copy ${f.name}`, "err"); }
+    }
+    if (!paths.length) return;
+    const quote = p => (/^[\w@%+=:,./-]+$/.test(p) ? p : `'${p.replace(/'/g, "'\\''")}'`);
+    const term = this.ensureTerm(this.session);
+    term.xterm.paste(paths.map(quote).join(" ") + " ");
+    term.xterm.focus();
+    toast(paths.length === 1 ? `In the VM: ${paths[0]}` : `${paths.length} files in /mnt/job/uploads`);
   }
 
   async save() {

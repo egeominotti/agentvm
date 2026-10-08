@@ -35,8 +35,19 @@ pub struct ListeningPort {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ForwardedPort {
     pub port: u16,
-    pub host_port: u16,
     pub name: String,
+    pub kind: PortKind,
+    /// HTTP services: `http://<port>.<vm>.localhost:<server port>`, through the server's proxy.
+    pub url: Option<String>,
+    /// Other services: a direct TCP forward on `127.0.0.1:<host_port>`.
+    pub host_port: Option<u16>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PortKind {
+    Http,
+    Tcp,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

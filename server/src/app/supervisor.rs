@@ -258,7 +258,9 @@ async fn supervise(
         ctx.store.set_activity(id, ws.activity());
         if let Some(m) = ws.read_metrics() {
             if record.interactive {
-                let ports = ctx.forwards.sync(&ctx.config.jobs(), id, &m.ports);
+                let socket = JobWorkspace::pty_socket_of(&ctx.config.jobs(), id);
+                let vm = super::proxy::vm_name(record);
+                let ports = ctx.forwards.sync(socket, id, &vm, ctx.config.port, &m.ports);
                 ctx.store.set_ports(id, ports);
             }
             ctx.store.record_metrics(id, m);

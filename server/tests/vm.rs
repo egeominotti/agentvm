@@ -24,6 +24,16 @@ fn unique_id() -> TaskId {
     TaskId::generate(SystemTime::now(), [n[0] ^ 0x5a, n[1]])
 }
 
+/// A test that panics must not leave its VM running: VMs are detached from their parent by design.
+struct KillVms(PathBuf);
+impl Drop for KillVms {
+    fn drop(&mut self) {
+        let _ = std::process::Command::new("pkill")
+            .args(["-TERM", "-f", &format!("agentvm-vm --config {}", self.0.display())])
+            .status();
+    }
+}
+
 fn workspace(tmp: &tempfile::TempDir) -> JobWorkspace {
     let ws = JobWorkspace::create(tmp.path(), &unique_id()).unwrap();
     ws.clone_disk(&golden()).unwrap();
@@ -47,6 +57,7 @@ fn config(ws: &JobWorkspace) -> VmConfig {
 #[ignore = "requires bin/agentvm-vm"]
 async fn helper_reports_invalid_config() {
     let tmp = tempfile::tempdir().unwrap();
+    let _vms = KillVms(tmp.path().to_path_buf());
     let ws = JobWorkspace::create(tmp.path(), &unique_id()).unwrap();
     let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws), &ws.dir().join("vm.events")).unwrap();
     assert!(matches!(vm.next_event().await, Some(VmEvent::Error(m)) if m.contains("disk missing")));
@@ -57,6 +68,7 @@ async fn helper_reports_invalid_config() {
 #[ignore = "requires the golden image"]
 async fn boots_golden_without_task_and_powers_off() {
     let tmp = tempfile::tempdir().unwrap();
+    let _vms = KillVms(tmp.path().to_path_buf());
     let ws = workspace(&tmp);
     let t0 = Instant::now();
     let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws), &ws.dir().join("vm.events")).unwrap();
@@ -72,6 +84,7 @@ async fn boots_golden_without_task_and_powers_off() {
 #[ignore = "requires the golden image"]
 async fn terminate_stops_a_running_vm() {
     let tmp = tempfile::tempdir().unwrap();
+    let _vms = KillVms(tmp.path().to_path_buf());
     let ws = workspace(&tmp);
     // Stopped right after boot, before the guest shuts down on its own.
     let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws), &ws.dir().join("vm.events")).unwrap();
@@ -84,6 +97,7 @@ async fn terminate_stops_a_running_vm() {
 #[ignore = "requires the golden image"]
 async fn helper_is_detached_from_the_spawning_process_tree() {
     let tmp = tempfile::tempdir().unwrap();
+    let _vms = KillVms(tmp.path().to_path_buf());
     let ws = workspace(&tmp);
     let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws), &ws.dir().join("vm.events")).unwrap();
     assert_eq!(vm.next_event().await, Some(VmEvent::Started));
@@ -115,6 +129,7 @@ async fn interactive_vm_serves_a_shell_over_vsock_and_closes_on_request() {
     use agentvm::secret::Secret;
 
     let tmp = tempfile::tempdir().unwrap();
+    let _vms = KillVms(tmp.path().to_path_buf());
     let ws = workspace(&tmp);
     let base = repo_with_bundle(&ws);
     ws.write_spec(&TaskSpec {
@@ -216,6 +231,7 @@ async fn shell_keystroke_echo_is_fast() {
     use agentvm::secret::Secret;
 
     let tmp = tempfile::tempdir().unwrap();
+    let _vms = KillVms(tmp.path().to_path_buf());
     let ws = workspace(&tmp);
     let base = repo_with_bundle(&ws);
     ws.write_spec(&TaskSpec {
@@ -261,6 +277,7 @@ async fn shell_keystroke_echo_is_fast() {
 #[ignore = "needs the golden image"]
 async fn a_vm_outlives_its_process_handle_and_can_be_reattached() {
     let tmp = tempfile::tempdir().unwrap();
+    let _vms = KillVms(tmp.path().to_path_buf());
     let ws = workspace(&tmp);
     let events = ws.dir().join("vm.events");
     let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws), &events).unwrap();
@@ -323,6 +340,7 @@ async fn saves_survive_git_failures_in_the_guest() {
     use agentvm::secret::Secret;
 
     let tmp = tempfile::tempdir().unwrap();
+    let _vms = KillVms(tmp.path().to_path_buf());
     let ws = workspace(&tmp);
     let base = repo_with_bundle(&ws);
     ws.write_spec(&TaskSpec {

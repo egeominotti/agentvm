@@ -54,6 +54,7 @@ pub fn router(ctx: Arc<AppCtx>) -> Router {
         .route("/api/snapshots/{sid}/export", get(export_snapshot))
         .route("/api/snapshots/{sid}/backup", post(backup_snapshot))
         .route("/api/snapshots/import", post(import_snapshot).layer(axum::extract::DefaultBodyLimit::disable()))
+        .route("/api/tasks/{id}/upload", post(upload).layer(axum::extract::DefaultBodyLimit::disable()))
         .route("/api/backups", get(list_backups))
         .route("/api/backups/{sid}", axum::routing::delete(delete_backup))
         .route("/api/backups/{sid}/restore", post(restore_backup))
@@ -62,12 +63,18 @@ pub fn router(ctx: Arc<AppCtx>) -> Router {
         .route("/api/golden/rebuild", post(golden_rebuild))
         .route("/api/storage", get(storage))
         .route("/api/storage/cleanup", post(storage_cleanup))
-        .layer(middleware::from_fn_with_state(ctx.config.port, loopback_only))
+        .layer(middleware::from_fn_with_state(ctx.clone(), loopback_only))
         .with_state(ctx)
 }
 
-/// Defense against DNS rebinding and cross-origin requests (POST and WebSocket): loopback Host/Origin only.
-async fn loopback_only(State(port): State<u16>, req: Request, next: Next) -> Response {
+/// Proxied VM services first; then defense against DNS rebinding and cross-origin requests (POST and WebSocket): loopback Host/Origin only.
+async fn loopback_only(State(ctx): Ctx, req: Request, next: Next) -> Response {
+    let port = ctx.config.port;
+    // `<port>.<vm>.localhost`: a service inside a VM, never the dashboard or its API.
+    let host = req.headers().get(header::HOST).and_then(|v| v.to_str().ok());
+    if let Some((guest_port, vm)) = host.and_then(|h| crate::domain::hostname::parse_proxy_host(h, port)) {
+        return super::proxy::forward(ctx.clone(), guest_port, vm, req).await;
+    }
     if is_loopback_request(port, &req) {
         let mut res = next.run(req).await;
         // No other site may show the dashboard in a frame and trick clicks on it.
@@ -507,4 +514,57 @@ async fn remove_task(State(ctx): Ctx, Path(id): Path<String>) -> Result<StatusCo
         ApiError(code, e.to_string())
     })?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+const UPLOAD_MAX: u64 = 2 << 30;
+
+/// A file dropped on a terminal: `x-file-name` (URL-encoded) + the raw bytes. Returns its path in the VM.
+async fn upload(State(ctx): Ctx, Path(id): Path<String>, req: Request) -> Result<Json<serde_json::Value>, ApiError> {
+    use tokio::io::AsyncWriteExt;
+    let (id, _) = find(&ctx, &id)?;
+    let name = req
+        .headers()
+        .get("x-file-name")
+        .and_then(|v| v.to_str().ok())
+        .map(percent_decode)
+        .ok_or_else(|| ApiError(StatusCode::BAD_REQUEST, "missing x-file-name".into()))?;
+    let up = session::start_upload(&ctx, &id, &name).map_err(session_error)?;
+    let mut file = tokio::fs::File::from_std(up.file);
+    let mut body = req.into_body().into_data_stream();
+    let mut written = 0u64;
+    let result: Result<(), String> = async {
+        while let Some(chunk) = body.next().await {
+            let chunk = chunk.map_err(|e| e.to_string())?;
+            written += chunk.len() as u64;
+            if written > UPLOAD_MAX {
+                return Err("files over 2 GB cannot be dropped on a terminal".into());
+            }
+            file.write_all(&chunk).await.map_err(|e| e.to_string())?;
+        }
+        file.flush().await.map_err(|e| e.to_string())
+    }
+    .await;
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&up.host_path);
+        return Err(ApiError(StatusCode::BAD_REQUEST, e));
+    }
+    Ok(Json(serde_json::json!({ "path": up.guest_path, "bytes": written })))
+}
+
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && let Some(b) = s.get(i + 1..i + 3).and_then(|h| u8::from_str_radix(h, 16).ok())
+        {
+            out.push(b);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }

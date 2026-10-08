@@ -1,37 +1,81 @@
-//! Keeps one forward per listening VM port, following what the VM reports every second.
+//! What each VM serves, following the ports it reports every second: HTTP services are reached by
+//! name through the proxy (`<port>.<vm>.localhost`), the others get a direct TCP forward.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
-use crate::adapters::forward::PortForward;
-use crate::adapters::jobdir::JobWorkspace;
+use crate::adapters::forward::{self, PortForward};
+use crate::domain::hostname;
 use crate::domain::ids::TaskId;
-use crate::domain::metrics::{ForwardedPort, ListeningPort};
+use crate::domain::metrics::{ForwardedPort, ListeningPort, PortKind};
 
-/// Forwards of one VM: guest port → (forward, owning process name).
-type TaskForwards = HashMap<u16, (PortForward, String)>;
+/// At most this many ports per VM are exposed: a VM must not exhaust the Mac's descriptors.
+const MAX_PORTS: usize = 32;
+
+enum Reach {
+    Probing,
+    Http,
+    Tcp(PortForward),
+    Unreachable,
+}
+
+struct Exposed {
+    name: String,
+    reach: Reach,
+}
+
+type Ports = HashMap<u16, Exposed>;
 
 #[derive(Default)]
 pub struct PortForwards {
-    by_task: Mutex<HashMap<TaskId, TaskForwards>>,
+    by_task: Arc<Mutex<HashMap<TaskId, Ports>>>,
 }
 
 impl PortForwards {
-    /// Starts forwards for new ports, stops those that disappeared; returns the current list.
-    pub fn sync(&self, jobs: &std::path::Path, id: &TaskId, listening: &[ListeningPort]) -> Vec<ForwardedPort> {
+    /// Follows the VM's listening ports (new ones are probed in the background) and returns what
+    /// is reachable now. `vm` is the machine's DNS name, `server_port` the dashboard's port.
+    pub fn sync(
+        &self,
+        socket: PathBuf,
+        id: &TaskId,
+        vm: &str,
+        server_port: u16,
+        listening: &[ListeningPort],
+    ) -> Vec<ForwardedPort> {
         let mut all = self.by_task.lock().unwrap();
         let current = all.entry(id.clone()).or_default();
         current.retain(|port, _| listening.iter().any(|l| l.port == *port));
         for l in listening {
-            if !current.contains_key(&l.port)
-                && let Ok(fwd) = PortForward::start(l.port, JobWorkspace::pty_socket_of(jobs, id))
-            {
-                current.insert(l.port, (fwd, l.name.clone()));
+            if current.len() >= MAX_PORTS || current.contains_key(&l.port) {
+                continue;
             }
+            current.insert(l.port, Exposed { name: l.name.clone(), reach: Reach::Probing });
+            let (by_task, id, socket, port) = (self.by_task.clone(), id.clone(), socket.clone(), l.port);
+            tokio::spawn(async move {
+                let reach = if forward::speaks_http(&socket, port).await {
+                    Reach::Http
+                } else {
+                    PortForward::start(port, socket).map_or(Reach::Unreachable, Reach::Tcp)
+                };
+                // The port may have closed, or the VM stopped, while it was being probed.
+                if let Some(e) = by_task.lock().unwrap().get_mut(&id).and_then(|p| p.get_mut(&port))
+                    && matches!(e.reach, Reach::Probing)
+                {
+                    e.reach = reach;
+                }
+            });
         }
         let mut list: Vec<ForwardedPort> = current
             .iter()
-            .map(|(port, (fwd, name))| ForwardedPort { port: *port, host_port: fwd.host_port, name: name.clone() })
+            .filter_map(|(port, e)| {
+                let (kind, url, host_port) = match &e.reach {
+                    Reach::Http => (PortKind::Http, Some(hostname::proxy_url(*port, vm, server_port)), None),
+                    Reach::Tcp(fwd) => (PortKind::Tcp, None, Some(fwd.host_port)),
+                    Reach::Probing | Reach::Unreachable => return None,
+                };
+                Some(ForwardedPort { port: *port, name: e.name.clone(), kind, url, host_port })
+            })
             .collect();
         list.sort_by_key(|p| p.port);
         list

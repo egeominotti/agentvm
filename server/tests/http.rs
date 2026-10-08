@@ -194,3 +194,16 @@ async fn the_dashboard_refuses_to_be_framed() {
         assert!(csp.contains("frame-ancestors 'none'"), "{path}: {csp}");
     }
 }
+
+/// `<port>.<vm>.localhost` belongs to a VM's service: it must never reach the dashboard's API.
+#[tokio::test]
+async fn proxied_names_never_reach_the_api() {
+    let tmp = tempfile::tempdir().unwrap();
+    let req =
+        Request::get("/api/status").header("host", "3000.nothing-0000.localhost:7777").body(Body::empty()).unwrap();
+    let res = app(tmp.path()).oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    let body = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
+    let text = String::from_utf8_lossy(&body);
+    assert!(text.contains("no running machine is called nothing-0000") && !text.contains("golden"), "{text}");
+}

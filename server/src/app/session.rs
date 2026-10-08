@@ -111,3 +111,20 @@ pub fn close(ctx: &AppCtx, id: &TaskId) -> Result<(), SessionError> {
     let share = JobWorkspace::share_of(&ctx.config.jobs(), id);
     write_request(&share, "close.request").map_err(|e| SessionError::Unreachable(e.to_string()))
 }
+
+/// A file dropped on a terminal, being written into the VM's shared folder.
+pub struct Upload {
+    pub file: std::fs::File,
+    /// Where the VM sees it: `/mnt/job/uploads/<name>`.
+    pub guest_path: String,
+    pub host_path: std::path::PathBuf,
+}
+
+/// Starts an upload into the running terminal `id`; a taken name gets ` (2)`, ` (3)`…
+pub fn start_upload(ctx: &AppCtx, id: &TaskId, name: &str) -> Result<Upload, SessionError> {
+    running_terminal(ctx, id)?;
+    let dir = JobWorkspace::share_of(&ctx.config.jobs(), id).join("uploads");
+    let base = std::path::Path::new(name).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let (file, name) = guestfs::create_unique(&dir, &base).map_err(|e| SessionError::Unreachable(e.to_string()))?;
+    Ok(Upload { file, guest_path: format!("/mnt/job/uploads/{name}"), host_path: dir.join(name) })
+}
