@@ -54,6 +54,7 @@ fn adapters_do_not_know_each_other_or_outer_layers() {
             "records",
             "releases",
             "s3",
+            "server_log",
             "settings_file",
             "snapshots",
             "tail",

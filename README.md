@@ -204,6 +204,7 @@ variables provide the defaults:
 | `AGENTVM_TIMEOUT_S` | `1800` | Time limit for automatic (non-interactive) tasks |
 | `AGENTVM_S3_SECRET` | — | S3 secret key, overriding the Keychain (CI) |
 | `AGENTVM_MIN_FREE_GB` | `10` | Free disk space below which launches, snapshots and imports are refused |
+| `AGENTVM_LOG` | `info` | Server log level (`debug` for more); the log is `~/AgentVMs/logs/agentvm.log.<date>`, JSON, 14 days kept |
 
 ## HTTP API
 

@@ -9,6 +9,7 @@ mod process;
 mod pty;
 mod s3;
 mod secrets;
+mod server_log;
 mod settings;
 mod snapshots;
 mod tail;

@@ -11,6 +11,8 @@ use agentvm::config::Config;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut config = Config::from_env();
+    let level = std::env::var("AGENTVM_LOG").unwrap_or_else(|_| "info".into());
+    let _log = agentvm::logging::init(&config.home.join("logs"), &level);
     if let Err(e) = agentvm::adapters::host::raise_open_files_limit() {
         eprintln!("could not raise the open files limit: {e}");
     }
