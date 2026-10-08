@@ -73,15 +73,15 @@ pub fn remove_task(ctx: &AppCtx, id: &TaskId) -> Result<(), RemoveError> {
     Ok(())
 }
 
-/// Deletes the folders of jobs that are not live; returns how many were removed.
+/// Deletes the folders of tasks known to be finished; returns how many were removed. A folder
+/// it cannot account for (a record this version cannot read) may belong to a VM still running:
+/// it stays, as it does at start-up.
 pub fn cleanup_finished_jobs(ctx: &AppCtx) -> usize {
-    let live: std::collections::HashSet<String> =
-        ctx.store.list().into_iter().filter(|r| !r.state.is_terminal()).map(|r| r.id.to_string()).collect();
-    let Ok(entries) = std::fs::read_dir(ctx.config.jobs()) else { return 0 };
-    entries
-        .flatten()
-        .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|name| !live.contains(name))
-        .filter(|name| crate::adapters::jobdir::JobWorkspace::remove_job(&ctx.config.jobs(), name).is_ok())
+    let jobs = ctx.config.jobs();
+    ctx.store
+        .list()
+        .into_iter()
+        .filter(|r| r.state.is_terminal() && jobs.join(r.id.as_str()).exists())
+        .filter(|r| crate::adapters::jobdir::JobWorkspace::remove_job(&jobs, r.id.as_str()).is_ok())
         .count()
 }

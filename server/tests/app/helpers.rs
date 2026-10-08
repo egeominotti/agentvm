@@ -6,10 +6,16 @@ use agentvm::app::store::{Store, TaskRecord};
 use agentvm::domain::ids::{CommitSha, Prompt, RepoPath, TaskId};
 use agentvm::domain::task::TaskEvent;
 
+/// Different random bits for every record of a test run: two tasks never share an id.
+fn next_bits() -> [u8; 2] {
+    static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed).to_be_bytes()
+}
+
 pub(crate) fn record(repo: &tempfile::TempDir) -> TaskRecord {
     std::fs::create_dir_all(repo.path().join(".git")).unwrap();
     TaskRecord::new(
-        TaskId::generate(SystemTime::now(), [9, 9]),
+        TaskId::generate(SystemTime::now(), next_bits()),
         RepoPath::new(repo.path().to_path_buf()).unwrap(),
         Some(Prompt::new("do something".into()).unwrap()),
         CommitSha::parse(&"b".repeat(40)).unwrap(),

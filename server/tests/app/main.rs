@@ -2,6 +2,7 @@
 
 mod backups;
 mod bundles;
+mod cleanup;
 mod closing;
 mod events;
 mod helpers;
