@@ -29,6 +29,7 @@ pub enum KeychainError {
     InvalidS3Secret,
 }
 
+#[derive(Clone)]
 pub struct Keychain {
     /// `None` = the user's default keychains.
     keychain: Option<PathBuf>,

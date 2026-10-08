@@ -66,7 +66,11 @@ async fn prepare(ctx: &AppCtx, id: &TaskId, record: &TaskRecord) -> Result<(JobW
         ctx.store.push_boot(id, format!("host: repository {how} in {} ms", t.elapsed().as_millis()));
     }
     ws.write_spec(&task_spec(id, record, timeout_s)).map_err(|e| format!("task.json: {e}"))?;
-    let token = ctx.keychain.read_token().map_err(|e| e.to_string())?;
+    let keychain = ctx.keychain.clone();
+    let token = tokio::task::spawn_blocking(move || keychain.read_token())
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
     ws.write_token(&token).map_err(|e| format!("token: {e}"))?;
     install_disk(ctx, record, &ws)?;
     ctx.store.push_boot(id, format!("host: disk ready in {} ms", t.elapsed().as_millis()));

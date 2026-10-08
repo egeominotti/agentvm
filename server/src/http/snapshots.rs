@@ -33,7 +33,10 @@ pub async fn list(State(ctx): Ctx) -> Json<Vec<SnapshotMeta>> {
 
 pub async fn restore(State(ctx): Ctx, Path(sid): Path<String>) -> Result<(StatusCode, Json<Created>), ApiError> {
     let sid = snapshot_id(&sid)?;
-    let id = snapshots::restore(&ctx, &sid)?;
+    // Off the async workers: it reads the repository and the Keychain.
+    let id = tokio::task::spawn_blocking(move || snapshots::restore(&ctx, &sid))
+        .await
+        .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e))??;
     Ok((StatusCode::CREATED, Json(Created { id: id.to_string() })))
 }
 

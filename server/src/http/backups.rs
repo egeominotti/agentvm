@@ -71,10 +71,9 @@ pub async fn delete(State(ctx): Ctx, Path(sid): Path<String>) -> Result<StatusCo
 }
 
 pub async fn get_s3(State(ctx): Ctx) -> Json<serde_json::Value> {
-    Json(serde_json::json!({
-        "config": ctx.settings.get().s3,
-        "secret_saved": ctx.keychain.read_s3_secret().is_ok(),
-    }))
+    let keychain = ctx.keychain.clone();
+    let secret_saved = tokio::task::spawn_blocking(move || keychain.read_s3_secret().is_ok()).await.unwrap_or(false);
+    Json(serde_json::json!({ "config": ctx.settings.get().s3, "secret_saved": secret_saved }))
 }
 
 pub async fn put_s3(State(ctx): Ctx, Json(req): Json<S3Update>) -> Result<StatusCode, ApiError> {

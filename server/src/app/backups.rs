@@ -87,9 +87,12 @@ async fn adopt(ctx: &AppCtx, file: &Path, scratch: &Path) -> Result<SnapshotMeta
     Ok(ctx.snapshots.adopt(scratch, SnapshotMeta { id, auto: false, ..meta })?)
 }
 
-pub fn s3_client(ctx: &AppCtx) -> Result<S3Client, BackupError> {
+/// The client for the configured bucket; the secret key comes from the Keychain, read off the
+/// async workers (a locked Keychain may take its time).
+pub async fn s3_client(ctx: &AppCtx) -> Result<S3Client, BackupError> {
     let cfg = ctx.settings.get().s3.ok_or(BackupError::NotConfigured)?;
-    let secret = ctx.keychain.read_s3_secret().map_err(|_| BackupError::NotConfigured)?;
+    let keychain = ctx.keychain.clone();
+    let secret = blocking(move || keychain.read_s3_secret().map_err(|_| BackupError::NotConfigured)).await?;
     Ok(S3Client::new(cfg, secret))
 }
 
@@ -98,11 +101,16 @@ pub async fn configure_s3(ctx: &AppCtx, cfg: S3Config, secret: Option<String>) -
     cfg.validate().map_err(|e| BackupError::Invalid(e.to_string()))?;
     let secret = match secret.filter(|s| !s.trim().is_empty()) {
         Some(s) => Secret::new(s.trim().to_owned()),
-        None => ctx.keychain.read_s3_secret().map_err(|_| BackupError::Invalid("enter the secret key".into()))?,
+        None => {
+            let keychain = ctx.keychain.clone();
+            blocking(move || keychain.read_s3_secret().map_err(|_| BackupError::Invalid("enter the secret key".into())))
+                .await?
+        }
     };
     let probe = S3Client::new(cfg.clone(), Secret::new(secret.expose().to_owned()));
     blocking(move || check(&probe)).await?;
-    ctx.keychain.write_s3_secret(&secret).map_err(|e| BackupError::Invalid(e.to_string()))?;
+    let keychain = ctx.keychain.clone();
+    blocking(move || keychain.write_s3_secret(&secret).map_err(|e| BackupError::Invalid(e.to_string()))).await?;
     ctx.settings.set_s3(Some(cfg)).map_err(|e| BackupError::Invalid(e.to_string()))?;
     Ok(())
 }
@@ -120,13 +128,13 @@ fn check(s3: &S3Client) -> Result<(), BackupError> {
 }
 
 pub async fn test_s3(ctx: &AppCtx) -> Result<(), BackupError> {
-    let s3 = s3_client(ctx)?;
+    let s3 = s3_client(ctx).await?;
     blocking(move || check(&s3)).await
 }
 
 /// Uploads `<id>.tar.zst` and `<id>.json` (the metadata, for listing without downloading).
 pub async fn backup(ctx: &AppCtx, sid: &SnapshotId) -> Result<RemoteBackup, BackupError> {
-    let s3 = s3_client(ctx)?;
+    let s3 = s3_client(ctx).await?;
     let meta = ctx.snapshots.get(sid).ok_or(BackupError::NoSnapshot)?;
     let file = TempFile(export(ctx, sid).await?);
     let id = sid.clone();
@@ -144,7 +152,7 @@ pub async fn backup(ctx: &AppCtx, sid: &SnapshotId) -> Result<RemoteBackup, Back
 }
 
 pub async fn list(ctx: &AppCtx) -> Result<Vec<RemoteBackup>, BackupError> {
-    let s3 = s3_client(ctx)?;
+    let s3 = s3_client(ctx).await?;
     let local: Vec<String> = ctx.snapshots.list().into_iter().map(|m| m.id.to_string()).collect();
     let mut found = blocking(move || {
         let e = |e: crate::adapters::s3::S3Error| BackupError::S3(e.to_string());
@@ -175,7 +183,7 @@ pub async fn list(ctx: &AppCtx) -> Result<Vec<RemoteBackup>, BackupError> {
 
 /// Downloads a backup and adds it to the local snapshots.
 pub async fn restore(ctx: &AppCtx, sid: &SnapshotId) -> Result<SnapshotMeta, BackupError> {
-    let s3 = s3_client(ctx)?;
+    let s3 = s3_client(ctx).await?;
     let file = temp_dir(ctx)?.join(format!("{sid}.download.{ARCHIVE}"));
     let (key, out) = (s3.config().key(&format!("{sid}.{ARCHIVE}")), file.clone());
     blocking(move || s3.get_file(&key, &out).map_err(|e| BackupError::S3(e.to_string()))).await?;
@@ -185,7 +193,7 @@ pub async fn restore(ctx: &AppCtx, sid: &SnapshotId) -> Result<SnapshotMeta, Bac
 }
 
 pub async fn delete(ctx: &AppCtx, sid: &SnapshotId) -> Result<(), BackupError> {
-    let s3 = s3_client(ctx)?;
+    let s3 = s3_client(ctx).await?;
     let id = sid.clone();
     blocking(move || {
         let e = |e: crate::adapters::s3::S3Error| BackupError::S3(e.to_string());

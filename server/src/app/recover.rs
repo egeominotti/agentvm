@@ -52,7 +52,12 @@ async fn resume(ctx: Arc<AppCtx>, id: TaskId, _slot: Option<Slot>) {
     let vm = ws.read_pid().and_then(|pid| VmProcess::attach(pid, &ws.events()));
     let result = match vm {
         Some(vm) => {
-            let token = ctx.keychain.read_token().unwrap_or_else(|_| Secret::new(String::new()));
+            let keychain = ctx.keychain.clone();
+            let token = tokio::task::spawn_blocking(move || keychain.read_token())
+                .await
+                .ok()
+                .and_then(Result::ok)
+                .unwrap_or_else(|| Secret::new(String::new()));
             supervise(&ctx, &id, &record, ws, vm, token).await
         }
         None => {

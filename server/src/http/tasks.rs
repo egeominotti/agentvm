@@ -31,19 +31,24 @@ pub async fn create(State(ctx): Ctx, Json(req): Json<CreateTask>) -> Result<(Sta
         Some(v) => Some(ClaudeVersion::parse(v).map_err(ApiError::bad_request)?),
         None => None,
     };
-    let new = NewTask {
-        repo: &req.repo_path,
-        prompt: req.prompt,
-        base_ref: req.base_ref.as_deref(),
-        interactive: req.interactive,
-        model: req.model,
-        claude_version,
-        restore_from: None,
-        cpus: req.cpus,
-        memory_mb: req.memory_mb,
-        label: None,
-    };
-    let id = submit(&ctx, new)?;
+    // Off the async workers: it reads the repository and the Keychain.
+    let id = tokio::task::spawn_blocking(move || {
+        let new = NewTask {
+            repo: &req.repo_path,
+            prompt: req.prompt,
+            base_ref: req.base_ref.as_deref(),
+            interactive: req.interactive,
+            model: req.model,
+            claude_version,
+            restore_from: None,
+            cpus: req.cpus,
+            memory_mb: req.memory_mb,
+            label: None,
+        };
+        submit(&ctx, new)
+    })
+    .await
+    .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e))??;
     Ok((StatusCode::CREATED, Json(Created { id: id.to_string() })))
 }
 
