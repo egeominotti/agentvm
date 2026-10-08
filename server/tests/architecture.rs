@@ -65,3 +65,37 @@ fn adapters_do_not_know_each_other_or_outer_layers() {
         }
     }
 }
+
+/// No file of the project grows past 300 lines: split it by responsibility instead.
+#[test]
+fn no_file_is_longer_than_300_lines() {
+    const MAX: usize = 300;
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+    let skip = ["target", "vendor", "fixtures", "node_modules", "docs", ".git", ".claude", ".build"];
+    let kinds = ["rs", "js", "css", "html", "swift", "sh", "py", "toml", "yml"];
+    let mut long = Vec::new();
+    let mut stack = vec![repo.clone()];
+    while let Some(d) = stack.pop() {
+        for e in std::fs::read_dir(d).unwrap().flatten() {
+            let (p, name) = (e.path(), e.file_name().to_string_lossy().into_owned());
+            if p.is_dir() {
+                if !skip.contains(&name.as_str()) {
+                    stack.push(p);
+                }
+                continue;
+            }
+            // Guest scripts have no extension; anything else must be source of a known kind.
+            let source = p.extension().is_some_and(|x| kinds.contains(&x.to_str().unwrap_or("")))
+                || p.parent().is_some_and(|d| d.ends_with("guest"));
+            if !source {
+                continue;
+            }
+            let lines = std::fs::read_to_string(&p).map_or(0, |t| t.lines().count());
+            if lines > MAX {
+                long.push(format!("{} ({lines})", p.strip_prefix(&repo).unwrap().display()));
+            }
+        }
+    }
+    long.sort();
+    assert!(long.is_empty(), "files over {MAX} lines, split them: {long:?}");
+}

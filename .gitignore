@@ -1,3 +1,4 @@
 /server/target
 /bin
 /.superpowers
+.claude/worktrees/
