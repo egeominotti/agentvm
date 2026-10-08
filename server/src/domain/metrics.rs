@@ -21,6 +21,14 @@ pub struct VmMetrics {
     /// TCP ports something listens on inside the VM.
     #[serde(default)]
     pub ports: Vec<ListeningPort>,
+    /// Root disk reads and writes, bytes per second (`None`: a collector from before them).
+    #[serde(default)]
+    pub disk_read_bps: Option<u64>,
+    #[serde(default)]
+    pub disk_write_bps: Option<u64>,
+    /// Processes using the most memory.
+    #[serde(default)]
+    pub top_mem: Vec<ProcessSample>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

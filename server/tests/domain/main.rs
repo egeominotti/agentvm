@@ -15,3 +15,4 @@ mod settings_recovery;
 mod snapshot;
 mod spec;
 mod task;
+mod telemetry;

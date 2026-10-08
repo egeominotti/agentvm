@@ -41,6 +41,17 @@ def net_bytes():
     return rx, tx
 
 
+def disk_bytes():
+    """Bytes read and written by the VM's whole disks (vda, vdb…; not their partitions)."""
+    read = written = 0
+    for line in open("/proc/diskstats"):
+        cols = line.split()
+        if len(cols) > 9 and cols[2].startswith("vd") and not cols[2][-1].isdigit():
+            read += int(cols[5]) * 512
+            written += int(cols[9]) * 512
+    return read, written
+
+
 def process_ticks():
     """pid -> (name, cpu ticks, rss MB)."""
     out = {}
@@ -106,6 +117,7 @@ def main():
     cpus = os.cpu_count() or 1
     prev_idle, prev_total = cpu_totals()
     prev_rx, prev_tx = net_bytes()
+    prev_rd, prev_wr = disk_bytes()
     prev_procs = process_ticks()
     prev_t = time.monotonic()
     port_names = {}
@@ -115,6 +127,7 @@ def main():
         dt = max(now - prev_t, 1e-3)
         idle, total = cpu_totals()
         rx, tx = net_bytes()
+        rd, wr = disk_bytes()
         procs = process_ticks()
         busy = (total - prev_total) - (idle - prev_idle)
         top = []
@@ -144,9 +157,16 @@ def main():
             "net_tx_bps": round((tx - prev_tx) / dt),
             "procs": len(procs),
             "top": top[:TOP_N],
+            "top_mem": [
+                {"name": name, "cpu_pct": 0.0, "mem_mb": round(rss)}
+                for name, _, rss in sorted(procs.values(), key=lambda p: p[2], reverse=True)[:TOP_N]
+            ],
+            "disk_read_bps": round((rd - prev_rd) / dt),
+            "disk_write_bps": round((wr - prev_wr) / dt),
             "ports": [{"port": p, "name": n} for p, n in sorted(port_names.items())],
         })
         prev_idle, prev_total, prev_rx, prev_tx, prev_procs, prev_t = idle, total, rx, tx, procs, now
+        prev_rd, prev_wr = rd, wr
 
 
 if __name__ == "__main__":

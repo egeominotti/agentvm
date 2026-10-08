@@ -15,4 +15,5 @@ pub mod settings_recovery;
 pub mod snapshot;
 pub mod spec;
 pub mod task;
+pub mod telemetry;
 pub mod usage;
