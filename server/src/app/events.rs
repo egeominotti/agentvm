@@ -52,7 +52,7 @@ impl EventLog {
     }
 
     /// Storia completa seguita dagli eventi dal vivo.
-    pub fn stream(&self) -> impl Stream<Item = (Seq, StreamItem)> + Send + 'static {
+    pub fn stream(&self) -> impl Stream<Item = (Seq, StreamItem)> + Send + use<> {
         let (history, rx) = self.subscribe();
         let last = history.last().map_or(0, |(s, _)| *s);
         futures::stream::iter(history).chain(

@@ -27,6 +27,24 @@ Browser ──HTTP/SSE──> agentvm-server (Rust)  ──spawn──> agentvm-
 
 Dettagli, scope dell'MVP e decisioni: [docs/superpowers/specs/2026-10-08-agentvm-mvp-design.md](docs/superpowers/specs/2026-10-08-agentvm-mvp-design.md).
 
-## Stato
+## Uso
 
-Fase di design. Il prototipo di fattibilità è stato completato il 2026-10-08 (vedi la spec).
+```bash
+scripts/build.sh                     # compila bin/agentvm-vm (Swift, firmato) e bin/agentvm-server (Rust)
+scripts/build-golden.sh              # una volta: immagine Debian 13 con Claude Code (~2 min)
+claude setup-token                   # una volta: token dell'abbonamento Claude
+security add-generic-password -s agentvm -a agentvm -w   # incolla il token
+bin/agentvm-server                   # dashboard su http://127.0.0.1:7777
+```
+
+Variabili opzionali: `AGENTVM_PORT` (7777), `AGENTVM_CONCURRENCY` (4), `AGENTVM_CPUS` (4),
+`AGENTVM_MEMORY_MB` (4096), `AGENTVM_TIMEOUT_S` (1800), `AGENTVM_HOME` (`~/AgentVMs`).
+
+## Test
+
+```bash
+cargo test --manifest-path server/Cargo.toml                       # dominio, adapter, app
+cargo test --manifest-path server/Cargo.toml -- --ignored          # VM e sistema completo (golden + token)
+```
+
+Nessun mock: vedi [docs/e2e.md](docs/e2e.md) per cosa verificano i test con VM e Claude veri.
