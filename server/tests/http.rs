@@ -9,9 +9,6 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
 
-const TOKEN: &str = "test-token-0123456789abcdef";
-const AUTH: &str = "Bearer test-token-0123456789abcdef";
-
 fn app(home: &std::path::Path) -> axum::Router {
     let config = Config {
         home: home.to_path_buf(),
@@ -22,7 +19,6 @@ fn app(home: &std::path::Path) -> axum::Router {
         timeout_s: 60,
         vm_helper: "agentvm-vm".into(),
         scripts_dir: "scripts".into(),
-        api_token: Some(TOKEN.into()),
     };
     agentvm::http::router(Arc::new(AppCtx::new(config, Keychain::new(Some(home.join("none.keychain-db"))))))
 }
@@ -33,7 +29,7 @@ async fn status_of(req: Request<Body>) -> StatusCode {
 }
 
 fn get(host: &str) -> Request<Body> {
-    Request::get("/api/status").header("host", host).header("authorization", AUTH).body(Body::empty()).unwrap()
+    Request::get("/api/status").header("host", host).body(Body::empty()).unwrap()
 }
 
 #[tokio::test]
@@ -52,7 +48,6 @@ async fn rejects_foreign_host_header() {
 async fn rejects_cross_origin_post() {
     let req = Request::post("/api/tasks")
         .header("host", "127.0.0.1:7777")
-        .header("authorization", AUTH)
         .header("origin", "http://evil.example")
         .header("content-type", "application/json")
         .body(Body::from(r#"{"repo_path":"/tmp","prompt":"x"}"#))
@@ -64,7 +59,6 @@ async fn rejects_cross_origin_post() {
 async fn same_origin_post_reaches_the_handler() {
     let req = Request::post("/api/tasks")
         .header("host", "127.0.0.1:7777")
-        .header("authorization", AUTH)
         .header("origin", "http://127.0.0.1:7777")
         .header("content-type", "application/json")
         .body(Body::from(r#"{"repo_path":"/nonexistent","prompt":"x"}"#))
@@ -76,7 +70,6 @@ async fn same_origin_post_reaches_the_handler() {
 async fn rejects_cross_origin_websocket_to_a_terminal() {
     let req = Request::get("/api/tasks/20261008-000000-abcd/pty?session=shell")
         .header("host", "127.0.0.1:7777")
-        .header("authorization", AUTH)
         .header("origin", "http://evil.example")
         .header("connection", "upgrade")
         .header("upgrade", "websocket")
@@ -99,7 +92,6 @@ fn json_req(method: &str, path: &str, body: serde_json::Value) -> Request<Body> 
         .method(method)
         .uri(path)
         .header("host", "127.0.0.1:7777")
-        .header("authorization", AUTH)
         .header("content-type", "application/json")
         .body(Body::from(body.to_string()))
         .unwrap()
@@ -110,11 +102,7 @@ async fn settings_can_be_read_updated_and_persisted() {
     let tmp = tempfile::tempdir().unwrap();
     let (status, body) = send(
         app(tmp.path()),
-        Request::get("/api/settings")
-            .header("host", "127.0.0.1:7777")
-            .header("authorization", AUTH)
-            .body(Body::empty())
-            .unwrap(),
+        Request::get("/api/settings").header("host", "127.0.0.1:7777").body(Body::empty()).unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -127,11 +115,7 @@ async fn settings_can_be_read_updated_and_persisted() {
     // A fresh server on the same home sees the saved settings.
     let (_, body) = send(
         app(tmp.path()),
-        Request::get("/api/settings")
-            .header("host", "127.0.0.1:7777")
-            .header("authorization", AUTH)
-            .body(Body::empty())
-            .unwrap(),
+        Request::get("/api/settings").header("host", "127.0.0.1:7777").body(Body::empty()).unwrap(),
     )
     .await;
     assert_eq!(body["settings"]["max_vms"], 3);
@@ -143,11 +127,7 @@ async fn invalid_settings_are_rejected_with_a_message() {
     let tmp = tempfile::tempdir().unwrap();
     let (_, body) = send(
         app(tmp.path()),
-        Request::get("/api/settings")
-            .header("host", "127.0.0.1:7777")
-            .header("authorization", AUTH)
-            .body(Body::empty())
-            .unwrap(),
+        Request::get("/api/settings").header("host", "127.0.0.1:7777").body(Body::empty()).unwrap(),
     )
     .await;
     let mut s = body["settings"].clone();
@@ -177,13 +157,7 @@ async fn launch_rejects_resources_beyond_the_mac() {
 #[tokio::test]
 async fn saving_settings_keeps_the_s3_bucket_configured_since() {
     let tmp = tempfile::tempdir().unwrap();
-    let get_settings = || {
-        Request::get("/api/settings")
-            .header("host", "127.0.0.1:7777")
-            .header("authorization", AUTH)
-            .body(Body::empty())
-            .unwrap()
-    };
+    let get_settings = || Request::get("/api/settings").header("host", "127.0.0.1:7777").body(Body::empty()).unwrap();
     let (_, before) = send(app(tmp.path()), get_settings()).await;
     // Meanwhile the S3 form saved a bucket (written as `configure_s3` does).
     let mut with_s3 = before["settings"].clone();
@@ -211,13 +185,7 @@ async fn the_dashboard_refuses_to_be_framed() {
     let tmp = tempfile::tempdir().unwrap();
     for path in ["/", "/api/status"] {
         let res = app(tmp.path())
-            .oneshot(
-                Request::get(path)
-                    .header("host", "127.0.0.1:7777")
-                    .header("authorization", AUTH)
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::get(path).header("host", "127.0.0.1:7777").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(res.headers().get("x-frame-options").map(|v| v.to_str().unwrap()), Some("DENY"), "{path}");
@@ -231,79 +199,11 @@ async fn the_dashboard_refuses_to_be_framed() {
 #[tokio::test]
 async fn proxied_names_never_reach_the_api() {
     let tmp = tempfile::tempdir().unwrap();
-    let req = Request::get("/api/status")
-        .header("host", "3000.nothing-0000.localhost:7777")
-        .header("authorization", AUTH)
-        .body(Body::empty())
-        .unwrap();
+    let req =
+        Request::get("/api/status").header("host", "3000.nothing-0000.localhost:7777").body(Body::empty()).unwrap();
     let res = app(tmp.path()).oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
     let body = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
     let text = String::from_utf8_lossy(&body);
     assert!(text.contains("no running machine is called nothing-0000") && !text.contains("golden"), "{text}");
-}
-
-async fn get_raw(path: &str, headers: &[(&str, &str)]) -> axum::response::Response {
-    let tmp = tempfile::tempdir().unwrap();
-    let mut req = Request::get(path).header("host", "127.0.0.1:7777");
-    for (k, v) in headers {
-        req = req.header(*k, *v);
-    }
-    app(tmp.path()).oneshot(req.body(Body::empty()).unwrap()).await.unwrap()
-}
-
-/// Other users of this Mac can reach 127.0.0.1 too: without the token, no API.
-#[tokio::test]
-async fn the_api_needs_the_token() {
-    assert_eq!(get_raw("/api/status", &[]).await.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(get_raw("/api/tasks", &[("authorization", "Bearer wrong")]).await.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(get_raw("/api/status", &[("authorization", AUTH)]).await.status(), StatusCode::OK);
-    let cookie = format!("agentvm_token={TOKEN}");
-    assert_eq!(get_raw("/api/status", &[("cookie", &cookie)]).await.status(), StatusCode::OK);
-}
-
-/// The link printed at start-up logs the browser in once and leaves no token in the address bar.
-#[tokio::test]
-async fn the_login_link_sets_a_private_cookie() {
-    let res = get_raw(&format!("/?token={TOKEN}"), &[]).await;
-    assert_eq!(res.status(), StatusCode::SEE_OTHER);
-    assert_eq!(res.headers()["location"], "/");
-    let cookie = res.headers()["set-cookie"].to_str().unwrap();
-    assert!(
-        cookie.starts_with(&format!("agentvm_token={TOKEN}"))
-            && cookie.contains("HttpOnly")
-            && cookie.contains("SameSite=Strict"),
-        "{cookie}"
-    );
-    assert_eq!(get_raw("/?token=wrong", &[]).await.status(), StatusCode::UNAUTHORIZED);
-}
-
-#[tokio::test]
-async fn without_the_token_the_dashboard_says_how_to_open_it() {
-    let res = get_raw("/", &[]).await;
-    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
-    let body = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
-    let text = String::from_utf8_lossy(&body);
-    assert!(text.contains("agentvm-server --url") && !text.contains("/assets/app.js"), "{text}");
-}
-
-/// A VM's web service is private too; its link carries the token once, then a cookie for that name.
-#[tokio::test]
-async fn proxied_services_need_the_token_too() {
-    let tmp = tempfile::tempdir().unwrap();
-    let host = "3000.demo-4f94.localhost:7777";
-    let res =
-        app(tmp.path()).oneshot(Request::get("/").header("host", host).body(Body::empty()).unwrap()).await.unwrap();
-    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
-    let res = app(tmp.path())
-        .oneshot(
-            Request::get(format!("/page?x=1&agentvm_token={TOKEN}")).header("host", host).body(Body::empty()).unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(res.status(), StatusCode::SEE_OTHER);
-    assert_eq!(res.headers()["location"], "/page?x=1");
-    // A cookie for that name only, holding the proxy token (which cannot use the API).
-    let cookie = res.headers()["set-cookie"].to_str().unwrap();
-    assert!(cookie.starts_with("agentvm_proxy=") && !cookie.contains(TOKEN) && cookie.contains("HttpOnly"), "{cookie}");
 }

@@ -43,10 +43,6 @@ const TIMEOUT_GRACE_S: u64 = 180;
 
 pub struct AppCtx {
     pub config: Config,
-    /// Full access: the dashboard and its API.
-    pub api_token: Secret,
-    /// Only the VMs' web services through `<port>.<vm>.localhost` (it goes into their links).
-    pub proxy_token: Secret,
     pub store: Store,
     pub scheduler: Scheduler,
     pub keychain: Keychain,
@@ -73,16 +69,7 @@ impl AppCtx {
             auto_snapshots: Default::default(),
         };
         let settings = SettingsService::load(config.home.join("settings.json"), defaults, limits);
-        let token = |name: &str| {
-            let _ = std::fs::create_dir_all(&config.home);
-            crate::adapters::api_token::load_or_create(&config.home, name)
-                .expect("cannot write the API token in AGENTVM_HOME")
-        };
-        let api_token = Secret::new(config.api_token.clone().unwrap_or_else(|| token("api-token")));
-        let proxy_token = Secret::new(token("proxy-token"));
         AppCtx {
-            api_token,
-            proxy_token,
             scheduler: Scheduler::new(settings.get().max_vms),
             store: Store::persistent(config.jobs()),
             golden: GoldenService::new(config.home.clone(), config.scripts_dir.join("build-golden.sh")),
@@ -307,7 +294,7 @@ async fn supervise(
             if record.interactive {
                 let socket = JobWorkspace::pty_socket_of(&ctx.config.jobs(), id);
                 let vm = super::proxy::vm_name(record);
-                let ports = ctx.forwards.sync(socket, id, &vm, ctx.config.port, ctx.proxy_token.expose(), &m.ports);
+                let ports = ctx.forwards.sync(socket, id, &vm, ctx.config.port, &m.ports);
                 ctx.store.set_ports(id, ports);
             }
             ctx.store.record_metrics(id, m);

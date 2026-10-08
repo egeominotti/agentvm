@@ -180,7 +180,6 @@ fn ctx(home: &std::path::Path) -> std::sync::Arc<agentvm::app::supervisor::AppCt
         timeout_s: 60,
         vm_helper: "agentvm-vm".into(),
         scripts_dir: "scripts".into(),
-        api_token: None,
     };
     let keychain = agentvm::adapters::keychain::Keychain::new(Some(home.join("none.keychain-db")));
     std::sync::Arc::new(agentvm::app::supervisor::AppCtx::new(config, keychain))

@@ -11,12 +11,6 @@ use agentvm::config::Config;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let config = Config::from_env();
-    // `agentvm-server --url`: the private link to the dashboard (readable only by this user).
-    if std::env::args().nth(1).as_deref() == Some("--url") {
-        let ctx = AppCtx::new(config, Keychain::new(None));
-        println!("http://127.0.0.1:{}/?token={}", ctx.config.port, ctx.api_token.expose());
-        return Ok(());
-    }
     // Lock and port first: only a single instance may touch orphaned VMs.
     let _lock = InstanceLock::acquire(&config.home)
         .map_err(|_| anyhow::anyhow!("agentvm is already running on {} (AGENTVM_HOME)", config.home.display()))?;
@@ -30,7 +24,6 @@ async fn main() -> anyhow::Result<()> {
     agentvm::app::backups::remove_leftovers(&ctx);
     tokio::spawn(agentvm::app::snapshots::run_schedule(ctx.clone()));
     eprintln!("agentvm listening on http://{addr}");
-    eprintln!("open the dashboard (private link): http://{addr}/?token={}", ctx.api_token.expose());
     axum::serve(listener, agentvm::http::router(ctx)).await?;
     Ok(())
 }

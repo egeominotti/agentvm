@@ -1,5 +1,4 @@
 //! Adapters to external systems. They do not depend on each other.
-pub mod api_token;
 pub mod archive;
 pub mod forward;
 pub mod git;

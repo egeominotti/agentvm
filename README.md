@@ -87,12 +87,11 @@ scripts/build-golden.sh    # once, ~2 min: Debian 13 image with Claude Code prei
 claude setup-token         # once: a long-lived token for your Claude subscription
 security add-generic-password -U -s agentvm -a agentvm -w    # paste it (or use Settings later)
 
-bin/agentvm-server         # prints the private link to the dashboard
+bin/agentvm-server         # → http://127.0.0.1:7777
 ```
 
-Open the link it prints (or run `bin/agentvm-server --url`) once in your browser, press
-**New VM** (⌘K), pick a repository and, optionally, a first task. A few seconds later Claude Code
-is running in its own machine.
+Open **http://127.0.0.1:7777**, press **New VM** (⌘K), pick a repository and, optionally, a first
+task. A few seconds later Claude Code is running in its own machine.
 
 ## Using it
 
@@ -184,10 +183,9 @@ By default agentvm runs as many VMs at once as fit in RAM, keeping 8 GB for macO
   any code in the VM (including `.agentvm/setup.sh` and what the agent downloads) could read it.
   Only restore snapshots you trust, for the same reason.
 - **The S3 secret key** lives in the Keychain and reaches `curl` on stdin, never on a command line.
-- **Local and private.** The dashboard binds to `127.0.0.1`. Every API call, terminal and VM
-  web service needs a token stored `0600` in `~/AgentVMs` (other users of the Mac cannot use it),
-  given to your browser once as an HttpOnly cookie. Requests whose `Host` or `Origin` is not
-  local are rejected (DNS rebinding, cross-site WebSockets) and the dashboard cannot be framed.
+- **Local only.** The dashboard binds to `127.0.0.1` and rejects requests whose `Host` or
+  `Origin` is not local, so other websites cannot reach the API or the terminals (DNS rebinding,
+  cross-site WebSockets). The dashboard cannot be framed by other sites.
 - **The guest cannot reach the Mac through the shared folder.** The host never follows a symlink
   or blocks on a FIFO the guest planted there, and caps what it reads.
 - One server instance per data folder, enforced with a lock. VMs reach the internet through NAT.
@@ -205,12 +203,10 @@ variables provide the defaults:
 | `AGENTVM_CPUS` / `AGENTVM_MEMORY_MB` | `4` / `4096` | Default resources per VM |
 | `AGENTVM_TIMEOUT_S` | `1800` | Time limit for automatic (non-interactive) tasks |
 | `AGENTVM_S3_SECRET` | — | S3 secret key, overriding the Keychain (CI) |
-| `AGENTVM_API_TOKEN` | generated | Fixed API token (tests, scripts) instead of `~/AgentVMs/api-token` |
 
 ## HTTP API
 
-Everything the dashboard does is available over a local JSON API, with
-`Authorization: Bearer $(cat ~/AgentVMs/api-token)`.
+Everything the dashboard does is available over a local JSON API.
 
 | Method | Path | |
 |---|---|---|

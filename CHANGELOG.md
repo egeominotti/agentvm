@@ -27,7 +27,6 @@ All notable changes to this project are documented here. The format follows
   TCP forward for non-HTTP services.
 - Automatic snapshots on a schedule and before closing; per-machine interval.
 - Copy/paste in terminals and drag-and-drop of files into VMs.
-- Private API token (cookie for the browser, Bearer for scripts).
 - Idle VMs give memory back to the Mac; cheap guest disk flushes; shared repository bundles.
 
 ### Security

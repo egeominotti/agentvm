@@ -41,7 +41,6 @@ impl PortForwards {
         id: &TaskId,
         vm: &str,
         server_port: u16,
-        proxy_token: &str,
         listening: &[ListeningPort],
     ) -> Vec<ForwardedPort> {
         let mut all = self.by_task.lock().unwrap();
@@ -71,11 +70,7 @@ impl PortForwards {
             .iter()
             .filter_map(|(port, e)| {
                 let (kind, url, host_port) = match &e.reach {
-                    Reach::Http => {
-                        let url =
-                            format!("{}/?agentvm_token={proxy_token}", hostname::proxy_url(*port, vm, server_port));
-                        (PortKind::Http, Some(url), None)
-                    }
+                    Reach::Http => (PortKind::Http, Some(hostname::proxy_url(*port, vm, server_port)), None),
                     Reach::Tcp(fwd) => (PortKind::Tcp, None, Some(fwd.host_port)),
                     Reach::Probing | Reach::Unreachable => return None,
                 };
