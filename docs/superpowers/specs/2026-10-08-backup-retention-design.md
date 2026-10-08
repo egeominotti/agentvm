@@ -17,7 +17,7 @@ touched by any of this.
 ```rust
 pub struct AutoSnapshots {
     pub enabled: bool,              // default true
-    pub every_min: u32,             // 5, 15, 30, 60, 120, 240, 1440 (no 0: `enabled` turns it off)
+    pub every_min: u32,             // 1, 5, 10, 15, 30, 60, 120, 240, 1440 (no 0: `enabled` turns it off)
     pub before_close: bool,         // default true
     pub encryption: Encryption,     // None (default) | Aes256
     pub retention: Retention,
@@ -33,10 +33,12 @@ pub enum Retention {                // serde: {"kind": "gfs", ...}
   every_min: 30`; `keep: N` → `Retention::Count { count: N }`. With no file the default is
   `enabled`, 30 min, before close, no encryption, `Count { count: 4 }`, so existing installs behave
   as today until the user changes something.
-- **Validation:** interval in the list above; GFS counts 0..=1000 each and at least one above 0;
+- **Validation:** interval in the list above (the dashboard offers 5 min to daily; 1 and 10 stay
+  valid for the API and the tests); GFS counts 0..=1000 each and at least one above 0;
   days 1..=3650; count 1..=50.
 - **Per-VM override** (`PUT /api/tasks/{id}/auto-snapshots`, `{every_min}` or `null`) stays;
-  `every_min: 0` there still turns this VM's backups off.
+  `every_min: 0` there still turns this VM's backups off. With `enabled: false` nothing runs,
+  including the backup before close.
 
 ## Retention (pure, `domain/snapshot.rs`)
 
@@ -80,6 +82,8 @@ encrypted backup is never listed; `remove_leftovers` at start-up already cleans 
   in the Keychain (service `agentvm-backup-key`, same mechanism as the S3 secret). Turning
   encryption off keeps the key so existing encrypted backups still open. The Settings section
   warns: without this Mac's Keychain the encrypted backups cannot be opened.
+  `AGENTVM_BACKUP_KEY` (64 hex characters) overrides the Keychain, like `AGENTVM_S3_SECRET`
+  (CI, tests).
 - **Applies to automatic backups only.** Manual snapshots stay instant clones.
 - **Restore:** decrypt and unpack into a scratch folder, then start the VM from it as from any
   snapshot (the scratch copy is deleted once the VM has its own clone). The dashboard shows
