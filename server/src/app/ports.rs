@@ -8,9 +8,12 @@ use crate::adapters::jobdir::JobWorkspace;
 use crate::domain::ids::TaskId;
 use crate::domain::metrics::{ForwardedPort, ListeningPort};
 
+/// Forwards of one VM: guest port → (forward, owning process name).
+type TaskForwards = HashMap<u16, (PortForward, String)>;
+
 #[derive(Default)]
 pub struct PortForwards {
-    by_task: Mutex<HashMap<TaskId, HashMap<u16, (PortForward, String)>>>,
+    by_task: Mutex<HashMap<TaskId, TaskForwards>>,
 }
 
 impl PortForwards {
