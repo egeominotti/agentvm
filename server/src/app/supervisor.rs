@@ -38,9 +38,6 @@ pub type ClaudeReleases = Releases;
 /// A VM using more CPU than this (in %) counts as busy and keeps all its memory.
 const BUSY_CPU_PCT: f64 = 10.0;
 
-/// Time the guest gets after its own time limit to save the work and power off.
-const TIMEOUT_GRACE_S: u64 = 180;
-
 pub struct AppCtx {
     pub config: Config,
     pub store: Store,
@@ -304,8 +301,21 @@ async fn supervise(
         }
     };
     // The guest enforces the limit itself and saves the work; this is the backstop if it cannot.
-    let timeout = (!record.interactive).then(|| Duration::from_secs(ctx.settings.get().timeout_s + TIMEOUT_GRACE_S));
-    let (exit, stop_requested, timed_out) = wait_for_vm(ctx, id, &mut vm, timeout, on_started, on_tick).await;
+    // It counts from when Claude starts, as the guest does: boot and setup.sh can take long.
+    let limit = Duration::from_secs(ctx.settings.get().timeout_s);
+    let spawned = std::time::Instant::now();
+    let claude_started = std::sync::Mutex::new(None);
+    let deadline = || {
+        if record.interactive {
+            return None;
+        }
+        let mut started = claude_started.lock().unwrap();
+        if started.is_none() && ws.job_log().iter().any(|l| l.ends_with("] claude start")) {
+            *started = Some(spawned.elapsed());
+        }
+        Some(spawned + crate::domain::outcome::backstop(limit, *started))
+    };
+    let (exit, stop_requested, timed_out) = wait_for_vm(ctx, id, &mut vm, deadline, on_started, on_tick).await;
     ctx.store.set_activity(id, None);
     ctx.forwards.stop_all(id);
     ctx.store.set_ports(id, Vec::new());
@@ -358,6 +368,17 @@ fn collect(
             Err(e) => Final::Failed(format!("fetch_failed: {e}")),
         },
         (false, f) => f,
+    };
+    // Whatever went wrong, the disk may hold work that never reached the repository: keep it
+    // (an instant clone) instead of deleting it with the job. Only a Stop asked for discards it.
+    let final_ = match final_ {
+        Final::Failed(reason) if !stop_requested => {
+            match tokio::task::block_in_place(|| super::snapshots::keep_disk(ctx, record, ws)) {
+                Some(name) => Final::Failed(format!("{reason}. Its disk is kept in Snapshots as \"{name}\"")),
+                None => Final::Failed(reason),
+            }
+        }
+        f => f,
     };
     apply(TaskEvent::Finished(final_, branch))
 }
@@ -458,13 +479,14 @@ async fn wait_for_vm(
     ctx: &AppCtx,
     id: &TaskId,
     vm: &mut VmProcess,
-    timeout: Option<Duration>,
+    deadline_of: impl Fn() -> Option<std::time::Instant>,
     on_started: impl Fn(),
     on_tick: impl Fn(),
 ) -> (VmExit, bool, bool) {
     let (_never, fallback) = watch::channel(false);
     let mut stop = ctx.store.stop_signal(id).unwrap_or(fallback);
-    let deadline = tokio::time::sleep(timeout.unwrap_or(Duration::MAX / 4));
+    let far = || tokio::time::Instant::now() + Duration::from_secs(100 * 365 * 86_400);
+    let deadline = tokio::time::sleep_until(deadline_of().map_or_else(far, Into::into));
     let kill_timer = tokio::time::sleep(Duration::MAX / 4);
     let mut ticks = tokio::time::interval(Duration::from_secs(1));
     tokio::pin!(deadline, kill_timer);
@@ -480,7 +502,12 @@ async fn wait_for_vm(
             _ = stop.wait_for(|s| *s), if !terminating => stop_requested = true,
             _ = &mut deadline, if !terminating => timed_out = true,
             _ = &mut kill_timer, if terminating => vm.kill(),
-            _ = ticks.tick() => on_tick(),
+            _ = ticks.tick() => {
+                on_tick();
+                if !terminating {
+                    deadline.as_mut().reset(deadline_of().map_or_else(far, Into::into));
+                }
+            }
         }
         if !terminating && (stop_requested || timed_out) {
             vm.terminate();

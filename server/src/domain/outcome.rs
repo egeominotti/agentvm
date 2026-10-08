@@ -1,5 +1,7 @@
 //! A task's final outcome: a pure decision based on what the VM and guest left behind.
 
+use std::time::Duration;
+
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -60,7 +62,8 @@ pub fn decide(i: &OutcomeInput) -> Outcome {
         return no_fetch(Final::Stopped);
     }
     if i.timed_out {
-        return no_fetch(Final::Failed("timeout".into()));
+        // Whatever the guest saved before being stopped is still its work.
+        return Outcome { final_: Final::Failed("timeout".into()), fetch: i.has_out_bundle };
     }
     if let VmExit::Error(m) = &i.exit {
         return no_fetch(Final::Failed(format!("vm_error: {m}")));
@@ -77,4 +80,16 @@ pub fn decide(i: &OutcomeInput) -> Outcome {
             fetch: i.has_out_bundle,
         },
     }
+}
+
+/// Boot, clone, `.agentvm/setup.sh` (up to 30 minutes) and a Claude Code install: the longest a
+/// guest may take before Claude starts.
+pub const PREPARE_MAX: Duration = Duration::from_secs(2400);
+/// After the guest's own limit: the 30 s it gives Claude to exit, then the final save.
+pub const TIMEOUT_GRACE: Duration = Duration::from_secs(180);
+
+/// Time after the VM's start when the server stops an automatic task the guest did not stop
+/// itself. The guest's limit starts when Claude starts (`claude_started`, since the VM's start).
+pub fn backstop(limit: Duration, claude_started: Option<Duration>) -> Duration {
+    claude_started.unwrap_or(PREPARE_MAX) + limit + TIMEOUT_GRACE
 }

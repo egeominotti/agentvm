@@ -9,6 +9,7 @@ use crate::domain::ids::TaskId;
 use crate::domain::settings::Model;
 use crate::domain::snapshot::{AutoSnapshots, SnapshotId, SnapshotMeta};
 use crate::domain::task::TaskState;
+use super::store::TaskRecord;
 
 const SYNC_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -97,30 +98,12 @@ async fn take(
     let _ = std::fs::remove_file(&done);
 
     let now = SystemTime::now();
-    let repo_name =
-        record.repo.as_path().file_name().map_or_else(|| "repository".into(), |n| n.to_string_lossy().into_owned());
-    let title = match (&record.prompt, &record.label) {
-        (Some(p), _) => p.as_str().lines().next().unwrap_or_default().to_owned(),
-        (None, Some(label)) => label.trim_start_matches("Restored: ").to_owned(),
-        (None, None) => format!("{repo_name}, {}", clock(now)),
+    let title = title(&record, now);
+    let name = match auto {
+        Some(why) => format!("{title}, {why} {}", clock(now)),
+        None => name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty()).unwrap_or(title),
     };
-    let meta = SnapshotMeta {
-        id: SnapshotId::generate(now, random_bytes()),
-        name: match auto {
-            Some(why) => format!("{title}, {why} {}", clock(now)),
-            None => name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty()).unwrap_or(title),
-        },
-        source_task: id.to_string(),
-        repo: record.repo.as_path().display().to_string(),
-        base_sha: record.base_sha.as_str().to_owned(),
-        model: record.model.as_str().to_owned(),
-        claude_version: record.claude_version.clone(),
-        created_at: now.duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0),
-        size_mb: 0,
-        cpus: record.cpus,
-        memory_mb: record.memory_mb,
-        auto: auto.is_some(),
-    };
+    let meta = meta_for(&record, name, auto.is_some(), now);
     let (disk, efivars) = (JobWorkspace::disk_of(&jobs, id), JobWorkspace::efivars_of(&jobs, id));
     let store_meta = meta.clone();
     let root = ctx.config.home.join("snapshots");
@@ -130,6 +113,46 @@ async fn take(
     .await
     .map_err(|e| SnapshotError::Io(std::io::Error::other(e.to_string())))?
     .map_err(SnapshotError::Io)
+}
+
+/// What the VM was for: the first line of its task, or its repository and start time.
+fn title(record: &TaskRecord, now: SystemTime) -> String {
+    let repo_name =
+        record.repo.as_path().file_name().map_or_else(|| "repository".into(), |n| n.to_string_lossy().into_owned());
+    match (&record.prompt, &record.label) {
+        (Some(p), _) => p.as_str().lines().next().unwrap_or_default().to_owned(),
+        (None, Some(label)) => label.trim_start_matches("Restored: ").to_owned(),
+        (None, None) => format!("{repo_name}, {}", clock(now)),
+    }
+}
+
+fn meta_for(record: &TaskRecord, name: String, auto: bool, now: SystemTime) -> SnapshotMeta {
+    SnapshotMeta {
+        id: SnapshotId::generate(now, random_bytes()),
+        name,
+        source_task: record.id.to_string(),
+        repo: record.repo.as_path().display().to_string(),
+        base_sha: record.base_sha.as_str().to_owned(),
+        model: record.model.as_str().to_owned(),
+        claude_version: record.claude_version.clone(),
+        created_at: now.duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0),
+        size_mb: 0,
+        cpus: record.cpus,
+        memory_mb: record.memory_mb,
+        auto,
+    }
+}
+
+/// The disk of a VM that ended without its work reaching the repository (a reboot, a crash, a
+/// failed import): kept as a snapshot it can be restored from, never deleted. Returns its name.
+pub fn keep_disk(ctx: &AppCtx, record: &TaskRecord, ws: &JobWorkspace) -> Option<String> {
+    let (disk, efivars) = (ws.disk(), ws.efivars());
+    if !disk.is_file() || !efivars.is_file() {
+        return None;
+    }
+    let now = SystemTime::now();
+    let meta = meta_for(record, format!("Interrupted: {}", title(record, now)), false, now);
+    ctx.snapshots.create(&meta, &disk, &efivars).ok().map(|m| m.name)
 }
 
 /// Starts a new terminal VM from the snapshot; Claude continues its last conversation.

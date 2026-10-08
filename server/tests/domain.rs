@@ -152,6 +152,29 @@ fn timeout_fails_without_fetch() {
     let mut i = input(VmExit::Signaled, None, false);
     i.timed_out = true;
     assert_eq!(decide(&i).final_, Final::Failed("timeout".into()));
+    assert!(!decide(&i).fetch);
+}
+
+/// The server stopped a VM past its limit, but the guest had saved its work: import it.
+#[test]
+fn a_timeout_still_imports_what_the_guest_saved() {
+    let mut i = input(VmExit::Signaled, None, true);
+    i.timed_out = true;
+    let o = decide(&i);
+    assert_eq!(o.final_, Final::Failed("timeout".into()));
+    assert!(o.fetch);
+}
+
+/// The guest's limit starts when Claude starts; boot and a 30-minute setup.sh come before it.
+#[test]
+fn the_server_backstop_counts_from_when_claude_starts() {
+    use agentvm::domain::outcome::{PREPARE_MAX, TIMEOUT_GRACE, backstop};
+    let limit = Duration::from_secs(600);
+    let started = Duration::from_secs(1500);
+    assert_eq!(backstop(limit, Some(started)), started + limit + TIMEOUT_GRACE);
+    // Not started (yet, or the marker was lost): never before the longest preparation.
+    assert_eq!(backstop(limit, None), PREPARE_MAX + limit + TIMEOUT_GRACE);
+    assert!(PREPARE_MAX >= Duration::from_secs(1800 + 300), "setup.sh may take 30 minutes");
 }
 
 #[test]

@@ -187,6 +187,8 @@ fi
 TIMEOUT_S=$(jq -r '.timeout_s // 1800' "$JOB/task.json")
 # Prompt from stdin: never parsed as an option (e.g. "- list") nor limited by ARG_MAX.
 # Claude runs as root (IS_SANDBOX=1: the VM is the sandbox); the token arrives only on fd 3.
+# The server's backstop for the time limit counts from this line.
+log "claude start"
 set +e
 jq -r .prompt "$JOB/task.json" | env -i \
   HOME=/root USER=root LANG=C.UTF-8 PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
