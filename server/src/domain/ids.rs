@@ -4,7 +4,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum IdError {
@@ -14,12 +14,27 @@ pub enum IdError {
     EmptyPrompt,
     #[error("{0} is not a git repository")]
     NotARepo(String),
+    #[error("invalid task id: {0}")]
+    InvalidId(String),
 }
 
 /// `YYYYMMDD-HHMMSS-xxxx` (UTC + 4 random hex digits): unique and sortable.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct TaskId(String);
+
+impl TryFrom<String> for TaskId {
+    type Error = IdError;
+    fn try_from(s: String) -> Result<Self, IdError> {
+        TaskId::parse(&s).ok_or(IdError::InvalidId(s))
+    }
+}
+
+impl From<TaskId> for String {
+    fn from(id: TaskId) -> String {
+        id.0
+    }
+}
 
 impl TaskId {
     pub fn generate(now: SystemTime, rand: [u8; 2]) -> Self {
@@ -75,7 +90,7 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (yoe + era * 400 + i64::from(m <= 2), m, d)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct CommitSha(String);
 
@@ -94,7 +109,7 @@ impl CommitSha {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct RepoPath(PathBuf);
 
@@ -108,7 +123,7 @@ impl RepoPath {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Prompt(String);
 

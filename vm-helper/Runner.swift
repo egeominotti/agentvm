@@ -81,7 +81,7 @@ final class Runner: NSObject, VZVirtualMachineDelegate {
     }
 
     private func finish(_ code: Int32) -> Never {
-        Events.emit("stopped", ["seconds": (Date().timeIntervalSince(startedAt) * 100).rounded() / 100])
+        Events.emit("stopped", ["seconds": (Date().timeIntervalSince(startedAt) * 100).rounded() / 100, "code": Int(code)])
         exit(code)
     }
 }

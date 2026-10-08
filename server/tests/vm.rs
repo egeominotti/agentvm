@@ -48,7 +48,7 @@ fn config(ws: &JobWorkspace) -> VmConfig {
 async fn helper_reports_invalid_config() {
     let tmp = tempfile::tempdir().unwrap();
     let ws = JobWorkspace::create(tmp.path(), &unique_id()).unwrap();
-    let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws)).unwrap();
+    let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws), &ws.dir().join("vm.events")).unwrap();
     assert!(matches!(vm.next_event().await, Some(VmEvent::Error(m)) if m.contains("disk missing")));
     assert!(matches!(vm.wait().await, VmExit::Error(m) if m.contains("disk missing")));
 }
@@ -59,7 +59,7 @@ async fn boots_golden_without_task_and_powers_off() {
     let tmp = tempfile::tempdir().unwrap();
     let ws = workspace(&tmp);
     let t0 = Instant::now();
-    let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws)).unwrap();
+    let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws), &ws.dir().join("vm.events")).unwrap();
     assert!(vm.pid() > 0);
     assert_eq!(vm.next_event().await, Some(VmEvent::Started));
     assert_eq!(vm.wait().await, VmExit::Clean);
@@ -74,7 +74,7 @@ async fn terminate_stops_a_running_vm() {
     let tmp = tempfile::tempdir().unwrap();
     let ws = workspace(&tmp);
     // Stopped right after boot, before the guest shuts down on its own.
-    let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws)).unwrap();
+    let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws), &ws.dir().join("vm.events")).unwrap();
     assert_eq!(vm.next_event().await, Some(VmEvent::Started));
     vm.terminate();
     assert_eq!(vm.wait().await, VmExit::Signaled);
@@ -118,7 +118,7 @@ async fn interactive_vm_serves_a_shell_over_vsock_and_closes_on_request() {
     ws.write_token(&Secret::new("sk-ant-oat01-not-a-real-token".into())).unwrap();
     let mut cfg = config(&ws);
     cfg.pty_socket = Some(ws.pty_socket());
-    let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &cfg).unwrap();
+    let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &cfg, &ws.dir().join("vm.events")).unwrap();
     assert_eq!(vm.next_event().await, Some(VmEvent::Started));
 
     // The guest PTY server may take a moment to start listening.
@@ -216,7 +216,7 @@ async fn shell_keystroke_echo_is_fast() {
     ws.write_token(&Secret::new("sk-ant-oat01-not-a-real-token".into())).unwrap();
     let mut cfg = config(&ws);
     cfg.pty_socket = Some(ws.pty_socket());
-    let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &cfg).unwrap();
+    let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &cfg, &ws.dir().join("vm.events")).unwrap();
     assert_eq!(vm.next_event().await, Some(VmEvent::Started));
 
     let mut pty = open_ready_shell(&ws).await;
@@ -238,4 +238,21 @@ async fn shell_keystroke_echo_is_fast() {
     vm.wait().await;
     assert!(median < Duration::from_millis(5), "median {median:?}");
     assert!(p95 < Duration::from_millis(15), "p95 {p95:?}");
+}
+
+#[tokio::test]
+#[ignore = "needs the golden image"]
+async fn a_vm_outlives_its_process_handle_and_can_be_reattached() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = workspace(&tmp);
+    let events = ws.dir().join("vm.events");
+    let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws), &events).unwrap();
+    assert_eq!(vm.next_event().await, Some(VmEvent::Started));
+    let pid = vm.pid();
+    drop(vm); // the server goes away: the VM must keep running
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let mut again = VmProcess::attach(pid, &events).expect("helper still alive");
+    assert_eq!(again.next_event().await, Some(VmEvent::Started), "replays its own history");
+    again.terminate();
+    assert_eq!(again.wait().await, VmExit::Signaled);
 }

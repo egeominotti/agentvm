@@ -6,6 +6,7 @@ pub mod jobdir;
 pub mod keychain;
 pub mod lock;
 pub mod pty;
+pub mod records;
 pub mod releases;
 pub mod s3;
 pub mod settings_file;

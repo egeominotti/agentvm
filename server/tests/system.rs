@@ -484,3 +484,44 @@ fn launch_resources_reach_the_vm() {
     assert!((1700..=2048).contains(&mem), "{metrics}");
     post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
 }
+
+#[test]
+#[ignore = "needs golden and token"]
+fn vms_survive_a_server_restart() {
+    let home = test_home();
+    let home_path = home.path().to_path_buf();
+    let mut server = start_server_with(home, &[]);
+    let repo = temp_repo();
+    let created =
+        post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo.path(), "interactive": true}));
+    let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    wait_for_state(&server, &id, |s| s == "running", Duration::from_secs(60));
+    let pid: i32 =
+        std::fs::read_to_string(home_path.join(format!("jobs/{id}/vm.pid"))).unwrap().trim().parse().unwrap();
+
+    // Kill the server hard: no cleanup code runs.
+    server.child.kill().unwrap();
+    server.child.wait().unwrap();
+    std::thread::sleep(Duration::from_secs(1));
+    let alive = Command::new("kill").args(["-0", &pid.to_string()]).status().unwrap().success();
+    assert!(alive, "the VM died with the server");
+
+    // A new server on the same home finds the VM and drives it.
+    let (child, base) = spawn_server(&home_path);
+    let again = Server { child, base, home: tempfile::tempdir().unwrap() };
+    let t0 = Instant::now();
+    while curl(&["-sf", &format!("{}/api/status", again.base)]).is_none() {
+        assert!(t0.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let task = wait_for_state(&again, &id, |s| s == "running", Duration::from_secs(10));
+    assert_eq!(task["interactive"], true);
+    std::fs::write(home_path.join("jobs").join(&id).join("share/marker.txt"), "x").ok();
+    let saved = post_json(&format!("{}/api/tasks/{id}/save", again.base), &json!({}));
+    assert!(saved["commits"].is_number(), "{saved}");
+    post_json(&format!("{}/api/tasks/{id}/close", again.base), &json!({}));
+    let done = wait_for_state(&again, &id, |s| TERMINAL.contains(&s), Duration::from_secs(60));
+    assert!(matches!(done["status"]["state"].as_str(), Some("done" | "no_changes")), "{done}");
+    let gone = !Command::new("kill").args(["-0", &pid.to_string()]).status().unwrap().success();
+    assert!(gone, "the VM is still running after close");
+}

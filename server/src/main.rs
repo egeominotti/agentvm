@@ -17,9 +17,10 @@ async fn main() -> anyhow::Result<()> {
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], config.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     std::fs::create_dir_all(config.jobs())?;
-    cleanup_orphans(&config.jobs());
-
     let ctx = Arc::new(AppCtx::new(config, Keychain::new(None)));
+    // VMs survive restarts: re-attach to them first, then clean up whatever no task owns.
+    let live = agentvm::app::supervisor::recover(&ctx);
+    cleanup_orphans(&ctx.config.jobs(), &live);
     eprintln!("agentvm listening on http://{addr}");
     axum::serve(listener, agentvm::http::router(ctx)).await?;
     Ok(())

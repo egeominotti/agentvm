@@ -1,6 +1,7 @@
 //! Task repository: sole owner of their state (in memory for the MVP).
 
 use std::collections::{HashMap, VecDeque};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
@@ -13,7 +14,7 @@ use crate::domain::settings::Model;
 use crate::domain::snapshot::SnapshotId;
 use crate::domain::task::{InvalidTransition, TaskEvent, TaskState, transition};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TaskRecord {
     pub id: TaskId,
     pub repo: RepoPath,
@@ -23,6 +24,7 @@ pub struct TaskRecord {
     pub interactive: bool,
     pub state: TaskState,
     /// Last activity reported by the Claude Code hooks (`working`, `waiting`).
+    #[serde(skip)]
     pub activity: Option<String>,
     pub model: Model,
     /// Claude Code version installed at boot instead of the image's one.
@@ -33,8 +35,11 @@ pub struct TaskRecord {
     pub cpus: u32,
     pub memory_mb: u64,
     /// Latest telemetry sample and the last `HISTORY` CPU and memory percentages.
+    #[serde(skip)]
     pub metrics: Option<VmMetrics>,
+    #[serde(skip)]
     pub cpu_history: VecDeque<f32>,
+    #[serde(skip)]
     pub mem_history: VecDeque<f32>,
     pub created_at: SystemTime,
     pub finished_at: Option<SystemTime>,
@@ -94,6 +99,8 @@ struct Entry {
 #[derive(Default)]
 pub struct Store {
     tasks: Mutex<HashMap<TaskId, Entry>>,
+    /// When set, every task is mirrored to `<dir>/<id>/record.json` to survive restarts.
+    dir: Option<PathBuf>,
 }
 
 impl Store {
@@ -101,9 +108,30 @@ impl Store {
         Self::default()
     }
 
+    pub fn persistent(dir: PathBuf) -> Self {
+        Store { tasks: Mutex::default(), dir: Some(dir) }
+    }
+
+    /// Tasks saved by a previous run.
+    pub fn load(dir: &Path) -> Vec<TaskRecord> {
+        let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
+        entries
+            .flatten()
+            .filter_map(|e| std::fs::read(e.path().join("record.json")).ok())
+            .filter_map(|bytes| serde_json::from_slice(&bytes).ok())
+            .collect()
+    }
+
+    fn persist(&self, record: &TaskRecord) {
+        if let Some(dir) = &self.dir {
+            let _ = crate::adapters::records::save(&dir.join(record.id.as_str()).join("record.json"), record);
+        }
+    }
+
     pub fn insert(&self, record: TaskRecord) {
         let log = Arc::new(EventLog::new());
         log.push(StreamItem::State(record.state.clone()));
+        self.persist(&record);
         let entry = Entry { record, log, stop: watch::channel(false).0 };
         self.tasks.lock().unwrap().insert(entry.record.id.clone(), entry);
     }
@@ -118,6 +146,7 @@ impl Store {
             }
             entry.record.state = next.clone();
             entry.log.push(StreamItem::State(next.clone()));
+            self.persist(&entry.record);
         }
         Ok(next)
     }

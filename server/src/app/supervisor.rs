@@ -62,7 +62,7 @@ impl AppCtx {
         let settings = SettingsService::load(config.home.join("settings.json"), defaults, limits);
         AppCtx {
             scheduler: Scheduler::new(settings.get().max_vms),
-            store: Store::new(),
+            store: Store::persistent(config.jobs()),
             golden: GoldenService::new(config.home.clone(), config.scripts_dir.join("build-golden.sh")),
             keychain,
             settings,
@@ -212,11 +212,23 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
         return apply(TaskEvent::Finished(Final::Stopped, branch));
     }
 
-    let mut vm = VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &vm_config(&record, &ws))
+    let vm = VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &vm_config(&record, &ws), &ws.events())
         .map_err(|e| e.to_string())?;
     let _ = ws.write_pid(vm.pid());
-    let follower = Follower::start(ctx.store.log(id).ok_or("task disappeared")?, ws.stream(), token);
+    supervise(ctx, id, &record, ws, vm, token).await
+}
 
+/// Follows a running VM until it stops, then collects the result. Shared by new VMs and by VMs
+/// re-attached after a server restart.
+async fn supervise(
+    ctx: &AppCtx,
+    id: &TaskId,
+    record: &TaskRecord,
+    ws: JobWorkspace,
+    mut vm: VmProcess,
+    token: Secret,
+) -> Result<(), String> {
+    let follower = Follower::start(ctx.store.log(id).ok_or("task disappeared")?, ws.stream(), token);
     let on_started = || {
         let _ = ctx.store.apply(id, TaskEvent::VmStarted);
     };
@@ -226,12 +238,27 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
             ctx.store.record_metrics(id, m);
         }
     };
-    let timeout = (!record.interactive).then(|| Duration::from_secs(settings.timeout_s));
+    let timeout = (!record.interactive).then(|| Duration::from_secs(ctx.settings.get().timeout_s));
     let (exit, stop_requested, timed_out) = wait_for_vm(ctx, id, &mut vm, timeout, on_started, on_tick).await;
     ctx.store.set_activity(id, None);
-    apply(TaskEvent::VmExited)?;
     follower.finish().await;
+    collect(ctx, id, record, &ws, exit, stop_requested, timed_out)
+}
 
+/// The VM is gone: decide the outcome, import the branch if needed, finish the task.
+fn collect(
+    ctx: &AppCtx,
+    id: &TaskId,
+    record: &TaskRecord,
+    ws: &JobWorkspace,
+    exit: VmExit,
+    stop_requested: bool,
+    timed_out: bool,
+) -> Result<(), String> {
+    let apply = |e| ctx.store.apply(id, e).map(drop).map_err(|e| e.to_string());
+    if ctx.store.get(id).is_some_and(|r| r.state != TaskState::Collecting) {
+        apply(TaskEvent::VmExited)?;
+    }
     let exit = match exit {
         VmExit::Error(m) => VmExit::Error(with_console(m, &ws.console_tail(5))),
         other => other,
@@ -243,14 +270,64 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
         timed_out,
         has_out_bundle: ws.has_out_bundle(),
     });
+    let branch = id.branch();
     let final_ = match (outcome.fetch, outcome.final_) {
-        (true, f) => match git.fetch_bundle(&ws.out_bundle(), &branch) {
+        (true, f) => match Git::new(record.repo.clone()).fetch_bundle(&ws.out_bundle(), &branch) {
             Ok(()) => f,
             Err(e) => Final::Failed(format!("fetch_failed: {e}")),
         },
         (false, f) => f,
     };
     apply(TaskEvent::Finished(final_, branch))
+}
+
+/// After a restart: reload every task, re-attach to VMs that kept running, finish the others.
+/// Returns the job ids whose VM is (still) owned by a task, so orphan cleanup leaves them alone.
+pub fn recover(ctx: &Arc<AppCtx>) -> std::collections::HashSet<String> {
+    let mut live = std::collections::HashSet::new();
+    for record in Store::load(&ctx.config.jobs()) {
+        let (id, state) = (record.id.clone(), record.state.clone());
+        ctx.store.insert(record);
+        match state {
+            s if s.is_terminal() => {}
+            TaskState::Queued => {
+                tokio::spawn(run(ctx.clone(), id));
+            }
+            TaskState::Preparing => {
+                let _ = ctx.store.apply(&id, TaskEvent::Failure("interrupted while preparing: launch it again".into()));
+            }
+            _ => {
+                live.insert(id.to_string());
+                tokio::spawn(resume(ctx.clone(), id));
+            }
+        }
+    }
+    live
+}
+
+async fn resume(ctx: Arc<AppCtx>, id: TaskId) {
+    let _permit = ctx.scheduler.acquire().await;
+    let Some(record) = ctx.store.get(&id) else { return };
+    let ws = JobWorkspace::existing(&ctx.config.jobs(), &id);
+    let vm = ws.read_pid().and_then(|pid| VmProcess::attach(pid, &ws.events()));
+    let result = match vm {
+        Some(vm) => {
+            let token = ctx.keychain.read_token().unwrap_or_else(|_| Secret::new(String::new()));
+            supervise(&ctx, &id, &record, ws, vm, token).await
+        }
+        None => {
+            // The VM stopped while the server was down: whatever it left behind decides the outcome.
+            let exit = if ws.read_result().is_some() {
+                VmExit::Clean
+            } else {
+                VmExit::Error("the VM stopped while agentvm was not running".into())
+            };
+            collect(&ctx, &id, &record, &ws, exit, false, false)
+        }
+    };
+    if let Err(reason) = result {
+        let _ = ctx.store.apply(&id, TaskEvent::Failure(reason));
+    }
 }
 
 /// Follows `stream.jsonl` and publishes the agent's events while the VM is alive.

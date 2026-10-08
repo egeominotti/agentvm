@@ -1,16 +1,17 @@
-//! The `agentvm-vm` process: one VM per process, JSON Lines events on stdout.
+//! `agentvm-vm` process: one VM per process. The helper runs in its own session and appends its
+//! JSON Lines events to a file, so it outlives the server and a new server can attach to it.
 
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, BufReader, Lines};
-use tokio::process::{Child, ChildStdout, Command};
 
 use crate::domain::outcome::VmExit;
 
 unsafe extern "C" {
     fn kill(pid: i32, sig: i32) -> std::ffi::c_int;
+    fn setsid() -> i32;
 }
 
 const SIGTERM: i32 = 15;
@@ -43,85 +44,150 @@ struct RawEvent {
     seconds: f64,
     #[serde(default)]
     message: String,
+    /// Exit code announced with `stopped`: 0 = the guest shut down, 130 = stopped by us.
+    #[serde(default)]
+    code: i32,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum VmError {
-    #[error("cannot write the VM configuration: {0}")]
+    #[error("could not write the VM configuration: {0}")]
     Config(std::io::Error),
-    #[error("cannot start {helper}: {source}")]
+    #[error("could not start {helper}: {source}")]
     Spawn { helper: String, source: std::io::Error },
 }
 
+const SIGKILL: i32 = 9;
+const POLL: Duration = Duration::from_millis(100);
+
 pub struct VmProcess {
-    child: Child,
-    stdout: Lines<BufReader<ChildStdout>>,
+    pid: u32,
+    events: PathBuf,
+    offset: u64,
+    pending: Vec<u8>,
     last_error: Option<String>,
+    exit: Option<VmExit>,
 }
 
 impl VmProcess {
-    pub fn spawn(helper: &Path, config_path: &Path, cfg: &VmConfig) -> Result<Self, VmError> {
+    /// Starts the helper detached (own session, events appended to `events`).
+    pub fn spawn(helper: &Path, config_path: &Path, cfg: &VmConfig, events: &Path) -> Result<Self, VmError> {
         let json = serde_json::to_vec_pretty(cfg).expect("VmConfig is serializable");
         std::fs::write(config_path, json).map_err(VmError::Config)?;
-        let mut child = Command::new(helper)
-            .arg("--config")
-            .arg(config_path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|source| VmError::Spawn { helper: helper.display().to_string(), source })?;
-        let stdout = BufReader::new(child.stdout.take().expect("stdout is piped")).lines();
-        Ok(VmProcess { child, stdout, last_error: None })
+        let out = std::fs::OpenOptions::new().create(true).append(true).open(events).map_err(VmError::Config)?;
+        let mut cmd = Command::new(helper);
+        cmd.arg("--config").arg(config_path).stdin(Stdio::null()).stdout(out).stderr(Stdio::null());
+        // SAFETY: setsid is async-signal-safe and only detaches the child from our session.
+        unsafe {
+            std::os::unix::process::CommandExt::pre_exec(&mut cmd, || {
+                setsid();
+                Ok(())
+            });
+        }
+        let mut child =
+            cmd.spawn().map_err(|source| VmError::Spawn { helper: helper.display().to_string(), source })?;
+        let pid = child.id();
+        // Reap the helper when it exits while we are still running (no zombies).
+        std::thread::spawn(move || child.wait());
+        Ok(Self::attach_unchecked(pid, events))
+    }
+
+    /// Re-attaches to a helper started by an earlier server, if it is still running.
+    pub fn attach(pid: u32, events: &Path) -> Option<Self> {
+        is_helper(pid).then(|| Self::attach_unchecked(pid, events))
+    }
+
+    fn attach_unchecked(pid: u32, events: &Path) -> Self {
+        VmProcess { pid, events: events.to_path_buf(), offset: 0, pending: Vec::new(), last_error: None, exit: None }
     }
 
     pub fn pid(&self) -> u32 {
-        self.child.id().unwrap_or(0)
+        self.pid
     }
 
-    /// Next event; `None` once the process has closed stdout.
-    pub async fn next_event(&mut self) -> Option<VmEvent> {
-        while let Ok(Some(line)) = self.stdout.next_line().await {
-            let Ok(raw) = serde_json::from_str::<RawEvent>(&line) else { continue };
-            let event = match raw.event.as_str() {
-                "started" => VmEvent::Started,
-                "stopped" => VmEvent::Stopped { seconds: raw.seconds },
-                "error" => VmEvent::Error(raw.message),
-                _ => continue,
-            };
-            if let VmEvent::Error(m) = &event {
-                self.last_error = Some(m.clone());
+    fn alive(&self) -> bool {
+        // SAFETY: signal 0 only checks that the process exists.
+        unsafe { kill(self.pid as i32, 0) == 0 }
+    }
+
+    /// Reads whatever the helper appended since the last call.
+    fn read_new(&mut self) {
+        use std::io::{Read, Seek, SeekFrom};
+        let Ok(mut f) = std::fs::File::open(&self.events) else { return };
+        if f.seek(SeekFrom::Start(self.offset)).is_ok() {
+            let mut buf = Vec::new();
+            if let Ok(n) = f.read_to_end(&mut buf) {
+                self.offset += n as u64;
+                self.pending.extend_from_slice(&buf);
             }
-            return Some(event);
         }
-        None
     }
 
-    /// Requests shutdown (SIGTERM → forced VM stop, exit 130).
+    fn next_line(&mut self) -> Option<String> {
+        let pos = self.pending.iter().position(|&b| b == b'\n')?;
+        let line: Vec<u8> = self.pending.drain(..=pos).collect();
+        Some(String::from_utf8_lossy(&line[..pos]).into_owned())
+    }
+
+    /// Next event, replaying the helper's history first; `None` once it has exited and every
+    /// event has been read. Cancel-safe: state only changes between awaits.
+    pub async fn next_event(&mut self) -> Option<VmEvent> {
+        loop {
+            while let Some(line) = self.next_line() {
+                let Ok(raw) = serde_json::from_str::<RawEvent>(&line) else { continue };
+                let event = match raw.event.as_str() {
+                    "started" => VmEvent::Started,
+                    "stopped" => {
+                        self.exit = Some(if raw.code == 130 { VmExit::Signaled } else { VmExit::Clean });
+                        VmEvent::Stopped { seconds: raw.seconds }
+                    }
+                    "error" => {
+                        self.last_error = Some(raw.message.clone());
+                        self.exit = Some(VmExit::Error(raw.message.clone()));
+                        VmEvent::Error(raw.message)
+                    }
+                    _ => continue,
+                };
+                return Some(event);
+            }
+            let was_alive = self.alive();
+            self.read_new();
+            if self.pending.contains(&b'\n') {
+                continue;
+            }
+            if !was_alive {
+                return None;
+            }
+            tokio::time::sleep(POLL).await;
+        }
+    }
+
+    /// Asks for a stop (SIGTERM → forced VM stop, `stopped` with code 130).
     pub fn terminate(&self) {
-        if let Some(pid) = self.child.id() {
-            // SAFETY: PID of our child process, still alive.
-            unsafe { kill(pid as i32, SIGTERM) };
-        }
+        // SAFETY: signal to our helper's pid.
+        unsafe { kill(self.pid as i32, SIGTERM) };
     }
 
-    /// Kills the process (SIGKILL) if it ignores `terminate`.
+    /// Kills the helper (SIGKILL) if it ignores `terminate`.
     pub fn kill(&mut self) {
-        let _ = self.child.start_kill();
+        // SAFETY: signal to our helper's pid.
+        unsafe { kill(self.pid as i32, SIGKILL) };
     }
 
-    /// Drains the remaining events and waits for the process to exit.
+    /// Reads the remaining events and returns how the VM ended.
     pub async fn wait(&mut self) -> VmExit {
         while self.next_event().await.is_some() {}
-        match self.child.wait().await.map(|s| s.code()) {
-            Ok(Some(0)) => VmExit::Clean,
-            Ok(Some(130)) => VmExit::Signaled,
-            Ok(code) => VmExit::Error(self.last_error.clone().unwrap_or_else(|| match code {
-                Some(c) => format!("agentvm-vm exited with code {c}"),
-                None => "agentvm-vm killed by a signal".into(),
-            })),
-            Err(e) => VmExit::Error(format!("waiting for agentvm-vm failed: {e}")),
-        }
+        self.exit.clone().unwrap_or_else(|| {
+            VmExit::Error(self.last_error.clone().unwrap_or_else(|| "agentvm-vm exited without a final event".into()))
+        })
     }
+}
+
+/// The pid belongs to a running `agentvm-vm` (guards against reused pids).
+pub fn is_helper(pid: u32) -> bool {
+    Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().ends_with("agentvm-vm"))
+        .unwrap_or(false)
 }

@@ -135,3 +135,22 @@ fn store_keeps_the_last_60_metric_samples() {
     assert_eq!(rec.cpu_history.back().copied(), Some(69.0));
     assert_eq!(rec.metrics.unwrap().uptime_s, 69);
 }
+
+#[test]
+fn a_persistent_store_reloads_tasks_after_a_restart() {
+    let repo = tempfile::tempdir().unwrap();
+    let jobs = tempfile::tempdir().unwrap();
+    let rec = record(&repo);
+    let id = rec.id.clone();
+    {
+        let store = Store::persistent(jobs.path().to_path_buf());
+        store.insert(rec);
+        store.apply(&id, TaskEvent::SlotAcquired).unwrap();
+        store.apply(&id, TaskEvent::Prepared).unwrap();
+    }
+    let reloaded = Store::load(jobs.path());
+    assert_eq!(reloaded.len(), 1);
+    assert_eq!(reloaded[0].id, id);
+    assert_eq!(reloaded[0].state, TaskState::Booting);
+    assert_eq!(reloaded[0].prompt.as_ref().unwrap().as_str(), "do something");
+}

@@ -1,10 +1,10 @@
 //! Task lifecycle: states, events and the single function that connects them.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::outcome::Final;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum TaskState {
     Queued,

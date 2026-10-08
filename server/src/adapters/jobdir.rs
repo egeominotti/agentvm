@@ -48,6 +48,11 @@ impl JobWorkspace {
         fs::remove_dir_all(jobs_root.join(name))
     }
 
+    /// An existing job folder (e.g. after a server restart). Cleans up like `create` on drop.
+    pub fn existing(jobs_root: &Path, id: &TaskId) -> Self {
+        JobWorkspace { dir: jobs_root.join(id.as_str()), id: id.to_string() }
+    }
+
     pub fn create(jobs_root: &Path, id: &TaskId) -> io::Result<Self> {
         let dir = jobs_root.join(id.as_str());
         let share = dir.join("share");
@@ -129,6 +134,15 @@ impl JobWorkspace {
         fs::copy(from, self.efivars()).map(drop)
     }
 
+    /// Events written by the VM helper (kept after the VM stops).
+    pub fn events(&self) -> PathBuf {
+        self.dir.join("vm.events")
+    }
+
+    pub fn read_pid(&self) -> Option<u32> {
+        fs::read_to_string(self.pid_path()).ok()?.trim().parse().ok()
+    }
+
     pub fn write_pid(&self, pid: u32) -> io::Result<()> {
         fs::write(self.pid_path(), pid.to_string())
     }
@@ -171,9 +185,13 @@ fn socket_dir() -> PathBuf {
 }
 
 /// At server startup: terminates VMs left over from a previous run and frees their disks.
-pub fn cleanup_orphans(jobs_root: &Path) {
+pub fn cleanup_orphans(jobs_root: &Path, keep: &std::collections::HashSet<String>) {
     let Ok(entries) = fs::read_dir(jobs_root) else { return };
-    for dir in entries.flatten().map(|e| e.path()) {
+    for dir in entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|d| !d.file_name().is_some_and(|n| keep.contains(&*n.to_string_lossy())))
+    {
         if let Some(pid) = fs::read_to_string(dir.join("vm.pid")).ok().and_then(|s| s.trim().parse::<i32>().ok())
             && is_vm_helper(pid)
         {
