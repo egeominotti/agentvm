@@ -76,3 +76,27 @@ fn uploads_never_land_outside_the_shared_folder() {
         assert!(agentvm::guestfs::create_unique(&tmp.path().join("u2"), bad).is_err(), "{bad:?}");
     }
 }
+
+/// A request appears with its id already in it: a guest polling for it never reads it empty
+/// (it would answer with no id, and the host would wait for an answer that never comes).
+#[test]
+fn a_request_is_never_seen_without_its_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let share = dir.path().to_path_buf();
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (watch_stop, watch_share) = (stop.clone(), share.clone());
+    let watcher = std::thread::spawn(move || {
+        let mut empty_reads = 0;
+        while !watch_stop.load(std::sync::atomic::Ordering::Relaxed) {
+            if let Ok(text) = std::fs::read_to_string(watch_share.join("save.request")) {
+                empty_reads += usize::from(text.is_empty());
+            }
+        }
+        empty_reads
+    });
+    for i in 0..3000 {
+        agentvm::adapters::jobdir::write_request(&share, "save.request", &format!("request-id-{i}")).unwrap();
+    }
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    assert_eq!(watcher.join().unwrap(), 0, "the guest could read a request with no id");
+}

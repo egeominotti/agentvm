@@ -66,6 +66,21 @@ pub fn create_with(path: &Path, bytes: &[u8]) -> io::Result<()> {
     std::io::Write::write_all(&mut file, bytes)
 }
 
+/// Puts `path` in place for the guest already holding `bytes`: written aside, then renamed (a
+/// rename replaces whatever the guest left at `path`, a symlink included, without following it).
+/// The guest sees either no file or the whole of it, never an empty one.
+pub fn publish(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let tmp = path.with_file_name(format!(".{name}.{}-{n}.tmp", std::process::id()));
+    let result = create_with(&tmp, bytes).and_then(|_| fs::rename(&tmp, path));
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
+}
+
 /// Copies a regular file the guest produced to a place only the host controls.
 pub fn copy_out(from: &Path, to: &Path) -> io::Result<u64> {
     let mut src =

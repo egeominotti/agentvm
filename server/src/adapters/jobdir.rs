@@ -265,7 +265,7 @@ fn is_vm_helper(pid: i32) -> bool {
 /// Asks the guest for something by creating `<share>/<name>` holding the request's id (never
 /// through a planted symlink).
 pub fn write_request(share: &Path, name: &str, id: &str) -> io::Result<()> {
-    guestfs::create_with(&share.join(name), id.as_bytes())
+    guestfs::publish(&share.join(name), id.as_bytes())
 }
 
 /// Instant copy-on-write copy (APFS `clonefile(2)`); `dst` must not exist.
