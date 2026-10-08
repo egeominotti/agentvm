@@ -17,6 +17,8 @@ write_result() { # status claude_exit commits [error]
 
 finish() {
   local rc=$?
+  # Nothing may stop the power-off: a VM left on with no job runner would idle forever.
+  set +e
   if [ ! -s "$JOB/result.json" ] && mountpoint -q "$JOB"; then
     write_result failed -1 0 "guest_error (exit $rc)"
   fi
@@ -121,18 +123,20 @@ save_steps() {
 # Commits whatever is left and bundles the commits since $BASE. Never exits the script: a failed
 # save sets SAVE_ERROR and the VM keeps running. Sets COMMITS and SAVE_ERROR.
 save_work() {
-  local count rc
+  local count rc errexit=$-
   set +e
   count=$(set -euo pipefail; save_steps 2> /tmp/agentvm-save.err)
   rc=$?
-  set -e
+  # Back to the caller's mode: the terminal loop runs without errexit.
+  case "$errexit" in *e*) set -e ;; esac
   if [ "$rc" -eq 0 ]; then
     COMMITS=$count
     SAVE_ERROR=""
   else
     COMMITS=$(git rev-list --count "$BASE..$BRANCH" 2>/dev/null || echo 0)
     # The first line says what went wrong ("fatal: Unable to create '…/index.lock': File exists.").
-    SAVE_ERROR="git failed while saving: $(grep -m1 . /tmp/agentvm-save.err | cut -c1-300)"
+    # `|| true`: git may fail with nothing on stderr, and grep finding nothing must not end the job.
+    SAVE_ERROR="git failed while saving: $(grep -m1 . /tmp/agentvm-save.err | cut -c1-300 || true)"
   fi
   log "commits $COMMITS${SAVE_ERROR:+ ($SAVE_ERROR)}"
 }
@@ -156,6 +160,9 @@ if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
     tmux -f /etc/agentvm/tmux.conf new-session -d -s claude -c "$WORK" -x 160 -y 48 /usr/local/bin/agentvm-claude
   log "terminal ready"
 
+  # The terminal outlives any single failure (a full disk on the Mac, a request that cannot be
+  # answered): the host times out on its side, and the next request is served as usual.
+  set +e
   while true; do
     if [ -e "$JOB/sync.request" ]; then
       # Snapshot: flush everything to the disk image before the host clones it.
