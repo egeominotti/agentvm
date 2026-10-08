@@ -9,6 +9,7 @@ import { VmTerminal } from "../../terminal/vm-terminal.js";
 import { bootPanel } from "../../ui/boot-panel.js";
 import { toast } from "../../ui/toast.js";
 import { AutoSnapshotSelect } from "./auto-snapshots.js";
+import { ConversationPanel } from "./conversation/panel.js";
 import { DiagnosticsPanel } from "./diagnostics.js";
 import { appendDiff } from "./diff.js";
 import { outcome } from "./outcome.js";
@@ -31,17 +32,19 @@ export class MachineView {
     this.stopBtn = h("button", { class: "btn ghost danger", type: "button", title: "Power off now without saving", onclick: () => this.stop() }, "Force stop");
     this.panelBtn = h("button", { class: "btn ghost", type: "button", onclick: () => this.togglePanel() }, "Telemetry");
     this.diag = new DiagnosticsPanel(id);
+    this.conv = new ConversationPanel(id);
+    this.convBtn = h("button", { class: "btn ghost", type: "button", title: "Claude's conversation and usage, kept after the VM is closed", onclick: () => this.conv.toggle(!isEnded(byId(this.id) ?? {})) }, "History");
     this.diagBtn = h("button", { class: "btn ghost", type: "button", title: "Why it failed, its timeline and logs", onclick: () => this.diag.toggle() }, "Diagnostics");
     this.seg = h("div", { class: "seg" }, this.segBtns);
     this.toolbar = h("header", { class: "toolbar" }, h("a", { class: "crumb", href: "#/wall" }, "Machines"), h("span", { class: "crumb-sep" }, "›"),
-      h("span", { class: "dot" }), this.titleEl, this.seg, h("div", { class: "snap-group" }, this.snapBtn, this.auto.el), this.saveBtn, this.closeBtn, this.stopBtn, this.diagBtn, this.panelBtn);
+      h("span", { class: "dot" }), this.titleEl, this.seg, h("div", { class: "snap-group" }, this.snapBtn, this.auto.el), this.saveBtn, this.closeBtn, this.stopBtn, this.convBtn, this.diagBtn, this.panelBtn);
     this.overlay = h("div", { class: "overlay" });
     this.ports = new PortsBar();
     this.screen = h("div", { class: "screen" }, this.overlay, dropHint());
     acceptFileDrops(this.screen, { enabled: () => byId(this.id)?.status.state === "running", onFiles: files => this.drop(files) });
     this.result = h("div", { class: "result" });
     this.result.hidden = true;
-    this.stage = h("section", { class: "stage" }, this.toolbar, this.ports.el, this.screen, this.result, this.diag.el);
+    this.stage = h("section", { class: "stage" }, this.toolbar, this.ports.el, this.screen, this.result, this.diag.el, this.conv.el);
     this.tele = new TelemetryPanel(id);
     this.panel = h("aside", { class: "panel", "aria-label": "Telemetry" }, this.tele.el);
     this.root = h("div", { class: "focus" }, this.stage, this.panel);
@@ -170,6 +173,8 @@ export class MachineView {
     if (t.status.state === "done") appendDiff(t, this.result);
     // A failure explains itself at once: no need to look for the button.
     if (t.status.state === "failed") this.diag.show();
+    // A closed machine's conversation is what is left of its work.
+    this.conv.show(true, false);
   }
 
   async remove() {
@@ -180,5 +185,6 @@ export class MachineView {
   destroy() {
     for (const term of Object.values(this.terms)) term.dispose();
     this.tele.destroy();
+    this.conv.destroy();
   }
 }

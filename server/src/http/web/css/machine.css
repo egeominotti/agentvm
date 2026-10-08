@@ -1,7 +1,9 @@
 /* ---------- focused machine ---------- */
 .focus { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 288px; }
 .focus.no-panel { grid-template-columns: minmax(0, 1fr); }
-.stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
+/* Panels under the terminal or the outcome take their own height; the stage scrolls. */
+.stage > .diagnostics { flex: none; }
 .toolbar { flex-shrink: 0; display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 10px 0 16px; border-bottom: 1px solid var(--line); min-width: 0; }
 .toolbar .dot { margin-right: 3px; }
 .toolbar .crumb { color: var(--ink-3); text-decoration: none; font-weight: 510; white-space: nowrap; }
@@ -46,7 +48,7 @@
 .procs span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
 .closed-note { margin: 0; color: var(--ink-2); font-size: var(--fs-sm); }
 
-.result { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 24px 40px; display: grid; gap: 14px; align-content: start; max-width: 980px; }
+.result { flex: none; padding: 20px 24px 40px; display: grid; gap: 14px; align-content: start; max-width: 980px; }
 .outcome { border-radius: var(--r-lg); padding: 14px 16px; display: grid; gap: 9px; border: 1px solid var(--line-2); background: var(--raised); }
 .outcome .title { display: flex; align-items: center; gap: 9px; font-weight: 590; font-size: var(--fs-md); letter-spacing: -0.015em; }
 .outcome .title::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--c); flex-shrink: 0; }

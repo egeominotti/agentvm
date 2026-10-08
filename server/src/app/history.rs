@@ -3,10 +3,43 @@
 
 use std::path::PathBuf;
 
+use serde::Serialize;
+
+use super::context::AppCtx;
+use crate::domain::ids::TaskId;
+use crate::domain::transcript::{HistoryEntry, parse_line};
 use crate::domain::usage::{AgentUsage, UsageSample};
 
+/// Session lines read per page.
+const PAGE_LINES: usize = 500;
+
+#[derive(Debug, Serialize)]
+pub struct Conversation {
+    pub entries: Vec<HistoryEntry>,
+    /// The line to ask for next (the same when there is nothing new).
+    pub next: usize,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("task not found")]
+pub struct NotFound;
+
+/// Claude's conversation in VM `id` from session line `after` on, a page at a time.
+pub fn conversation(ctx: &AppCtx, id: &TaskId, after: usize) -> Result<Conversation, NotFound> {
+    ctx.store.get(id).ok_or(NotFound)?;
+    let dir = ctx.config.jobs().join(id.as_str()).join("share/claude");
+    let page = crate::adapters::transcripts::read_page(&dir, after, PAGE_LINES);
+    Ok(Conversation { entries: page.lines.iter().flat_map(|l| parse_line(l)).collect(), next: page.next })
+}
+
+/// Claude's usage over the VM's life.
+pub fn usage(ctx: &AppCtx, id: &TaskId) -> Result<Vec<UsageSample>, NotFound> {
+    ctx.store.get(id).ok_or(NotFound)?;
+    Ok(crate::jsonl::read(&usage_file(ctx, id)))
+}
+
 /// `<job>/usage.jsonl`.
-pub fn usage_file(ctx: &super::context::AppCtx, id: &crate::domain::ids::TaskId) -> PathBuf {
+pub fn usage_file(ctx: &AppCtx, id: &TaskId) -> PathBuf {
     ctx.config.jobs().join(id.as_str()).join("usage.jsonl")
 }
 

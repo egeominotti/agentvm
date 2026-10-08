@@ -10,7 +10,8 @@ export function charts(points, t) {
   const times = points.map(p => p.at);
   const col = key => points.map(p => p[key] ?? null);
   const unmeasured = "Not measured: this VM started before disk I/O was collected";
-  const disk = col("disk_read_bps").some(v => v != null);
+  // "Not measured" only when the other numbers are there and disk I/O is not (an older VM).
+  const disk = points.length === 0 || col("disk_read_bps").some(v => v != null);
   return [
     lineChart({ title: "CPU", times, max: 100, format: v => `${v.toFixed(0)}%`,
       series: [{ name: "CPU", color: BLUE, values: col("cpu_pct") }] }),

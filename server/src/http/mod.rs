@@ -8,6 +8,7 @@ mod error;
 mod events;
 mod golden;
 mod guard;
+mod history;
 mod proxy;
 mod router;
 mod session;

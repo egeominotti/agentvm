@@ -106,3 +106,42 @@ fn claude_has_a_browser_out_of_the_box() {
     assert!(sse.contains("mcp__playwright__browser_navigate"), "Claude did not use the browser: {sse}");
     assert_eq!(git(repo.path(), &["show", &format!("agent/{id}:title.txt")]).trim(), "agentvm-42");
 }
+
+/// An interactive VM's conversation reaches the host as it happens and stays once the VM is
+/// closed: the prompt, Claude's tool calls, and its usage over time.
+#[test]
+#[ignore = "requires golden, token and Claude"]
+fn claudes_conversation_is_kept_after_the_vm_closes() {
+    use std::time::{Duration, Instant};
+    let server = start_server();
+    let repo = temp_repo();
+    let created = crate::helpers::post_json(
+        &format!("{}/api/tasks", server.base),
+        &serde_json::json!({"repo_path": repo.path(), "interactive": true,
+                            "prompt": "Create the file history.txt containing kept and commit it."}),
+    );
+    let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    let t0 = Instant::now();
+    while crate::helpers::get_json(&format!("{}/api/tasks/{id}", server.base))["activity"] != "waiting" {
+        assert!(t0.elapsed() < Duration::from_secs(240), "Claude did not finish its turn");
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    std::thread::sleep(Duration::from_secs(3)); // the copier runs every 2 s
+    let kinds = |server: &crate::helpers::Server| {
+        let page = crate::helpers::get_json(&format!("{}/api/tasks/{id}/claude?after=0", server.base));
+        page["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| (e["kind"].as_str().unwrap().to_owned(), e.to_string()))
+            .collect::<Vec<_>>()
+    };
+    let live = kinds(&server);
+    assert!(live.iter().any(|(k, e)| k == "user" && e.contains("history.txt")), "{live:?}");
+    assert!(live.iter().any(|(k, _)| k == "tool_use"), "{live:?}");
+    crate::helpers::post_json(&format!("{}/api/tasks/{id}/close", server.base), &serde_json::json!({}));
+    crate::helpers::wait_for_state(&server, &id, |s| crate::helpers::TERMINAL.contains(&s), Duration::from_secs(90));
+    assert!(kinds(&server).len() >= live.len(), "the conversation is gone after the close");
+    let usage = crate::helpers::get_json(&format!("{}/api/tasks/{id}/claude/usage", server.base));
+    assert!(!usage["samples"].as_array().unwrap().is_empty(), "{usage}");
+}

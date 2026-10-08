@@ -69,7 +69,8 @@ repository as a git branch, and the VM is thrown away.
 | **A browser for Claude** | Headless Chromium and the Playwright MCP server are preinstalled and registered: Claude can open the app it is building and check it. |
 | **Terminals like a real one** | Drag to copy to the Mac's clipboard, ⌘V to paste, drop files on a terminal to copy them into the VM (their paths are typed for you). |
 | **Per-repo setup** | `.agentvm/setup.sh` runs before Claude starts: install dependencies, seed a database, start a dev server. |
-| **Telemetry** | Per VM: CPU, memory, disk, network, busiest processes, uptime. Per agent: cost at API prices, tokens in/out, lines changed, context used. |
+| **Telemetry and history** | Per VM, with charts over 5 minutes, an hour or its whole life: CPU, memory (used, and what the VM may keep), disk space and I/O, network, processes by CPU and by memory; stale numbers are flagged. Claude's whole conversation and its cost, tokens and context over time, kept after the VM is closed. |
+| **Diagnostics** | A failed VM says why and what to do, with its timeline and the end of every log (job, setup.sh, Claude, boot console, server). The server keeps a JSON log in `~/AgentVMs/logs`. |
 | **Settings, applied live** | VMs at once, vCPUs, memory, default model, time limits, Claude token (Keychain), VM image rebuilds with a chosen Claude Code version, S3, storage cleanup. |
 
 ## Quick start

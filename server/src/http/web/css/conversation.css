@@ -1,0 +1,12 @@
+.claude-history .conv-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin: 4px 0 8px; }
+.conversation { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.conversation .turn { font-size: 12.5px; line-height: 1.5; color: var(--ink); }
+.conversation .turn p { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.conversation .at { display: block; font-size: 10.5px; color: var(--ink-3); margin-bottom: 2px; }
+.conversation .user { padding: 8px 10px; border-radius: var(--r-sm); background: var(--raised); }
+.conversation .tool code { display: block; font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); white-space: pre-wrap; word-break: break-all; }
+.conversation .tool b { color: var(--ink); font-weight: 600; }
+.diagnostics .conversation .tool-out { border-top: 0; padding-top: 0; margin-top: -4px; margin-left: 12px; }
+.conversation .tool-out summary { font-size: 11.5px; color: var(--ink-3); }
+.conversation .tool-out.error summary { color: var(--fail); }
+.conversation .tool-out .size { color: var(--ink-3); }

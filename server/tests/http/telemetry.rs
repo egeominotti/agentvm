@@ -9,7 +9,7 @@ use axum::http::{Request, StatusCode};
 
 use crate::helpers::*;
 
-fn vm(home: &std::path::Path) -> (Arc<AppCtx>, String) {
+pub(crate) fn vm(home: &std::path::Path) -> (Arc<AppCtx>, String) {
     let ctx = Arc::new(AppCtx::new(config(home), Keychain::new(Some(home.join("none.keychain-db")))));
     std::fs::create_dir_all(home.join("repo/.git")).unwrap();
     let rec = agentvm::app::store::TaskRecord::new(

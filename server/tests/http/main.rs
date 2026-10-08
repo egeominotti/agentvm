@@ -4,5 +4,6 @@ mod assets;
 mod diagnostics;
 mod guard;
 mod helpers;
+mod history;
 mod settings;
 mod telemetry;
