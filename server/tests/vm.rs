@@ -80,6 +80,20 @@ async fn terminate_stops_a_running_vm() {
     assert_eq!(vm.wait().await, VmExit::Signaled);
 }
 
+#[tokio::test]
+#[ignore = "requires the golden image"]
+async fn helper_is_detached_from_the_spawning_process_tree() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = workspace(&tmp);
+    let mut vm = VmProcess::spawn(&helper(), &ws.config_path(), &config(&ws), &ws.dir().join("vm.events")).unwrap();
+    assert_eq!(vm.next_event().await, Some(VmEvent::Started));
+    // Supervisors that stop the server kill its whole process tree: the VM must not be in it.
+    let out = std::process::Command::new("ps").args(["-o", "ppid=", "-p", &vm.pid().to_string()]).output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "1", "the helper is still our descendant");
+    vm.terminate();
+    assert_eq!(vm.wait().await, VmExit::Signaled);
+}
+
 fn repo_with_bundle(ws: &JobWorkspace) -> String {
     let repo = tempfile::tempdir().unwrap().keep();
     let run = |args: &[&str]| {
@@ -129,7 +143,10 @@ async fn interactive_vm_serves_a_shell_over_vsock_and_closes_on_request() {
             tokio::time::sleep(Duration::from_millis(300)).await;
             continue;
         };
-        pty.send(&Frame::Input(b"echo hello-$((40+2))\n".to_vec())).await.unwrap();
+        if pty.send(&Frame::Input(b"echo hello-$((40+2))\n".to_vec())).await.is_err() {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            continue;
+        }
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline {
             match tokio::time::timeout(Duration::from_secs(1), pty.recv()).await {

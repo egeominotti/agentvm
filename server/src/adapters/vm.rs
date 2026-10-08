@@ -1,5 +1,6 @@
-//! `agentvm-vm` process: one VM per process. The helper runs in its own session and appends its
-//! JSON Lines events to a file, so it outlives the server and a new server can attach to it.
+//! `agentvm-vm` process: one VM per process. The helper is detached from the server (own session,
+//! launchd as parent) and appends its JSON Lines events to a file, so it outlives the server and a
+//! new server can attach to it.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -12,6 +13,9 @@ use crate::domain::outcome::VmExit;
 unsafe extern "C" {
     fn kill(pid: i32, sig: i32) -> std::ffi::c_int;
     fn setsid() -> i32;
+    fn fork() -> i32;
+    fn write(fd: i32, buf: *const std::ffi::c_void, count: usize) -> isize;
+    fn _exit(status: i32) -> !;
 }
 
 const SIGTERM: i32 = 15;
@@ -72,24 +76,40 @@ pub struct VmProcess {
 impl VmProcess {
     /// Starts the helper detached (own session, events appended to `events`).
     pub fn spawn(helper: &Path, config_path: &Path, cfg: &VmConfig, events: &Path) -> Result<Self, VmError> {
+        use std::io::Read;
+        use std::os::fd::AsRawFd;
         let json = serde_json::to_vec_pretty(cfg).expect("VmConfig is serializable");
         std::fs::write(config_path, json).map_err(VmError::Config)?;
         let out = std::fs::OpenOptions::new().create(true).append(true).open(events).map_err(VmError::Config)?;
+        let spawn_err = |source| VmError::Spawn { helper: helper.display().to_string(), source };
+        let (mut pid_in, pid_out) = std::io::pipe().map_err(spawn_err)?;
+        let pid_fd = pid_out.as_raw_fd();
         let mut cmd = Command::new(helper);
         cmd.arg("--config").arg(config_path).stdin(Stdio::null()).stdout(out).stderr(Stdio::null());
-        // SAFETY: setsid is async-signal-safe and only detaches the child from our session.
+        // Double fork: the helper ends up in its own session with launchd as its parent, so neither
+        // a signal to our process group nor a kill of our process tree reaches the VM.
+        // SAFETY: only async-signal-safe calls (setsid, fork, write, _exit) between fork and exec.
         unsafe {
-            std::os::unix::process::CommandExt::pre_exec(&mut cmd, || {
+            std::os::unix::process::CommandExt::pre_exec(&mut cmd, move || {
                 setsid();
-                Ok(())
+                match fork() {
+                    -1 => Err(std::io::Error::last_os_error()),
+                    0 => Ok(()),
+                    grandchild => {
+                        let pid = grandchild.to_ne_bytes();
+                        write(pid_fd, pid.as_ptr().cast(), pid.len());
+                        _exit(0)
+                    }
+                }
             });
         }
-        let mut child =
-            cmd.spawn().map_err(|source| VmError::Spawn { helper: helper.display().to_string(), source })?;
-        let pid = child.id();
-        // Reap the helper when it exits while we are still running (no zombies).
-        std::thread::spawn(move || child.wait());
-        Ok(Self::attach_unchecked(pid, events))
+        let mut intermediate = cmd.spawn().map_err(spawn_err)?;
+        drop(cmd);
+        drop(pid_out);
+        let _ = intermediate.wait();
+        let mut pid = [0u8; 4];
+        pid_in.read_exact(&mut pid).map_err(spawn_err)?;
+        Ok(Self::attach_unchecked(i32::from_ne_bytes(pid) as u32, events))
     }
 
     /// Re-attaches to a helper started by an earlier server, if it is still running.

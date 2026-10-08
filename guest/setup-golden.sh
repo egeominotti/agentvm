@@ -6,6 +6,10 @@ export DEBIAN_FRONTEND=noninteractive
 
 apt-get update -qq
 apt-get install -y -qq git curl ca-certificates ripgrep jq build-essential tmux python3-pip python3-venv >/dev/null
+# A browser for Claude: headless Chromium driven through the Playwright MCP server.
+apt-get install -y -qq --no-install-recommends chromium nodejs npm fonts-liberation fonts-noto-color-emoji >/dev/null
+npm install -g --no-fund --no-audit --loglevel=error @playwright/mcp@latest
+playwright-mcp --help >/dev/null
 # Claude Code for root: inside the VM the agent has full permissions (the VM is the sandbox).
 VERSION=$(cat "$SRC/claude-version" 2>/dev/null || echo latest)
 HOME=/root bash -c "curl -fsSL https://claude.ai/install.sh | bash -s '$VERSION'"

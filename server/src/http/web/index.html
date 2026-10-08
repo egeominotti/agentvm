@@ -9,56 +9,57 @@
 <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-<header class="bar">
-  <a class="brand" href="#/wall" aria-label="agentvm home">
-    <img src="/logo.svg" alt="" width="22" height="22"><span>agentvm</span>
-  </a>
+<div class="app">
+<aside class="side" aria-label="Navigation">
+  <a class="brand" href="#/wall" aria-label="agentvm home"><img src="/logo.svg" alt="" width="18" height="18"><span>agentvm</span></a>
+  <button class="new-vm" id="new-vm" type="button" title="New VM (⌘K)">
+    <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg><span>New VM</span><kbd>⌘K</kbd>
+  </button>
+  <div class="alerts" id="alerts"></div>
   <nav class="nav" aria-label="Sections">
-    <a href="#/wall" data-nav="wall">Machines</a>
-    <a href="#/snapshots" data-nav="snapshots">Snapshots</a>
-    <a href="#/settings" data-nav="settings">Settings</a>
+    <a href="#/wall" data-nav="wall"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1.2"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1.2"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1.2"/><rect x="9" y="9" width="4.5" height="4.5" rx="1.2"/></svg>Machines<span class="count" id="count-machines"></span></a>
+    <a href="#/snapshots" data-nav="snapshots"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 13.5 5 8 7.5 2.5 5Z"/><path d="m2.5 8 5.5 2.5L13.5 8"/><path d="m2.5 11 5.5 2.5 5.5-2.5"/></svg>Snapshots</a>
+    <a href="#/settings" data-nav="settings"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h6M12 4.5h1.5M2.5 8h1.5M7.5 8h6M2.5 11.5h7M13 11.5h.5"/><circle cx="10.25" cy="4.5" r="1.5"/><circle cx="5.75" cy="8" r="1.5"/><circle cx="11.25" cy="11.5" r="1.5"/></svg>Settings</a>
   </nav>
+  <div class="side-label" id="side-label">Machines</div>
+  <nav class="side-machines" id="side-machines" aria-labelledby="side-label"></nav>
   <div class="host" id="host" aria-label="This Mac"></div>
-  <button class="btn primary" id="new-vm" type="button" title="New VM (⌘K)">New VM</button>
-</header>
+</aside>
+<main id="view"></main>
+</div>
 
-<dialog class="launch-dialog" id="launch-dialog" aria-label="Launch a VM">
+<dialog class="launch-dialog" id="launch-dialog" aria-label="New VM">
 <form class="launcher" id="launcher" autocomplete="off" method="dialog">
-  <div class="launch-title"><img src="/logo.svg" alt="" width="20" height="20"><b>Launch a sealed VM</b><span>Claude Code opens inside with root and every permission.</span></div>
-  <div class="field repo">
-    <label for="repo">Repository</label>
-    <input id="repo" name="repo_path" placeholder="~/code/my-app" spellcheck="false" required>
-    <div class="suggest" id="suggest" hidden></div>
+  <div class="launch-title">
+    <img src="/logo.svg" alt="" width="14" height="14"><span>agentvm</span><span class="sep">›</span><b>New VM</b>
+    <button class="icon-btn" id="launch-close" type="button" aria-label="Close"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/></svg></button>
   </div>
-  <div class="field model">
-    <label for="model">Model</label>
-    <select id="model" name="model"></select>
-    <input id="model-custom" placeholder="claude-opus-5-5" spellcheck="false" hidden>
+  <div class="launch-main">
+    <div class="field repo">
+      <label class="sr" for="repo">Repository</label>
+      <input id="repo" name="repo_path" placeholder="Repository, e.g. ~/code/my-app" spellcheck="false" required>
+      <div class="suggest" id="suggest" hidden></div>
+    </div>
+    <div class="field task">
+      <label class="sr" for="prompt">First task (optional)</label>
+      <textarea id="prompt" name="prompt" rows="3" placeholder="Give Claude a first task, or leave empty to start in the terminal"></textarea>
+    </div>
   </div>
-  <div class="field version">
-    <label for="claude-version">Claude Code</label>
-    <select id="claude-version" name="claude_version"><option value="">Image version</option></select>
-  </div>
-  <div class="field res-cpu">
-    <label for="vm-cpus">vCPUs</label>
-    <select id="vm-cpus" name="cpus"></select>
-  </div>
-  <div class="field res-mem">
-    <label for="vm-mem">Memory</label>
-    <select id="vm-mem" name="memory_mb"></select>
+  <div class="props">
+    <div class="prop"><label for="model">Model</label><select id="model" name="model"></select></div>
+    <input id="model-custom" placeholder="claude-opus-5-5" spellcheck="false" aria-label="Model ID" hidden>
+    <div class="prop"><label for="claude-version">Claude Code</label><select id="claude-version" name="claude_version"><option value="">Image version</option></select></div>
+    <div class="prop"><label for="vm-cpus">vCPUs</label><select id="vm-cpus" name="cpus"></select></div>
+    <div class="prop"><label for="vm-mem">Memory</label><select id="vm-mem" name="memory_mb"></select></div>
   </div>
   <p class="res-hint" id="res-hint"></p>
-  <div class="field task">
-    <label for="prompt">First task <span class="opt">optional</span></label>
-    <textarea id="prompt" name="prompt" rows="3" placeholder="Fix the failing test in parser.rs and commit"></textarea>
-  </div>
-  <label class="check" title="Every line of the task opens its own VM"><input type="checkbox" id="batch"> One VM per line</label>
-  <button class="btn primary" id="launch" type="submit">Launch VM <kbd>⌘↵</kbd></button>
   <p class="form-error" id="form-error" role="alert" hidden></p>
+  <div class="launch-foot">
+    <label class="check" title="Every line of the task opens its own VM"><input type="checkbox" id="batch"> One VM per line</label>
+    <button class="btn primary" id="launch" type="submit">Launch VM <kbd>⌘↵</kbd></button>
+  </div>
 </form>
 </dialog>
-
-<main id="view"></main>
 
 <script src="/vendor/xterm.js"></script>
 <script src="/vendor/addon-fit.js"></script>

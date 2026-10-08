@@ -127,6 +127,7 @@ async function loadTasks() {
   state.tasks = r.data.sort((a, b) => (TERMINAL.has(a.status.state) - TERMINAL.has(b.status.state)) || a.created_at - b.created_at);
   const waiting = state.tasks.filter(t => t.status.state === "running" && t.activity === "waiting").length;
   document.title = waiting ? `(${waiting}) agentvm` : "agentvm";
+  renderSide();
   current?.update();
 }
 async function loadStatus() {
@@ -140,7 +141,7 @@ async function loadSettings() {
   if (r.ok) state.settings = r.data;
 }
 
-// ---------- top bar: this Mac ----------
+// ---------- sidebar: this Mac and the machines ----------
 function gauge(label, value, pct, hot) {
   return h("div", { class: `gauge${hot ? " hot" : ""}` },
     h("div", { class: "row" }, h("span", {}, label), h("b", {}, value)),
@@ -154,15 +155,31 @@ function renderHost() {
   const cpu = live.length ? live.reduce((n, t) => n + t.metrics.cpu_pct * t.metrics.cpus, 0) / s.host.cpus : 0;
   const kids = [
     gauge("VMs", `${s.running} / ${s.concurrency}`, (100 * s.running) / s.concurrency, s.running >= s.concurrency),
-    gauge("RAM reserved", `${gb(s.ram_committed_mb)} / ${gb(s.host.ram_mb)}`, (100 * s.ram_committed_mb) / s.host.ram_mb, s.ram_committed_mb > s.host.ram_mb * 0.85),
+    gauge("Memory reserved", `${gb(s.ram_committed_mb)} / ${gb(s.host.ram_mb)}`, (100 * s.ram_committed_mb) / s.host.ram_mb, s.ram_committed_mb > s.host.ram_mb * 0.85),
     gauge("CPU in VMs", `${cpu.toFixed(0)}%`, cpu, cpu > 85),
   ];
   const spent = state.tasks.reduce((n, t) => n + (t.usage?.cost_usd ?? 0), 0);
   kids.push(h("div", { class: "gauge spend", title: "What these agents would cost at API prices; with a subscription it counts against its limits" },
     h("div", { class: "row" }, h("span", {}, "Claude usage"), h("b", {}, money(spent)))));
-  if (!s.golden) kids.unshift(h("button", { class: "pill-warn", type: "button", onclick: () => (location.hash = "#/settings") }, "VM image missing"));
-  if (!s.token) kids.unshift(h("button", { class: "pill-warn", type: "button", onclick: () => (location.hash = "#/settings") }, "Claude token missing"));
   box.replaceChildren(...kids);
+  const alerts = [];
+  if (!s.token) alerts.push(h("button", { class: "pill-warn", type: "button", onclick: () => (location.hash = "#/settings") }, "Claude token missing"));
+  if (!s.golden) alerts.push(h("button", { class: "pill-warn", type: "button", onclick: () => (location.hash = "#/settings") }, "VM image missing"));
+  $("#alerts").replaceChildren(...alerts);
+}
+
+/** Every machine in the sidebar, like a list of issues: status icon, title, age. */
+function renderSide() {
+  const focused = location.hash.match(/^#\/vm\/(.+)$/)?.[1];
+  const live = state.tasks.filter(t => !TERMINAL.has(t.status.state)).length;
+  $("#count-machines").textContent = live ? String(live) : "";
+  // Running machines only: finished ones stay on the wall until cleared.
+  const items = state.tasks.filter(t => !TERMINAL.has(t.status.state) || t.id === focused).map(t => {
+    const [cls, label] = kind(t);
+    return h("a", { class: `side-vm ${cls}`, href: `#/vm/${t.id}`, "aria-current": String(t.id === focused), title: `${titleOf(t)}\n${label}` },
+      h("span", { class: "dot" }), h("span", { class: "t" }, titleOf(t)), h("span", { class: "m" }, t.activity === "waiting" && t.status.state === "running" ? "waiting" : age(t)));
+  });
+  $("#side-machines").replaceChildren(...(items.length ? items : [h("p", { class: "side-empty" }, "No running machines")]));
 }
 
 // ---------- models and Claude Code versions ----------
@@ -295,6 +312,7 @@ document.addEventListener("keydown", e => {
   if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); openLauncher(); }
 });
 dialog.addEventListener("click", e => { if (e.target === dialog) dialog.close(); });
+$("#launch-close").addEventListener("click", () => dialog.close());
 promptEl.addEventListener("input", () => { autosize(); updateLaunch(); updateResourceHint(); });
 $("#batch").addEventListener("change", () => { updateLaunch(); updateResourceHint(); });
 $("#launcher").addEventListener("keydown", e => {
@@ -329,7 +347,7 @@ $("#launcher").addEventListener("submit", async e => {
 
 // ---------- terminal attached to a VM ----------
 const THEME = {
-  background: "#090a0e", foreground: "#e3e7ee", cursor: "#a08cff", cursorAccent: "#090a0e", selectionBackground: "#3a3260",
+  background: "#0b0c0e", foreground: "#e4e5e9", cursor: "#7480e6", cursorAccent: "#0b0c0e", selectionBackground: "#2c3160",
   black: "#151821", red: "#ff6b6b", green: "#4fd18b", yellow: "#ffb547", blue: "#7aa7ff", magenta: "#b9a8ff", cyan: "#5fd7d7", white: "#d5dae3",
   brightBlack: "#5c6577", brightRed: "#ff8a8a", brightGreen: "#74e0a5", brightYellow: "#ffc977", brightBlue: "#9cbcff", brightMagenta: "#cfc2ff", brightCyan: "#86e3e3", brightWhite: "#ffffff",
 };
@@ -540,7 +558,7 @@ class WallView {
   constructor() {
     this.cells = new Map();
     this.grid = h("div", { class: "wall" });
-    this.head = h("div", { class: "wall-head" });
+    this.head = h("header", { class: "view-head" });
     this.root = h("div", { style: "flex:1;min-height:0;display:flex;flex-direction:column" }, this.head, this.grid);
   }
   update() {
@@ -557,7 +575,7 @@ class WallView {
           loadTasks();
         } }, `Clear ${finished.length} finished`)
       : "";
-    this.head.replaceChildren(h("b", {}, plural(live, "machine")), h("span", {}, waiting ? `${waiting} waiting for you` : "click a machine to work in it"),
+    this.head.replaceChildren(h("h1", {}, "Machines"), h("span", { class: "sub" }, waiting ? `${plural(live, "running machine")}, ${waiting} waiting for you` : `${plural(live, "running machine")}. Click one to work in it.`),
       h("span", { class: "spacer" }), clear);
     for (const [id, cell] of this.cells) if (!byId(id)) { cell.destroy(); this.cells.delete(id); }
     tasks.forEach((t, i) => {
@@ -592,7 +610,7 @@ class Cell {
     this.state.textContent = `${label}, ${age(t)}`;
     const m = t.metrics;
     this.cpu.replaceChildren(h("b", {}, m ? `${m.cpu_pct.toFixed(0)}%` : "—"), "CPU", sparkline(t.cpu_history, { width: 70, height: 16 }));
-    this.mem.replaceChildren(h("b", {}, m ? gb(m.mem_used_mb) : "—"), "RAM", sparkline(t.mem_history, { width: 70, height: 16, color: "var(--wait)" }));
+    this.mem.replaceChildren(h("b", {}, m ? gb(m.mem_used_mb) : "—"), "RAM", sparkline(t.mem_history, { width: 70, height: 16, color: "var(--ink-3)" }));
     this.portChip ??= h("a", { class: "port-chip", target: "_blank", rel: "noopener", onclick: e => e.stopPropagation() });
     const p0 = t.ports?.[0];
     this.portChip.hidden = !p0;
@@ -633,7 +651,6 @@ class FocusView {
     this.session = "claude";
     this.terms = {};
     this.showPanel = localStorage.getItem("agentvm.panel") !== "off";
-    this.rail = h("nav", { class: "rail", "aria-label": "Machines" });
     this.titleEl = h("span", { class: "title" });
     this.stateEl = h("span", { class: "status" });
 
@@ -644,19 +661,19 @@ class FocusView {
     this.stopBtn = h("button", { class: "btn ghost danger", type: "button", title: "Power off now without saving", onclick: () => this.stop() }, "Force stop");
     this.panelBtn = h("button", { class: "btn ghost", type: "button", onclick: () => this.togglePanel() }, "Telemetry");
     this.seg = h("div", { class: "seg" }, this.segBtns);
-    this.toolbar = h("div", { class: "toolbar" }, h("span", { class: "dot" }), this.titleEl, this.seg, h("span", { class: "spacer" }), this.snapBtn, this.saveBtn, this.closeBtn, this.stopBtn, this.panelBtn);
+    this.toolbar = h("header", { class: "toolbar" }, h("a", { class: "crumb", href: "#/wall" }, "Machines"), h("span", { class: "crumb-sep" }, "›"),
+      h("span", { class: "dot" }), this.titleEl, this.seg, this.snapBtn, this.saveBtn, this.closeBtn, this.stopBtn, this.panelBtn);
     this.overlay = h("div", { class: "overlay" });
     this.screen = h("div", { class: "screen" }, this.overlay);
     this.result = h("div", { class: "result" });
     this.result.hidden = true;
     this.stage = h("section", { class: "stage" }, this.toolbar, this.screen, this.result);
     this.panel = h("aside", { class: "panel", "aria-label": "Telemetry" });
-    this.root = h("div", { class: "focus" }, this.rail, this.stage, this.panel);
+    this.root = h("div", { class: "focus" }, this.stage, this.panel);
   }
 
   update() {
     const t = byId(this.id);
-    this.renderRail();
     if (!t) { this.overlayText("Machine not found", "It may belong to a previous server session."); return; }
     const [cls, label] = kind(t);
     this.root.className = `focus ${cls}${this.showPanel ? "" : " no-panel"}`;
@@ -685,15 +702,6 @@ class FocusView {
     this.ensureTerm(this.session).connect();
   }
 
-  renderRail() {
-    const items = state.tasks.map(t => {
-      const [cls, label] = kind(t);
-      return h("button", { class: `rail-item ${cls}`, type: "button", "aria-current": String(t.id === this.id), onclick: () => (location.hash = `#/vm/${t.id}`) },
-        h("span", { class: "dot" }), h("span", { class: "t" }, titleOf(t)), h("span", { class: "s" }, label));
-    });
-    this.rail.replaceChildren(h("a", { class: "rail-back", href: "#/wall" }, "← All machines"), ...items);
-  }
-
   renderPanel(t, label) {
     if (!this.showPanel) return;
     const m = TERMINAL.has(t.status.state) ? null : t.metrics;
@@ -701,7 +709,7 @@ class FocusView {
     if (m) {
       kids.push(
         h("div", { class: "stat" }, h("h3", {}, "CPU"), h("div", { class: "big" }, `${m.cpu_pct.toFixed(0)}%`, h("small", {}, `of ${m.cpus} vCPUs`)), sparkline(t.cpu_history, { width: 250, height: 40, fluid: true })),
-        h("div", { class: "stat" }, h("h3", {}, "Memory"), h("div", { class: "big" }, gb(m.mem_used_mb), h("small", {}, `of ${gb(m.mem_total_mb)}`)), sparkline(t.mem_history, { width: 250, height: 40, color: "var(--wait)", fluid: true })),
+        h("div", { class: "stat" }, h("h3", {}, "Memory"), h("div", { class: "big" }, gb(m.mem_used_mb), h("small", {}, `of ${gb(m.mem_total_mb)}`)), sparkline(t.mem_history, { width: 250, height: 40, color: "var(--ink-3)", fluid: true })),
         h("div", { class: "stat" }, h("h3", {}, "Disk"), h("div", {}, `${gb(m.disk_used_mb)} of ${gb(m.disk_total_mb)}`),
           h("div", { class: "bar-line" }, h("i", { style: `width:${(100 * m.disk_used_mb) / Math.max(m.disk_total_mb, 1)}%` }))),
         h("div", {}, h("h3", {}, "Busiest processes"), m.top.length
@@ -1120,10 +1128,10 @@ class SnapshotsView {
     const list = r.ok ? r.data : [];
     const fileInput = h("input", { type: "file", accept: ".zst,.tar,.gz", hidden: true, onchange: e => this.importFile(e.target.files[0]) });
     this.importMsg = h("span", { class: "msg" });
-    const head = h("header", { class: "settings-head" }, h("h1", {}, "Snapshots"),
-      h("span", { class: "save-state" }, "Instant copies of whole VMs: files, installed packages, Claude's conversation."),
+    const head = h("header", { class: "view-head" }, h("h1", {}, "Snapshots"),
+      h("span", { class: "sub" }, "Instant copies of whole VMs: files, installed packages, Claude's conversation."),
       h("span", { class: "spacer" }), this.importMsg,
-      h("button", { class: "btn", type: "button", onclick: () => fileInput.click() }, "Import from file"), fileInput);
+      h("button", { class: "btn small", type: "button", onclick: () => fileInput.click() }, "Import from file"), fileInput);
     this.remote = h("section", { class: "remote" });
     this.loadRemote();
     if (!list.length) {
@@ -1135,7 +1143,7 @@ class SnapshotsView {
   }
   row(sn) {
     const msg = h("span", { class: "msg" });
-    const restore = h("button", { class: "btn primary", type: "button", onclick: async () => {
+    const restore = h("button", { class: "btn", type: "button", onclick: async () => {
       restore.disabled = true;
       const r = await api(`/api/snapshots/${sn.id}/restore`, { method: "POST" });
       if (r.ok) { await loadTasks(); location.hash = `#/vm/${r.data.id}`; }
@@ -1212,6 +1220,7 @@ class SnapshotsView {
 function route() {
   const hash = location.hash || "#/wall";
   for (const a of document.querySelectorAll("[data-nav]")) a.setAttribute("aria-current", hash.startsWith(`#/${a.dataset.nav}`) || (a.dataset.nav === "wall" && hash.startsWith("#/vm/")) ? "page" : "false");
+  renderSide();
   const vm = hash.match(/^#\/vm\/(.+)$/);
   if (vm) {
     if (current instanceof FocusView && current.id === vm[1]) return;

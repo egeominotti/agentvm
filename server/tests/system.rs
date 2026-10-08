@@ -640,3 +640,33 @@ fn repo_setup_runs_and_vm_ports_are_forwarded_to_the_mac() {
         "forward closed with the VM"
     );
 }
+
+#[test]
+#[ignore = "requires golden, token and Claude"]
+fn claude_has_a_browser_out_of_the_box() {
+    let server = start_server();
+    let repo = temp_repo();
+    // The title only exists once JavaScript runs: reading the file is not enough.
+    std::fs::write(
+        repo.path().join("index.html"),
+        "<title>loading</title><script>document.title = 'agentvm-' + (6 * 7)</script>\n",
+    )
+    .unwrap();
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-qm", "page"]);
+    let (id, task) = run_task(
+        &server,
+        repo.path(),
+        "Serve this repository with `python3 -m http.server 8123` in the background, open \
+         http://localhost:8123/ with your browser tool, and write the page title the browser shows \
+         (nothing else) into title.txt. Commit title.txt.",
+    );
+    assert_eq!(task["status"]["state"], "done", "{task}");
+    let out = Command::new("curl")
+        .args(["-sN", "--max-time", "2", &format!("{}/api/tasks/{id}/events", server.base)])
+        .output()
+        .unwrap();
+    let sse = String::from_utf8_lossy(&out.stdout);
+    assert!(sse.contains("mcp__playwright__browser_navigate"), "Claude did not use the browser: {sse}");
+    assert_eq!(git(repo.path(), &["show", &format!("agent/{id}:title.txt")]).trim(), "agentvm-42");
+}
