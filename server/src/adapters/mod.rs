@@ -3,3 +3,4 @@ pub mod git;
 pub mod jobdir;
 pub mod keychain;
 pub mod tail;
+pub mod vm;
