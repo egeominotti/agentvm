@@ -553,3 +553,51 @@ fn s3_large_files_go_up_in_parts() {
     assert_eq!(std::fs::read(&down).unwrap(), data);
     s3.delete(&key).unwrap();
 }
+
+fn s3_to(endpoint: String) -> agentvm::adapters::s3::S3Client {
+    let cfg = agentvm::domain::s3::S3Config {
+        endpoint,
+        region: "us-east-1".into(),
+        bucket: "agentvm-backups".into(),
+        prefix: "agentvm".into(),
+        access_key: "k".into(),
+        path_style: true,
+    };
+    agentvm::adapters::s3::S3Client::new(cfg, Secret::new("s".into()))
+}
+
+/// An endpoint that accepts connections and then never answers must not hang a backup forever.
+#[test]
+fn s3_calls_give_up_on_a_server_that_stops_answering() {
+    let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = silent.local_addr().unwrap().port();
+    let _keep = std::thread::spawn(move || {
+        let held: Vec<_> = silent.incoming().take(16).collect();
+        std::thread::sleep(Duration::from_secs(120));
+        drop(held);
+    });
+    let s3 = s3_to(format!("http://127.0.0.1:{port}")).with_stall_timeout(2);
+    let t0 = std::time::Instant::now();
+    assert!(s3.put_bytes("agentvm/x", b"x").is_err());
+    assert!(t0.elapsed() < Duration::from_secs(20), "took {:?}", t0.elapsed());
+}
+
+/// The secret goes into curl's config: quotes and backslashes must not inject curl options.
+#[test]
+fn an_s3_secret_cannot_inject_curl_options() {
+    let tmp = tempfile::tempdir().unwrap();
+    let stolen = tmp.path().join("stolen");
+    let cfg = agentvm::domain::s3::S3Config {
+        endpoint: "http://127.0.0.1:9".into(),
+        region: "us-east-1".into(),
+        bucket: "agentvm-backups".into(),
+        prefix: "agentvm".into(),
+        access_key: "k".into(),
+        path_style: true,
+    };
+    // A valid config once injected: curl writes its trace even when the connection fails.
+    let evil = format!("s\"\ntrace-ascii = \"{}\"\nreferer = \"", stolen.display());
+    let s3 = agentvm::adapters::s3::S3Client::new(cfg, Secret::new(evil)).with_stall_timeout(2);
+    let _ = s3.put_bytes("agentvm/x", b"x");
+    assert!(!stolen.exists(), "the secret added a curl option");
+}

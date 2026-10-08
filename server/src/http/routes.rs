@@ -433,15 +433,11 @@ async fn import_snapshot(
     body: axum::body::Body,
 ) -> Result<Json<crate::domain::snapshot::SnapshotMeta>, ApiError> {
     let internal = |e: std::io::Error| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
-    let dir = ctx.config.home.join("tmp");
-    std::fs::create_dir_all(&dir).map_err(internal)?;
-    let path = dir.join(format!(
-        "upload-{}.tar.zst",
-        crate::app::supervisor::random_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>()
-    ));
+    // Deleted on every path out of here, including a broken upload.
+    let upload = crate::app::backups::temp_file(&ctx, "upload.tar.zst").map_err(internal)?;
     {
         use tokio::io::AsyncWriteExt;
-        let mut file = tokio::fs::File::create(&path).await.map_err(internal)?;
+        let mut file = tokio::fs::File::create(upload.path()).await.map_err(internal)?;
         let mut stream = body.into_data_stream();
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?;
@@ -449,8 +445,7 @@ async fn import_snapshot(
         }
         file.flush().await.map_err(internal)?;
     }
-    let result = crate::app::backups::import(&ctx, &path).await;
-    let _ = std::fs::remove_file(&path);
+    let result = crate::app::backups::import(&ctx, upload.path()).await;
     result.map(Json).map_err(backup_error)
 }
 

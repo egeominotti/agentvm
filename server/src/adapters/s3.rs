@@ -29,6 +29,7 @@ pub struct S3Client {
     cfg: S3Config,
     secret: Secret,
     part_size: u64,
+    stall_s: u64,
 }
 
 /// Parts of 64 MiB: up to 10,000 parts, so ~640 GB per object; S3 needs at least 5 MiB per part.
@@ -37,7 +38,13 @@ const MIN_PART_SIZE: u64 = 5 << 20;
 
 impl S3Client {
     pub fn new(cfg: S3Config, secret: Secret) -> Self {
-        S3Client { cfg, secret, part_size: DEFAULT_PART_SIZE }
+        S3Client { cfg, secret, part_size: DEFAULT_PART_SIZE, stall_s: 60 }
+    }
+
+    /// Gives up on a transfer that makes no progress for this long (default 60 s).
+    pub fn with_stall_timeout(mut self, secs: u64) -> Self {
+        self.stall_s = secs;
+        self
     }
 
     /// Files larger than one part are uploaded in parts of this size (at least 5 MiB).
@@ -52,7 +59,12 @@ impl S3Client {
 
     /// Runs curl with SigV4 signing; returns the body on 2xx.
     fn curl(&self, what: &str, args: &[&std::ffi::OsStr]) -> Result<Vec<u8>, S3Error> {
+        let stall = self.stall_s.to_string();
         let mut child = Command::new("curl")
+            // A dead or blackholed endpoint fails instead of hanging; transient errors (timeouts,
+            // 429, 5xx) are retried, so one hiccup does not abort a 10,000-part upload.
+            .args(["--connect-timeout", &stall, "--speed-limit", "1", "--speed-time", &stall, "--max-time", "3600"])
+            .args(["--retry", "3", "--retry-delay", "1", "--retry-connrefused"])
             .args(["-sS", "-K", "-", "--aws-sigv4"])
             .arg(format!("aws:amz:{}:s3", self.cfg.region))
             .args(["-w", "\n%{http_code}"])
@@ -64,7 +76,11 @@ impl S3Client {
             .map_err(S3Error::Spawn)?;
         {
             let mut stdin = child.stdin.take().expect("stdin is piped");
-            let line = format!("user = \"{}:{}\"\n", self.cfg.access_key, self.secret.expose());
+            // curl config syntax: inside quotes, only \\ and \" are special; a newline would end the
+            // option and start another one, so it is escaped too.
+            let quote =
+                |v: &str| v.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r");
+            let line = format!("user = \"{}:{}\"\n", quote(&self.cfg.access_key), quote(self.secret.expose()));
             stdin.write_all(line.as_bytes()).map_err(S3Error::Spawn)?;
         }
         let out = child.wait_with_output().map_err(S3Error::Spawn)?;

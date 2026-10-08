@@ -1034,7 +1034,7 @@ class SettingsView {
     this.closeSwitch = h("button", { class: "switch", type: "button", role: "switch", "aria-checked": String(a.before_close),
       onclick: () => { this.set("auto_snapshots", { ...this.draft.auto_snapshots, before_close: !this.draft.auto_snapshots.before_close }); this.paintSnapshots(); } }, h("i"));
     return [h("p", { class: "lede" }, "Running machines are saved whole (files, installed packages, Claude's conversation) so you can go back to any point. Copies share unchanged blocks, so they take little space."),
-      h("div", { class: "set" }, h("label", {}, "Snapshot every"), this.snapSeg, h("p", { class: "hint" }, "Each machine can use its own interval: open it and change Snapshots in its panel.")),
+      h("div", { class: "set" }, h("label", {}, "Snapshot every"), this.snapSeg, h("p", { class: "hint" }, "Each machine can use its own interval: open it and pick one from the Auto menu next to Snapshot.")),
       h("div", { class: "pair" },
         h("div", { class: "set" }, h("label", {}, "Keep per machine"), h("div", { class: "unit" }, this.keepIn, h("span", {}, "latest automatic snapshots")), h("p", { class: "hint" }, "Older automatic ones are deleted. Snapshots you take yourself are never deleted.")),
         h("div", { class: "status-line" }, this.closeSwitch, h("div", {}, h("b", {}, "Snapshot before closing"), h("p", { class: "hint" }, "The machine as it was when you closed it, in case you need it again."))))];

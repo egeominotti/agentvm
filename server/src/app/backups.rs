@@ -55,15 +55,18 @@ pub async fn export(ctx: &AppCtx, sid: &SnapshotId) -> Result<PathBuf, BackupErr
         return Err(BackupError::NoSnapshot);
     }
     let src = ctx.snapshots.folder(sid);
-    let file = temp_dir(ctx)?.join(format!("{sid}.{ARCHIVE}"));
-    let out = file.clone();
+    let file = temp_file(ctx, &format!("{sid}.{ARCHIVE}"))?;
+    let out = file.path().to_path_buf();
     blocking(move || Ok(archive::pack(&src, &out)?)).await?;
-    Ok(file)
+    // The caller owns the archive from here (and deletes it).
+    let path = file.path().to_path_buf();
+    std::mem::forget(file);
+    Ok(path)
 }
 
 /// Adds an archive as a local snapshot. Keeps its id unless that id already exists here.
 pub async fn import(ctx: &AppCtx, file: &Path) -> Result<SnapshotMeta, BackupError> {
-    let scratch = ctx.snapshots.scratch(&format!("import-{}", std::process::id()))?;
+    let scratch = ctx.snapshots.scratch(&format!("import-{}", unique()))?;
     let (from, to) = (file.to_path_buf(), scratch.clone());
     blocking(move || Ok(archive::unpack(&from, &to)?)).await?;
     let meta: SnapshotMeta = serde_json::from_slice(&std::fs::read(scratch.join("meta.json"))?)
@@ -118,17 +121,15 @@ pub async fn test_s3(ctx: &AppCtx) -> Result<(), BackupError> {
 pub async fn backup(ctx: &AppCtx, sid: &SnapshotId) -> Result<RemoteBackup, BackupError> {
     let s3 = s3_client(ctx)?;
     let meta = ctx.snapshots.get(sid).ok_or(BackupError::NoSnapshot)?;
-    let file = export(ctx, sid).await?;
+    let file = TempFile(export(ctx, sid).await?);
     let id = sid.clone();
     let json = serde_json::to_vec_pretty(&meta).map_err(|e| BackupError::Io(e.into()))?;
     let result = blocking(move || {
         let e = |e: crate::adapters::s3::S3Error| BackupError::S3(e.to_string());
         s3.ensure_bucket().map_err(e)?;
-        s3.put_file(&s3.config().key(&format!("{id}.{ARCHIVE}")), &file).map_err(e)?;
+        s3.put_file(&s3.config().key(&format!("{id}.{ARCHIVE}")), file.path()).map_err(e)?;
         s3.put_bytes(&s3.config().key(&format!("{id}.json")), &json).map_err(e)?;
-        let size = std::fs::metadata(&file).map(|m| m.len() >> 20).unwrap_or(0);
-        let _ = std::fs::remove_file(&file);
-        Ok(size)
+        Ok(std::fs::metadata(file.path()).map(|m| m.len() >> 20).unwrap_or(0))
     })
     .await;
     let archive_mb = result?;
@@ -185,4 +186,44 @@ pub async fn delete(ctx: &AppCtx, sid: &SnapshotId) -> Result<(), BackupError> {
         s3.delete(&s3.config().key(&format!("{id}.json"))).map_err(e)
     })
     .await
+}
+
+/// At start-up (one server per home): partial archives and scratch folders of transfers that a
+/// crash or an error interrupted.
+pub fn remove_leftovers(ctx: &AppCtx) {
+    let _ = std::fs::remove_dir_all(ctx.config.home.join("tmp"));
+    if let Ok(entries) = std::fs::read_dir(ctx.config.home.join("snapshots")) {
+        for e in entries.flatten() {
+            if e.file_name().to_string_lossy().starts_with('.') {
+                let _ = std::fs::remove_dir_all(e.path());
+            }
+        }
+    }
+}
+
+/// A path deleted when dropped: a failed transfer never leaves a large file behind.
+pub struct TempFile(PathBuf);
+
+impl TempFile {
+    pub fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// A fresh name in `<home>/tmp`: concurrent transfers never share a file.
+pub fn temp_file(ctx: &AppCtx, suffix: &str) -> std::io::Result<TempFile> {
+    Ok(TempFile(temp_dir(ctx)?.join(format!("{}-{suffix}", unique()))))
+}
+
+fn unique() -> String {
+    use std::io::Read;
+    let mut b = [0u8; 8];
+    let _ = std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut b));
+    b.iter().map(|x| format!("{x:02x}")).collect()
 }

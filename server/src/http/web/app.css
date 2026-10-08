@@ -356,7 +356,7 @@ a.btn { text-decoration: none; }
 .settings-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; align-items: start; }
 .settings-grid > .card { scroll-margin-top: 20px; }
 .span-resources, .span-agent, .span-backups, .span-snapshots { grid-column: span 6; }
-.seg.intervals { grid-template-columns: repeat(6, 1fr); max-width: 560px; }
+
 .span-account, .span-notifications { grid-column: span 3; }
 .span-image { grid-column: span 4; }
 .span-storage { grid-column: span 2; }
@@ -388,7 +388,10 @@ a.btn { text-decoration: none; }
 .big-value { font-size: var(--fs-xl); font-weight: 590; letter-spacing: -0.03em; color: var(--ink); line-height: 1; }
 input[type="range"] { width: 100%; accent-color: var(--brand); height: 20px; }
 .seg.wide { display: grid; grid-template-columns: repeat(4, 1fr); }
-.seg.wide button { text-align: center; }
+.seg.wide button { text-align: center; white-space: nowrap; padding: 0 6px; }
+.seg.wide.intervals { grid-template-columns: repeat(6, minmax(52px, 1fr)); max-width: 560px; }
+@container (max-width: 380px) { .seg.wide { grid-template-columns: repeat(2, 1fr); } }
+.slider { container-type: inline-size; }
 .seg [role="radio"][aria-checked="true"] { background: var(--active); color: var(--ink); box-shadow: 0 0 0 1px var(--line-2) inset; }
 
 .budget { display: grid; gap: 8px; padding: 12px 14px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
