@@ -1,0 +1,11 @@
+/* ---------- status icons ---------- */
+.k-boot { --c: var(--boot); } .k-work { --c: var(--work); } .k-wait { --c: var(--wait); }
+.k-idle { --c: var(--ink-3); } .k-done { --c: var(--brand); } .k-fail { --c: var(--fail); } .k-stop { --c: var(--stop); }
+.dot { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--c); padding: 1.5px; flex-shrink: 0; background: transparent; }
+.k-boot .dot { border-style: dashed; animation: spin 4s linear infinite; }
+.k-work .dot { background: conic-gradient(var(--c) 0 50%, transparent 0) content-box; animation: spin 2.4s linear infinite; }
+.k-wait .dot { background: var(--c) content-box; }
+.k-done .dot, .k-fail .dot, .k-stop .dot { background: var(--c); }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes beat { 50% { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .dot { animation: none !important; } }
