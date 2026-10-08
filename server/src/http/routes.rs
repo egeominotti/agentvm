@@ -5,20 +5,21 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::extract::Request;
+use axum::http::{Method, StatusCode, header};
+use axum::middleware::{self, Next};
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::response::{Html, IntoResponse};
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures::{Stream, StreamExt};
 
 use super::dto::{ApiError, CreateTask, Created, Status, TaskDto};
-use crate::adapters::git::Git;
 use crate::app::events::StreamItem;
+use crate::app::queries::{DiffError, task_diff};
 use crate::app::store::TaskRecord;
 use crate::app::supervisor::{AppCtx, SubmitError, submit};
 use crate::domain::ids::TaskId;
-use crate::domain::task::TaskState;
 
 type Ctx = State<Arc<AppCtx>>;
 
@@ -31,7 +32,25 @@ pub fn router(ctx: Arc<AppCtx>) -> Router {
         .route("/api/tasks/{id}/events", get(events))
         .route("/api/tasks/{id}/diff", get(diff))
         .route("/api/tasks/{id}/stop", post(stop))
+        .layer(middleware::from_fn_with_state(ctx.config.port, loopback_only))
         .with_state(ctx)
+}
+
+/// Difesa da DNS rebinding e da POST cross-origin: solo Host/Origin di loopback sulla nostra porta.
+async fn loopback_only(State(port): State<u16>, req: Request, next: Next) -> Response {
+    if is_loopback_request(port, &req) {
+        next.run(req).await
+    } else {
+        ApiError(StatusCode::FORBIDDEN, "richiesta non consentita: usa http://127.0.0.1".into()).into_response()
+    }
+}
+
+fn is_loopback_request(port: u16, req: &Request) -> bool {
+    let allowed = [format!("127.0.0.1:{port}"), format!("localhost:{port}")];
+    let header = |name| req.headers().get(name).and_then(|v| v.to_str().ok());
+    let host_ok = header(header::HOST).is_some_and(|h| allowed.iter().any(|a| a == h));
+    let origin_ok = header(header::ORIGIN).is_none_or(|o| allowed.iter().any(|a| o == format!("http://{a}")));
+    host_ok && (req.method() == Method::GET || origin_ok)
 }
 
 async fn dashboard() -> Html<&'static str> {
@@ -92,14 +111,15 @@ async fn events(
 }
 
 async fn diff(State(ctx): Ctx, Path(id): Path<String>) -> Result<impl IntoResponse, ApiError> {
-    let (id, record) = find(&ctx, &id)?;
-    if !matches!(record.state, TaskState::Done { .. }) {
-        return Err(ApiError(StatusCode::CONFLICT, "il task non ha prodotto un branch".into()));
-    }
-    let text = tokio::task::spawn_blocking(move || Git::new(record.repo).diff(&record.base_sha, &id.branch()))
-        .await
-        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let (id, _) = find(&ctx, &id)?;
+    let text = task_diff(&ctx, &id).await.map_err(|e| {
+        let code = match e {
+            DiffError::NotFound => StatusCode::NOT_FOUND,
+            DiffError::NoBranch => StatusCode::CONFLICT,
+            DiffError::Git(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        ApiError(code, e.to_string())
+    })?;
     Ok(([("content-type", "text/plain; charset=utf-8")], text))
 }
 

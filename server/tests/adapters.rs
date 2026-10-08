@@ -153,3 +153,25 @@ fn keychain_reads_token_from_a_real_keychain() {
 fn missing_token_message_tells_how_to_fix() {
     assert!(KeychainError::Missing.to_string().contains("security add-generic-password -s agentvm -a agentvm -w"));
 }
+
+#[test]
+fn instance_lock_is_exclusive_until_dropped() {
+    use agentvm::adapters::lock::InstanceLock;
+    let tmp = tempfile::tempdir().unwrap();
+    let first = InstanceLock::acquire(tmp.path()).unwrap();
+    assert!(InstanceLock::acquire(tmp.path()).is_err());
+    drop(first);
+    // Un figlio creato in quel momento da un altro test può tenere il descrittore fino al suo exec.
+    let t0 = std::time::Instant::now();
+    while InstanceLock::acquire(tmp.path()).is_err() {
+        assert!(t0.elapsed() < Duration::from_secs(2), "lock non rilasciato");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn secret_redacts_its_own_value() {
+    let secret = Secret::new("sk-ant-oat01-abc".into());
+    assert_eq!(secret.redact("token=sk-ant-oat01-abc fine"), "token=[REDACTED] fine");
+    assert_eq!(secret.redact("niente da nascondere"), "niente da nascondere");
+}

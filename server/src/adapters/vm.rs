@@ -104,6 +104,11 @@ impl VmProcess {
         }
     }
 
+    /// Uccide il processo (SIGKILL) se ignora `terminate`.
+    pub fn kill(&mut self) {
+        let _ = self.child.start_kill();
+    }
+
     /// Consuma gli eventi rimanenti e attende la fine del processo.
     pub async fn wait(&mut self) -> VmExit {
         while self.next_event().await.is_some() {}

@@ -19,3 +19,10 @@ impl fmt::Debug for Secret {
         f.write_str("[REDACTED]")
     }
 }
+
+impl Secret {
+    /// Sostituisce ogni occorrenza del valore con `[REDACTED]`.
+    pub fn redact(&self, text: &str) -> String {
+        if self.0.is_empty() { text.to_owned() } else { text.replace(&self.0, "[REDACTED]") }
+    }
+}

@@ -37,13 +37,13 @@ if [ ! -s "$JOB/task.json" ]; then
 fi
 
 ID=$(jq -r .id "$JOB/task.json")
-PROMPT=$(jq -r .prompt "$JOB/task.json")
 BRANCH=$(jq -r .branch "$JOB/task.json")
 BASE=$(jq -r .base_sha "$JOB/task.json")
 
-CLAUDE_CODE_OAUTH_TOKEN=$(cat "$JOB/.token")
+# Variabile non esportata: il token arriva a Claude solo da una pipe (fd 3), mai dall'ambiente,
+# così i comandi eseguiti dall'agente non lo ereditano.
+TOKEN=$(cat "$JOB/.token")
 rm -f "$JOB/.token"
-export CLAUDE_CODE_OAUTH_TOKEN
 
 as_agent git clone -q "$JOB/repo.bundle" "$WORK"
 cd "$WORK"
@@ -55,18 +55,27 @@ log "repo ready on $BRANCH"
 for _ in $(seq 100); do getent hosts api.anthropic.com >/dev/null && break; sleep 0.1; done
 log "network ready"
 
+# Prompt da stdin: mai interpretato come opzione (es. "- elenco") né limitato da ARG_MAX.
+# runuser (a differenza di sudo) lascia aperto il fd 3 con il token.
 set +e
-as_agent --preserve-env=CLAUDE_CODE_OAUTH_TOKEN "$CLAUDE" -p "$PROMPT" \
-  --dangerously-skip-permissions --output-format stream-json --verbose \
-  > "$JOB/stream.jsonl" 2> "$JOB/claude.err"
-CLAUDE_EXIT=$?
+jq -r .prompt "$JOB/task.json" | runuser -u "$AGENT" -- env -i \
+  HOME=/home/$AGENT USER=$AGENT LANG=C.UTF-8 PATH=/home/$AGENT/.local/bin:/usr/local/bin:/usr/bin:/bin \
+  CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3 \
+  "$CLAUDE" -p --dangerously-skip-permissions --output-format stream-json --verbose \
+  3< <(printf '%s' "$TOKEN") > "$JOB/stream.jsonl" 2> "$JOB/claude.err"
+CLAUDE_EXIT=${PIPESTATUS[1]}
 set -e
-unset CLAUDE_CODE_OAUTH_TOKEN
+unset TOKEN
 log "claude exit $CLAUDE_EXIT"
 
+# Se l'agente ha cambiato branch, il lavoro che conta è quello su HEAD: riportalo su $BRANCH.
+if [ "$(as_agent git symbolic-ref -q --short HEAD || true)" != "$BRANCH" ]; then
+  log "HEAD non su $BRANCH: lo riallineo"
+  as_agent git checkout -q -B "$BRANCH"
+fi
 as_agent git add -A
 as_agent git diff --cached --quiet || as_agent git commit -q -m "agentvm: $ID (auto-commit)"
-COMMITS=$(as_agent git rev-list --count "$BASE..HEAD")
+COMMITS=$(as_agent git rev-list --count "$BASE..$BRANCH")
 if [ "$COMMITS" -gt 0 ]; then
   as_agent git bundle create -q "$JOB/out.bundle" "$BASE..$BRANCH"
 fi

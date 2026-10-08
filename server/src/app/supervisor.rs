@@ -15,12 +15,15 @@ use crate::adapters::jobdir::JobWorkspace;
 use crate::adapters::keychain::{Keychain, KeychainError};
 use crate::adapters::tail::tail_lines;
 use crate::adapters::vm::{VmConfig, VmEvent, VmProcess};
+use crate::secret::Secret;
 use crate::config::Config;
 use crate::domain::agent_event::parse_line;
 use crate::domain::ids::{IdError, Prompt, RepoPath, TaskId};
 use crate::domain::outcome::{Final, OutcomeInput, VmExit, decide};
 use crate::domain::spec::TaskSpec;
 use crate::domain::task::{TaskEvent, TaskState};
+
+const KILL_GRACE: Duration = Duration::from_secs(15);
 
 pub struct AppCtx {
     pub config: Config,
@@ -92,20 +95,24 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
     .map_err(|e| format!("task.json: {e}"))?;
     let token = ctx.keychain.read_token().map_err(|e| e.to_string())?;
     ws.write_token(&token).map_err(|e| format!("token: {e}"))?;
-    drop(token);
     ws.clone_disk(&ctx.config.golden()).map_err(|e| format!("clone del disco: {e}"))?;
     apply(TaskEvent::Prepared)?;
+
+    let stop_requested_early = ctx.store.stop_signal(id).is_some_and(|s| *s.borrow());
+    if stop_requested_early {
+        apply(TaskEvent::VmExited)?;
+        return apply(TaskEvent::Finished(Final::Stopped, branch));
+    }
 
     let mut vm = VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &vm_config(&ctx.config, &ws))
         .map_err(|e| e.to_string())?;
     let _ = ws.write_pid(vm.pid());
-    if vm.next_event().await == Some(VmEvent::Started) {
-        apply(TaskEvent::VmStarted)?;
-    }
+    let follower = Follower::start(ctx.store.log(id).ok_or("task scomparso")?, ws.stream(), token);
 
-    let follower = Follower::start(ctx.store.log(id).ok_or("task scomparso")?, ws.stream());
-
-    let (exit, stop_requested, timed_out) = wait_for_vm(ctx, id, &mut vm).await;
+    let on_started = || {
+        let _ = ctx.store.apply(id, TaskEvent::VmStarted);
+    };
+    let (exit, stop_requested, timed_out) = wait_for_vm(ctx, id, &mut vm, on_started).await;
     apply(TaskEvent::VmExited)?;
     follower.finish().await;
 
@@ -137,12 +144,13 @@ struct Follower {
 }
 
 impl Follower {
-    fn start(log: Arc<super::events::EventLog>, stream: PathBuf) -> Self {
+    /// Ogni riga passa da `token.redact` prima di diventare un evento pubblico.
+    fn start(log: Arc<super::events::EventLog>, stream: PathBuf, token: Secret) -> Self {
         let (stop, rx) = watch::channel(false);
         let handle = tokio::spawn(async move {
             let mut lines = std::pin::pin!(tail_lines(stream, rx));
             while let Some(line) = lines.next().await {
-                for event in parse_line(&line) {
+                for event in parse_line(&token.redact(&line)) {
                     log.push(StreamItem::Agent(event));
                 }
             }
@@ -157,20 +165,33 @@ impl Follower {
     }
 }
 
-/// Attende la fine della VM; su stop o timeout la ferma (una sola volta).
-async fn wait_for_vm(ctx: &AppCtx, id: &TaskId, vm: &mut VmProcess) -> (VmExit, bool, bool) {
-    let Some(mut stop) = ctx.store.stop_signal(id) else { return (vm.wait().await, false, false) };
+/// Segue la VM dall'avvio allo spegnimento. Stop e timeout valgono anche durante il boot;
+/// se l'helper ignora SIGTERM per `KILL_GRACE`, riceve SIGKILL.
+async fn wait_for_vm(ctx: &AppCtx, id: &TaskId, vm: &mut VmProcess, on_started: impl Fn()) -> (VmExit, bool, bool) {
+    let (_never, fallback) = watch::channel(false);
+    let mut stop = ctx.store.stop_signal(id).unwrap_or(fallback);
     let deadline = tokio::time::sleep(Duration::from_secs(ctx.config.timeout_s));
-    tokio::pin!(deadline);
+    let kill_timer = tokio::time::sleep(Duration::MAX / 4);
+    tokio::pin!(deadline, kill_timer);
     let (mut stop_requested, mut timed_out) = (false, false);
     loop {
         let terminating = stop_requested || timed_out;
         tokio::select! {
-            exit = vm.wait() => return (exit, stop_requested, timed_out),
-            _ = stop.wait_for(|s| *s), if !terminating => { stop_requested = true; vm.terminate(); }
-            _ = &mut deadline, if !terminating => { timed_out = true; vm.terminate(); }
+            event = vm.next_event() => match event {
+                Some(VmEvent::Started) => on_started(),
+                Some(_) => {}
+                None => break,
+            },
+            _ = stop.wait_for(|s| *s), if !terminating => stop_requested = true,
+            _ = &mut deadline, if !terminating => timed_out = true,
+            _ = &mut kill_timer, if terminating => vm.kill(),
+        }
+        if !terminating && (stop_requested || timed_out) {
+            vm.terminate();
+            kill_timer.as_mut().reset(tokio::time::Instant::now() + KILL_GRACE);
         }
     }
+    (vm.wait().await, stop_requested, timed_out)
 }
 
 fn vm_config(config: &Config, ws: &JobWorkspace) -> VmConfig {
