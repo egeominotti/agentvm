@@ -35,9 +35,9 @@ account** and press **New VM**. Needs a Mac with Apple silicon, Xcode Command Li
 [Rust](https://rustup.rs) and [Bun](https://bun.sh); details in [Quickstart](#quickstart).
 
 <p align="center">
-  <img src="docs/assets/wall.webp" alt="The Machines wall: four Claude Code agents, each in its own VM, waiting for review" width="100%">
+  <img src="docs/assets/wall.webp" alt="The Machines page: ten VMs, seven Claude Code agents waiting for review and three terminals ready" width="100%">
 </p>
-<p align="center"><i>The Machines wall: four agents, four VMs, one screen.</i></p>
+<p align="center"><i>Ten VMs on one Mac: seven agents waiting for review, three terminals ready, 4.7 GB of memory in use.</i></p>
 
 ## Highlights
 
@@ -161,6 +161,11 @@ http://3000.<vm>.localhost:7777     HTTP and WebSocket, hot reload included
 
 Other TCP services (databases) get a direct port on `127.0.0.1`. Both work even when the service
 listens only on the VM's localhost.
+
+<p align="center">
+  <img src="docs/assets/machines-list.webp" alt="The Machines page as a list: status, CPU, memory, ports, Claude's spend and uptime of ten VMs" width="100%">
+</p>
+<p align="center"><i>The same ten VMs as a list: what each is doing, what it uses, and Open, Save, Snapshot, Close.</i></p>
 
 <table>
   <tr>
