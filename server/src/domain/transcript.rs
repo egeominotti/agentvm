@@ -8,6 +8,7 @@ use super::agent_event::clip;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub enum EntryKind {
     User { text: String },
     Assistant { text: String },
@@ -19,6 +20,7 @@ pub enum EntryKind {
 /// per `message_id`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct TurnUsage {
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -27,6 +29,7 @@ pub struct TurnUsage {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct HistoryEntry {
     /// ISO 8601, as Claude Code wrote it.
     pub at: String,

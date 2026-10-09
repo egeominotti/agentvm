@@ -6,6 +6,7 @@ use super::outcome::Final;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub enum TaskState {
     Queued,
     Preparing,
@@ -20,6 +21,7 @@ pub enum TaskState {
 
 /// When a task entered a state (`kind` of the state, seconds since the epoch).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct StateAt {
     pub state: String,
     pub at: f64,

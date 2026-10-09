@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct AgentUsage {
     /// What the session would cost at API prices (with a subscription it counts against its limits).
     pub cost_usd: f64,
@@ -19,6 +20,7 @@ pub struct AgentUsage {
 /// Claude's usage at one moment of the VM's life (host clock, seconds since the epoch).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct UsageSample {
     pub at: f64,
     pub cost_usd: f64,

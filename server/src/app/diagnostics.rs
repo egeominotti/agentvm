@@ -22,6 +22,7 @@ const TAIL_LINES: usize = 200;
 const TAIL_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Diagnostics {
     /// The failure reason, or the state the VM is in.
     pub summary: String,
@@ -33,6 +34,7 @@ pub struct Diagnostics {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct LogTail {
     pub name: String,
     pub file: String,

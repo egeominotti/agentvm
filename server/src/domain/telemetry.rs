@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 /// One point of a VM's history. `at` is the host's clock (seconds since the epoch).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct TelemetrySample {
     pub at: f64,
     pub cpu_pct: f32,

@@ -30,6 +30,7 @@ pub enum BackupError {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct RemoteBackup {
     pub snapshot: SnapshotMeta,
     pub archive_mb: u64,

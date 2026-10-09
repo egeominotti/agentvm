@@ -1,5 +1,6 @@
 #!/bin/bash
-# Builds the Swift helper (signed with the VM entitlement) and the Rust server into bin/.
+# Builds the Swift helper (signed with the VM entitlement), the dashboard (web/, embedded in the
+# server) and the Rust server into bin/.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # agentvm is arm64 only: Apple Silicon host, arm64 Linux guests, no Rosetta anywhere.
@@ -11,6 +12,7 @@ mkdir -p bin
 swiftc -O -target "arm64-apple-macos$(sw_vers -productVersion | cut -d. -f1)" vm-helper/*.swift -o bin/agentvm-vm.new
 codesign -s - -f --entitlements vm-helper/vz.entitlements bin/agentvm-vm.new
 mv -f bin/agentvm-vm.new bin/agentvm-vm
+(cd web && bun install --frozen-lockfile --silent && bun run --silent build >/dev/null)
 cargo build --release --quiet --target aarch64-apple-darwin --manifest-path server/Cargo.toml
 cp server/target/aarch64-apple-darwin/release/agentvm-server bin/agentvm-server.new
 mv -f bin/agentvm-server.new bin/agentvm-server

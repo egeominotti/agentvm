@@ -16,6 +16,7 @@ const PAGE_BYTES: u64 = 4 << 20;
 pub use crate::adapters::transcripts::Cursor;
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Conversation {
     pub entries: Vec<HistoryEntry>,
     /// Where to continue from (the same when there is nothing new).

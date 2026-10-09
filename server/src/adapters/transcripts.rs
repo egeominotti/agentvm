@@ -15,6 +15,7 @@ const MAX_LINE: usize = 1 << 20;
 
 /// Per session file, the offset of the first line not read yet.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Cursor(pub BTreeMap<String, u64>);
 
 /// The complete lines written since `cursor` (files in name order), up to about `max_bytes`,

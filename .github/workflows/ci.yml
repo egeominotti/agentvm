@@ -21,18 +21,35 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: server
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      # The server embeds the dashboard's build, so it is built before the Rust tests.
+      - name: Dashboard (types, build, lint, tests)
+        working-directory: web
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+          bun run lint
+          bun run test
       - name: Format
         run: cargo fmt --check
       - name: Lint
         run: cargo clippy --all-targets -- -D warnings
       - name: Test
         run: cargo test
+      # `cargo test` writes the dashboard's API types from the Rust ones: they must be committed.
+      - name: Dashboard API types match the server
+        working-directory: .
+        run: |
+          changed=$(git status --porcelain web/src/api/generated)
+          [ -z "$changed" ] || { echo "regenerate and commit the API types (cargo test):"; echo "$changed"; exit 1; }
       - name: Build the VM helper (Swift)
         working-directory: .
         run: swiftc -O vm-helper/*.swift -o /tmp/agentvm-vm
       - name: Check dashboard scripts
         working-directory: .
-        run: find server/src/http/web/js -name '*.js' -print0 | xargs -0 -n1 node --check
+        run: find server/src/http/web/js -name '*.js' -print0 | xargs -0 -n1 bun build --no-bundle >/dev/null
       - name: Check shell scripts
         working-directory: .
         run: |

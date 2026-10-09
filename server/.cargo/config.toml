@@ -1,0 +1,5 @@
+# TypeScript types of the API, generated from the Rust types by `cargo test` (ts-rs) for the
+# dashboard in web/. JSON numbers are numbers, not BigInt.
+[env]
+TS_RS_EXPORT_DIR = { value = "../web/src/api/generated", relative = true }
+TS_RS_LARGE_INT = "number"

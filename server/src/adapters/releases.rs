@@ -10,6 +10,7 @@ const REGISTRY: &str = "https://registry.npmjs.org/@anthropic-ai/claude-code";
 const KEEP: usize = 40;
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Releases {
     pub latest: String,
     pub stable: String,

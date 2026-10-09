@@ -18,6 +18,7 @@ pub struct Params {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Usage {
     samples: Vec<UsageSample>,
 }

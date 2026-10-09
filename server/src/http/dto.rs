@@ -48,6 +48,7 @@ pub struct S3Update {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct SettingsView {
     pub settings: Settings,
     pub limits: HostLimits,
@@ -61,6 +62,7 @@ pub struct TokenUpdate {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Saved {
     pub commits: u32,
     /// Where the work landed: `agent/<id>`, or `agent/<id>-vm` when that branch has your own commits.
@@ -91,11 +93,13 @@ fn default_rows() -> u16 {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Created {
     pub id: String,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Status {
     pub golden: bool,
     pub token: bool,
@@ -108,6 +112,7 @@ pub struct Status {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct TaskDto {
     pub id: String,
     pub repo: String,

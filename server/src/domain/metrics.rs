@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct VmMetrics {
     pub uptime_s: u64,
     pub cpus: u32,
@@ -32,6 +33,7 @@ pub struct VmMetrics {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct ListeningPort {
     pub port: u16,
     /// Process that owns the socket, when known.
@@ -41,6 +43,7 @@ pub struct ListeningPort {
 
 /// A VM port reachable from the Mac on `127.0.0.1:host_port`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct ForwardedPort {
     pub port: u16,
     pub name: String,
@@ -53,12 +56,14 @@ pub struct ForwardedPort {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub enum PortKind {
     Http,
     Tcp,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct ProcessSample {
     pub name: String,
     pub cpu_pct: f64,

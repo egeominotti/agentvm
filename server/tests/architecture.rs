@@ -73,8 +73,8 @@ fn adapters_do_not_know_each_other_or_outer_layers() {
 fn no_file_is_longer_than_300_lines() {
     const MAX: usize = 300;
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
-    let skip = ["target", "vendor", "fixtures", "node_modules", "docs", ".git", ".claude", ".build"];
-    let kinds = ["rs", "js", "css", "html", "swift", "sh", "py", "toml", "yml"];
+    let skip = ["target", "vendor", "fixtures", "node_modules", "dist", "docs", ".git", ".claude", ".build"];
+    let kinds = ["rs", "js", "ts", "tsx", "css", "html", "swift", "sh", "py", "toml", "yml"];
     let mut long = Vec::new();
     let mut stack = vec![repo.clone()];
     while let Some(d) = stack.pop() {

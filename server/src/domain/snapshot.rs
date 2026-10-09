@@ -9,6 +9,7 @@ use super::ids::TaskId;
 /// `snap-YYYYMMDD-HHMMSS-xxxx`: safe as a folder name, sortable.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, type = "string"))]
 pub struct SnapshotId(String);
 
 impl SnapshotId {
@@ -33,6 +34,7 @@ impl std::fmt::Display for SnapshotId {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct SnapshotMeta {
     pub id: SnapshotId,
     pub name: String,
@@ -57,6 +59,7 @@ pub struct SnapshotMeta {
 
 /// Automatic snapshots of running terminals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct AutoSnapshots {
     /// Minutes between snapshots; 0 turns the schedule off.
     pub every_min: u32,

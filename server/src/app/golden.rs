@@ -10,6 +10,7 @@ use serde::Serialize;
 use crate::adapters::host::disk_usage;
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct GoldenStatus {
     pub exists: bool,
     pub size_mb: u64,

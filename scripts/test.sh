@@ -4,8 +4,13 @@
 # Claude and S3, `--all` for both. The binaries that boot VMs run one after another: together they
 # would start dozens of VMs at once and fail their timing checks.
 set -euo pipefail
-cd "$(dirname "$0")/../server"
+cd "$(dirname "$0")/.."
 mode=${1:-}
+# The dashboard first: the server embeds its build, and its own checks join the report.
+(cd web && bun install --frozen-lockfile --silent && bun run --silent build >/dev/null)
+cd server
+# The binaries run here directly, without Cargo's [env]: say where the API types go (see .cargo/config.toml).
+export TS_RS_EXPORT_DIR="$PWD/../web/src/api/generated" TS_RS_LARGE_INT=number
 cargo test --no-run --quiet 2>/dev/null
 bins=$(cargo test --no-run --message-format=json 2>/dev/null \
   | jq -r 'select(.reason == "compiler-artifact" and .profile.test == true) | .executable // empty')
@@ -17,7 +22,7 @@ esac
 logs=$(mktemp -d)
 report() { # name status
   if [ "$2" = 0 ]; then
-    printf '  ok    %-14s %s\n' "$1" "$(grep -h 'test result' "$logs/$1.log" | tail -1 | sed 's/test result: //')"
+    printf '  ok    %-14s %s\n' "$1" "$(grep -hE 'test result|^ +Tests ' "$logs/$1.log" | tail -1 | sed -E 's/(test result: |^ +Tests +)//')"
   else
     fail=1
     printf '  FAIL  %s\n' "$1"
@@ -25,6 +30,8 @@ report() { # name status
   fi
 }
 pids=()
+(cd ../web && bun run --silent lint && bun run --silent test) > "$logs/web.log" 2>&1 &
+pids+=("$!:web")
 vm_bins=()
 for b in $bins; do
   name=$(basename "$b" | sed 's/-[0-9a-f]*$//')

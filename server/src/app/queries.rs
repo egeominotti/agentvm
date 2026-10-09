@@ -29,6 +29,7 @@ pub async fn task_diff(ctx: &AppCtx, id: &TaskId) -> Result<String, DiffError> {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct StorageUsage {
     pub jobs: usize,
     /// Logs and results of jobs (VM disks excluded).

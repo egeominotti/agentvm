@@ -11,6 +11,7 @@ pub const MAX_VMS: usize = 64;
 /// `opus`, `sonnet[1m]` or `opusplan`, or a full model ID such as `claude-opus-5-5`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, type = "string"))]
 pub struct Model(String);
 
 impl Model {
@@ -59,6 +60,7 @@ impl From<Model> for String {
 /// A Claude Code release: `latest`, `stable` or an exact version like `2.1.294`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, type = "string"))]
 pub struct ClaudeVersion(String);
 
 impl ClaudeVersion {
@@ -108,6 +110,7 @@ impl From<ClaudeVersion> for String {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Settings {
     /// VMs running at the same time; the others wait in the queue.
     pub max_vms: usize,
@@ -133,6 +136,7 @@ pub struct Settings {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct HostLimits {
     pub cpus: u32,
     pub ram_mb: u64,

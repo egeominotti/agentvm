@@ -32,6 +32,9 @@ fn dashboard() -> Routes {
         .route("/logo.svg", get(assets::logo))
         .route("/assets/{*path}", get(assets::asset))
         .route("/vendor/{*path}", get(assets::vendor))
+        .route("/next", get(assets::next_redirect))
+        .route("/next/", get(assets::next_index))
+        .route("/next/{*path}", get(assets::next))
 }
 
 fn task_routes() -> Routes {
