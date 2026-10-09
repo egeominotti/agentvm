@@ -6,6 +6,11 @@ export DEBIAN_FRONTEND=noninteractive
 
 apt-get update -qq
 apt-get install -y -qq git curl ca-certificates ripgrep jq build-essential tmux python3-pip python3-venv >/dev/null
+# The shell of the terminals: zsh with a developer's tools, all from Debian (no install scripts).
+apt-get install -y -qq zsh zsh-autosuggestions zsh-syntax-highlighting fzf bat eza zoxide fd-find lazygit starship >/dev/null
+install -m 644 "$SRC/config/zshrc" /root/.zshrc
+install -d /root/.config
+install -m 644 "$SRC/config/starship.toml" /root/.config/starship.toml
 # A browser for Claude: headless Chromium driven through the Playwright MCP server.
 apt-get install -y -qq --no-install-recommends chromium nodejs npm fonts-liberation fonts-noto-color-emoji >/dev/null
 npm install -g --no-fund --no-audit --loglevel=error @playwright/mcp@latest
@@ -45,6 +50,9 @@ systemctl disable ssh.service ssh.socket 2>/dev/null || true
 systemctl mask apt-daily.timer apt-daily-upgrade.timer man-db.timer e2scrub_all.timer fstrim.timer \
   unattended-upgrades.service systemd-networkd-wait-online.service 2>/dev/null || true
 sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub
+# The kernel's warnings and errors (a panic, out of memory, disk errors) go to the console the
+# host keeps in console.log: a VM that freezes says why. Not tty0, which nobody records.
+sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="console=hvc0 loglevel=4"/' /etc/default/grub
 grep -q '^GRUB_TIMEOUT_STYLE' /etc/default/grub || echo 'GRUB_TIMEOUT_STYLE=hidden' >> /etc/default/grub
 update-grub
 

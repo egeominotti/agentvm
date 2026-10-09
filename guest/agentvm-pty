@@ -24,9 +24,11 @@ PORT = 5000
 USER = "root"
 WORK = "/root/work"
 TMUX_CONF = "/etc/agentvm/tmux.conf"
+# The shells are zsh with the developer's setup when the image has it (older images: bash).
+SHELL = ["/bin/zsh", "-l"] if os.path.exists("/bin/zsh") else ["/bin/bash", "-l"]
 SESSIONS = {
     "claude": ["/usr/local/bin/agentvm-claude"],
-    "shell": ["/bin/bash", "-l"],
+    "shell": SHELL,
 }
 # Extra shells beside the first one, opened and closed from the dashboard.
 EXTRA_SHELLS = {f"shell-{n}" for n in range(2, 10)}

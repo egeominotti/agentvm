@@ -49,8 +49,9 @@ final class VsockBridge {
     private func connect(_ client: Int32, attempt: Int = 1) {
         device.connect(toPort: port) { [self] result in
             switch result {
-            case .failure where attempt < 6:
-                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50 * attempt)) {
+            // Up to ~3.6 s in all: a guest busy booting or accepting many terminals catches up.
+            case .failure where attempt < 9:
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100 * attempt)) {
                     self.connect(client, attempt: attempt + 1)
                 }
             case .failure:

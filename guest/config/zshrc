@@ -1,0 +1,34 @@
+# The VM's shell: a developer's setup (starship, zoxide, fzf, eza, bat, lazygit), in the colors
+# of the terminal (Catppuccin Mocha or Latte, as the dashboard). Fast to start: no framework.
+export SHELL=/bin/zsh
+export PATH="$HOME/.local/bin:$PATH"
+HISTSIZE=50000; SAVEHIST=50000; HISTFILE=~/.zsh_history
+setopt SHARE_HISTORY HIST_IGNORE_DUPS INTERACTIVE_COMMENTS AUTO_CD
+# Completion from its cache (made on first use): the full check costs ~100 ms per shell.
+autoload -Uz compinit && compinit -C
+zstyle ':completion:*' menu select
+
+eval "$(starship init zsh)"
+eval "$(zoxide init zsh)"
+source <(fzf --zsh)
+
+# Claude with the VM's token (the bare binary has none).
+alias claude=agentvm-claude
+alias ls="eza --icons=auto"
+alias ll="eza -la --icons=auto --git"
+alias tree="eza --tree --icons=auto --git-ignore"
+alias cat="batcat --paging=never"
+alias bat=batcat
+alias fd=fdfind
+alias lg=lazygit
+
+# The terminal's own 16 colors: they follow the dashboard's light or dark theme.
+export BAT_THEME=ansi
+export FZF_DEFAULT_COMMAND="fdfind --type f --hidden --exclude .git"
+export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+export FZF_CTRL_T_OPTS="--preview 'batcat --color=always --style=numbers --line-range=:300 {}'"
+export FZF_ALT_C_OPTS="--preview 'eza --tree --color=always --icons {} | head -100'"
+export FZF_DEFAULT_OPTS="--height=50% --layout=reverse --border=rounded --color=16"
+
+source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh

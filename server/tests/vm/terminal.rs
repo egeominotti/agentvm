@@ -151,8 +151,12 @@ async fn shell_keystroke_echo_is_fast() {
     for c in "abcdefghijklmnopqrstuvwxyzabcdefghijklmn".chars() {
         let sent = Instant::now();
         pty.send(&Frame::Input(c.to_string().into_bytes())).await.unwrap();
-        let bytes = tokio::time::timeout(Duration::from_secs(2), pty.recv()).await.unwrap().unwrap().unwrap();
-        assert!(String::from_utf8_lossy(&bytes).contains(c), "unexpected echo: {bytes:?}");
+        // Until the key shows: zsh also redraws the line (highlighting, suggestions), in pieces.
+        let mut seen = String::new();
+        while !seen.contains(c) {
+            let bytes = tokio::time::timeout(Duration::from_secs(2), pty.recv()).await.unwrap().unwrap().unwrap();
+            seen.push_str(&String::from_utf8_lossy(&bytes));
+        }
         samples.push(sent.elapsed());
     }
     samples.sort();

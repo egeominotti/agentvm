@@ -9,14 +9,19 @@ import { minimumContrast, pageTheme, terminalTheme } from "./palette";
 /** The terminal font, loaded before any terminal opens: xterm measures its cells once, and the
  *  GPU's glyph atlas is drawn from that measure. */
 export const monoFont = (): Promise<unknown> =>
-  document.fonts.check('13px "Geist Mono"') ? Promise.resolve() : document.fonts.load('13px "Geist Mono"');
+  document.fonts.check('13px "JetBrains Mono NF"') && document.fonts.check('bold 13px "JetBrains Mono NF"')
+    ? Promise.resolve()
+    : Promise.all([
+        document.fonts.load('13px "JetBrains Mono NF"'),
+        document.fonts.load('bold 13px "JetBrains Mono NF"'),
+      ]);
 
 /** Every terminal draws on the GPU (WebGL). When the browser takes the GPU context back (too
  *  many at once, sleep, a driver reset) the terminal falls back to the DOM renderer at once and
  *  gets the GPU again a moment later. */
 export function openXterm(el: HTMLElement, { fontSize = 13, readOnly = false } = {}) {
   const xterm = new Terminal({
-    fontFamily: '"Geist Mono", "SF Mono", ui-monospace, Menlo, monospace',
+    fontFamily: '"JetBrains Mono NF", "Geist Mono", "SF Mono", ui-monospace, Menlo, monospace',
     fontSize,
     lineHeight: 1.15,
     cursorBlink: !readOnly,

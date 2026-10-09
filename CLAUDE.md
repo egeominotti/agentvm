@@ -10,4 +10,5 @@
 - Recommend one approach with its reason instead of listing options.
 - The dashboard's look is Linear's: quiet surfaces, hairlines, one indigo accent, icons drawn for
   agentvm in `web/src/components/Icon.tsx` (never an icon library). Terminals use Catppuccin
-  (Mocha dark, Latte light), as the user's Ghostty.
+  (Mocha dark, Latte light) and JetBrains Mono Nerd Font Mono, as the user's Ghostty; the VMs'
+  shell is their Mac's setup (zsh, starship, zoxide, fzf, eza, bat, lazygit), see guest/config.

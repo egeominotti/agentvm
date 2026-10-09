@@ -46,10 +46,15 @@ fn a_pid_is_recognised_as_a_vm_helper_without_spawning_anything() {
 /// several git commands while the user types.
 #[test]
 fn a_quick_command_returns_at_once() {
-    let t0 = Instant::now();
-    for _ in 0..20 {
-        output(&mut Command::new("true"), Duration::from_secs(5)).unwrap();
-    }
-    let each = t0.elapsed() / 20;
-    assert!(each < Duration::from_millis(10), "each run took {each:?}");
+    // The median: a busy Mac (tests in parallel) slows a few runs, never most of them. Polling
+    // every 20 ms put every run at 20 ms or more.
+    let mut runs: Vec<Duration> = (0..21)
+        .map(|_| {
+            let t0 = Instant::now();
+            output(&mut Command::new("true"), Duration::from_secs(5)).unwrap();
+            t0.elapsed()
+        })
+        .collect();
+    runs.sort();
+    assert!(runs[10] < Duration::from_millis(15), "median run {:?} (all: {runs:?})", runs[10]);
 }

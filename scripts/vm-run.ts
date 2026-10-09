@@ -17,7 +17,10 @@ const ws = new WebSocket(`ws://127.0.0.1:${port}/api/tasks/${id}/pty?session=${s
 ws.binaryType = "arraybuffer";
 const mark = `AGENTVM${Date.now() % 1_000_000}`;
 let out = "";
-ws.onopen = () => ws.send(new TextEncoder().encode(`echo ${mark}-A; ${words.join(" ")}; echo ${mark}-B $?\r`));
+// Aliases off first, on a line of their own (a line's aliases are expanded as it is read): the
+// VM's shell maps cat to bat and ls to eza, and the output must be the plain one.
+ws.onopen = () =>
+  ws.send(new TextEncoder().encode(`unalias -a 2>/dev/null\recho ${mark}-A; ${words.join(" ")}; echo ${mark}-B $?\r`));
 ws.onmessage = (e) => {
   out += new TextDecoder().decode(e.data as ArrayBuffer);
   const done = out.match(new RegExp(`\\n${mark}-A\\r?\\n([\\s\\S]*?)${mark}-B (\\d+)`));
