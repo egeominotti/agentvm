@@ -7,10 +7,6 @@
     background: var(--surface); box-shadow: var(--shadow-drawer);
   }
   .machine.with-panel .tabs .inspector-close { display: grid; }
-  .res { grid-template-columns: 1fr; }
-  .grid3 { grid-template-columns: 1fr 1fr; }
-  .span-account, .span-browser, .span-image, .span-storage { grid-column: span 6; }
-  .choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 900px) {
@@ -20,9 +16,6 @@
   .brand { padding: 4px 0 10px; }
   .new-vm { width: 36px; justify-content: center; padding: 0; }
   .nav a { width: 36px; justify-content: center; padding: 0; }
-  .settings { grid-template-columns: minmax(0, 1fr); }
-  .settings-nav { display: none; }
-  .pair { grid-template-columns: 1fr; }
   .tb-id, .toolbar .seg + .tb-gap { display: none; }
 }
 
@@ -31,19 +24,14 @@
   .finished a { grid-template-columns: auto minmax(0, 1fr) auto; }
   .f-id, .f-repo, .f-cost { display: none; }
   .view-head .sub { display: none; }
-  .grid3 { grid-template-columns: 1fr; }
-  .settings-content { padding: 16px 16px 45vh; }
-  .settings-head { margin: -16px -16px 12px; padding: 16px 16px 10px; top: -16px; }
   .toolbar { gap: 6px; padding: 0 6px 0 10px; }
   .toolbar .status-label { display: none; }
   .wall-scroll { padding: 14px 12px 28px; }
   /* Every choice readable in full: they wrap to more rows instead of being cut to "1…". */
   .seg.wide { display: flex; flex-wrap: wrap; }
   .seg.wide button { flex: 1 0 auto; overflow: visible; }
-  .status-line { flex-direction: column; align-items: flex-start; gap: 8px; }
   .inline-form { flex-wrap: wrap; }
   .inline-form .text-input { flex: 1 1 100%; }
-  .choices { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Phones: the bar of a running terminal on two rows, so nothing falls off its right edge: the

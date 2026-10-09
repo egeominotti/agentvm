@@ -155,6 +155,37 @@ const paths: Record<string, ReactNode> = {
       <path d="M2.5 8h11M8 2.5c1.5 1.6 2.3 3.4 2.3 5.5S9.5 11.9 8 13.5C6.5 11.9 5.7 10.1 5.7 8S6.5 4.1 8 2.5Z" />
     </>
   ),
+  // A chip with its pins: what a Mac gives its VMs (cores, memory).
+  chip: (
+    <>
+      <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" />
+      <path d="M6.5 2.5v2M9.5 2.5v2M6.5 11.5v2M9.5 11.5v2M2.5 6.5h2M2.5 9.5h2M11.5 6.5h2M11.5 9.5h2" />
+    </>
+  ),
+  user: (
+    <>
+      <circle cx="8" cy="5.75" r="2.75" />
+      <path d="M3 13.5a5 5 0 0 1 10 0" />
+    </>
+  ),
+  disk: (
+    <>
+      <rect x="2.5" y="3.5" width="11" height="9" rx="1.5" />
+      <path d="M2.5 9.5h11M11 11h.01" />
+    </>
+  ),
+  sun: (
+    <>
+      <circle cx="8" cy="8" r="2.75" />
+      <path d="M8 2.5v1M8 12.5v1M2.5 8h1M12.5 8h1M4.1 4.1l.7.7M11.2 11.2l.7.7M4.1 11.9l.7-.7M11.2 4.8l.7-.7" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="7" cy="7" r="4" />
+      <path d="m10 10 3.5 3.5" />
+    </>
+  ),
   // Three machines joined to each other: a private network (the user's tailnet).
   tailnet: (
     <>

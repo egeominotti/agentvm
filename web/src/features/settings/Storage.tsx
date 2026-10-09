@@ -4,7 +4,7 @@ import { api } from "../../api/client";
 import type { StorageUsage } from "../../api/generated/StorageUsage";
 import { ConfirmButton } from "../../components/ConfirmButton";
 import { gb, plural } from "../../lib/format";
-import { Fact } from "./Image";
+import { Page, Panel, Row } from "./kit";
 
 export function Storage() {
   const qc = useQueryClient();
@@ -14,33 +14,64 @@ export function Storage() {
     onSettled: () => qc.invalidateQueries({ queryKey: ["storage"] }),
   });
   const d = usage.data;
+  const parts = d
+    ? [
+        { label: "Running VM disks", mb: d.vm_disks_mb, color: "var(--brand)" },
+        { label: "Snapshots", mb: d.snapshots_mb, color: "var(--done)" },
+        { label: "VM image", mb: d.golden_mb, color: "var(--work)" },
+        { label: `Logs of ${plural(d.jobs, "machine")}`, mb: d.jobs_mb, color: "var(--ink-3)" },
+      ]
+    : [];
+  const total = parts.reduce((a, p) => a + p.mb, 0);
   return (
-    <>
-      <p className="lede">
-        A closed machine's disk is deleted when it closes; one that was interrupted is kept as a snapshot. Logs and
-        Claude's history stay until you delete them.
-      </p>
-      {d ? (
-        <dl className="facts-grid">
-          <Fact k="Running VM disks" v={gb(d.vm_disks_mb)} />
-          <Fact k="Snapshots, before sharing" v={gb(d.snapshots_mb)} />
-          <Fact k="VM image" v={gb(d.golden_mb)} />
-          <Fact k={`Logs (${plural(d.jobs, "machine")})`} v={gb(d.jobs_mb)} />
-        </dl>
-      ) : null}
-      <div className="row-actions">
-        <ConfirmButton
-          size="md"
-          disabled={cleanup.isPending}
-          confirm="Delete their logs and Claude's history for good?"
-          onConfirm={() => cleanup.mutate()}
+    <Page
+      title="Storage"
+      description="A closed VM's disk is deleted as it closes; an interrupted one is kept as a snapshot. Logs and Claude's history stay until you delete them."
+    >
+      <Panel title="On this Mac" description={d ? `${gb(total)} in ~/AgentVMs.` : undefined}>
+        {d ? (
+          <>
+            <Row label="Disk usage" wide>
+              <div className="usage-bar" role="img" aria-label={parts.map((p) => `${p.label} ${gb(p.mb)}`).join(", ")}>
+                {parts.map((p) =>
+                  p.mb > 0 ? <i key={p.label} style={{ flexGrow: p.mb, background: p.color }} /> : null,
+                )}
+              </div>
+            </Row>
+            <ul className="set-list">
+              {parts.map((p) => (
+                <li key={p.label}>
+                  <span className="swatch" style={{ background: p.color }} />
+                  {p.label}
+                  <span className="set-value">{gb(p.mb)}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <Row label="Disk usage" description="Measuring…" />
+        )}
+      </Panel>
+      <Panel title="Danger zone" danger>
+        <Row
+          label="Delete logs of closed machines"
+          description={
+            cleanup.data
+              ? `Deleted ${plural(cleanup.data.removed, "folder")}.`
+              : "Their diagnostics and Claude's history go with them, for good."
+          }
         >
-          Delete logs of closed machines
-        </ConfirmButton>
-        {cleanup.data ? <span className="msg ok">Deleted {plural(cleanup.data.removed, "folder")}.</span> : null}
-        {cleanup.error ? <span className="msg err">{cleanup.error.message}</span> : null}
-      </div>
-      <p className="hint">Their diagnostics and Claude's history go with them.</p>
-    </>
+          <ConfirmButton
+            size="md"
+            disabled={cleanup.isPending}
+            confirm="Delete them for good?"
+            onConfirm={() => cleanup.mutate()}
+          >
+            Delete logs
+          </ConfirmButton>
+        </Row>
+      </Panel>
+      {cleanup.error ? <p className="msg err">{cleanup.error.message}</p> : null}
+    </Page>
   );
 }

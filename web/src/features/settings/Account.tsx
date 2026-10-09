@@ -1,55 +1,42 @@
-// The Claude subscription token, kept in the macOS Keychain.
+// The Claude subscription token every VM runs Claude Code with, kept in the macOS Keychain.
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
 import { api } from "../../api/client";
 import { keys, useStatus } from "../../api/queries";
-import { Button } from "../../components/Button";
-import { Icon } from "../../components/Icon";
+import { Credential } from "./Credential";
+import { Badge, Page, Panel, Row } from "./kit";
 
 export function Account() {
-  const connected = useStatus().data?.token;
-  const [token, setToken] = useState("");
+  const status = useStatus().data;
   const qc = useQueryClient();
   const save = useMutation({
-    mutationFn: () => api("/api/settings/token", "PUT", { token: token.trim() }),
-    onSuccess: () => {
-      setToken("");
-      qc.invalidateQueries({ queryKey: keys.status });
-    },
+    mutationFn: (token: string) => api("/api/settings/token", "PUT", { token }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.status }),
   });
   return (
-    <>
-      <p className="status-line">
-        <span className={`pill ${connected ? "ok" : "err"}`}>{connected ? "Connected" : "Missing"}</span>
-        <span className="lede">A long-lived token of your Claude subscription, kept in the macOS Keychain.</span>
-      </p>
-      <form
-        className="inline-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (token.trim()) save.mutate();
-        }}
-      >
-        <input
-          className="text-input mono"
-          type="password"
-          aria-label="Claude token"
-          placeholder="Paste a token: sk-ant-oat01-…"
-          autoComplete="off"
-          spellCheck={false}
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-        />
-        <Button type="submit" disabled={!token.trim() || save.isPending}>
-          <Icon name="key" />
-          {save.isPending ? "Saving…" : "Save token"}
-        </Button>
-      </form>
-      {save.isSuccess ? <p className="msg ok">Saved in the Keychain. New VMs use it.</p> : null}
+    <Page
+      title="Claude account"
+      description={
+        <>
+          A long-lived token of your Claude subscription. Create one in a terminal with <code>claude setup-token</code>;
+          it is kept in this Mac's Keychain.
+        </>
+      }
+    >
+      <Panel>
+        <Row label="Status" description={status?.token ? "New VMs run Claude Code with it." : status?.token_hint}>
+          {status ? <Badge tone={status.token ? "ok" : "err"}>{status.token ? "Connected" : "Missing"}</Badge> : null}
+        </Row>
+        <Row label="Token" description="Running VMs keep the token they started with.">
+          <Credential
+            saved={!!status?.token}
+            label="Claude token"
+            placeholder="sk-ant-oat01-…"
+            busy={save.isPending}
+            onSave={(v) => save.mutate(v)}
+          />
+        </Row>
+      </Panel>
       {save.error ? <p className="msg err">{save.error.message}</p> : null}
-      <p className="hint">
-        Create one in a terminal with <code>claude setup-token</code>. Running VMs keep the token they started with.
-      </p>
-    </>
+    </Page>
   );
 }

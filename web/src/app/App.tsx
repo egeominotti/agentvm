@@ -17,6 +17,7 @@ import { Sidebar } from "./sidebar/Sidebar";
 import "../styles/app.css";
 import "../styles/components.css";
 import "../styles/dialog.css";
+import "../styles/forms.css";
 import "../styles/inspector.css";
 import "../styles/machine.css";
 import "../styles/outcome.css";

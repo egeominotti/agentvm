@@ -6,16 +6,17 @@ import { api } from "../../api/client";
 import { Button } from "../../components/Button";
 import { ConfirmButton } from "../../components/ConfirmButton";
 import { Icon } from "../../components/Icon";
+import { Badge, Page, Panel } from "./kit";
 
 const HOSTS = ["github.com", "gitlab.com", "bitbucket.org"];
 const HOW: Record<string, { url: string; text: string }> = {
   "github.com": {
     url: "https://github.com/settings/personal-access-tokens/new",
-    text: "a fine-grained token: the repositories you want, permission Contents read and write",
+    text: "A fine-grained token: the repositories you want, Contents read and write.",
   },
   "gitlab.com": {
     url: "https://gitlab.com/-/user_settings/personal_access_tokens",
-    text: "a personal access token with read_repository and write_repository",
+    text: "A personal access token with read_repository and write_repository.",
   },
 };
 
@@ -39,76 +40,96 @@ export function GitAccess() {
   const how = HOW[host.trim()];
   const hosts = saved.data?.hosts ?? [];
   return (
-    <>
-      <p className="lede">
-        Public repositories need nothing. For private ones agentvm uses this Mac's own access (
-        <code>gh auth login</code>, an ssh key) or a token saved here, in the Keychain: used on this Mac only, it never
-        enters a VM.
-      </p>
-      {hosts.length ? (
-        <ul className="token-list">
-          {hosts.map((h) => (
-            <li key={h}>
-              <Icon name="key" />
-              <b>{h}</b>
-              <span className="hint">token saved</span>
-              <ConfirmButton confirm="Remove it?" onConfirm={() => remove.mutate(h)}>
-                Remove
-              </ConfirmButton>
-            </li>
-          ))}
+    <Page
+      title="Git access"
+      description={
+        <>
+          Public repositories need nothing. Private ones open with this Mac's own access (<code>gh auth login</code>, an
+          ssh key) or with a token saved here. Tokens are used on this Mac only: they never enter a VM.
+        </>
+      }
+    >
+      <Panel title="Saved tokens">
+        <ul className="set-list">
+          {hosts.length ? (
+            hosts.map((h) => (
+              <li key={h}>
+                <Icon name="key" />
+                <b>{h}</b>
+                <Badge tone="ok">Token saved</Badge>
+                <span className="set-value" />
+                <ConfirmButton confirm="Remove it?" onConfirm={() => remove.mutate(h)}>
+                  Remove
+                </ConfirmButton>
+              </li>
+            ))
+          ) : (
+            <li className="msg">No tokens yet.</li>
+          )}
         </ul>
-      ) : null}
+      </Panel>
       <form
-        className="inline-form"
         onSubmit={(e) => {
           e.preventDefault();
           if (host.trim() && token.trim()) save.mutate();
         }}
       >
-        <input
-          className="text-input mono host-input"
-          aria-label="Git host"
-          list="git-hosts"
-          value={host}
-          onChange={(e) => setHost(e.target.value.toLowerCase())}
-          spellCheck={false}
-        />
-        <datalist id="git-hosts">
-          {HOSTS.map((h) => (
-            // oxlint-disable-next-line jsx-a11y/control-has-associated-label -- a suggestion of a datalist: its value is its text
-            <option key={h} value={h} />
-          ))}
-        </datalist>
-        <input
-          className="text-input mono"
-          type="password"
-          aria-label="Token"
-          placeholder="Paste a token: github_pat_…"
-          autoComplete="off"
-          spellCheck={false}
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-        />
-        <Button type="submit" disabled={!host.trim() || !token.trim() || save.isPending}>
-          <Icon name="key" />
-          {save.isPending ? "Saving…" : "Save token"}
-        </Button>
+        <Panel
+          title="Add a token"
+          description={
+            how ? (
+              <>
+                {how.text}{" "}
+                <a href={how.url} target="_blank" rel="noopener">
+                  Create one
+                </a>
+              </>
+            ) : (
+              "A token with read and write access to the repositories you want."
+            )
+          }
+          footer={
+            <>
+              {save.error ? <span className="msg err">{save.error.message}</span> : null}
+              {save.isSuccess ? <span className="msg ok">Saved in the Keychain.</span> : null}
+              <Button type="submit" variant="primary" disabled={save.isPending || !host.trim() || !token.trim()}>
+                Save token
+              </Button>
+            </>
+          }
+        >
+          <div className="set-fields">
+            <label>
+              <span>Host</span>
+              <input
+                className="text-input mono"
+                list="git-hosts"
+                value={host}
+                onChange={(e) => setHost(e.target.value.toLowerCase())}
+                spellCheck={false}
+              />
+              <datalist id="git-hosts">
+                {HOSTS.map((h) => (
+                  // oxlint-disable-next-line jsx-a11y/control-has-associated-label -- a suggestion of a datalist: its value is its text
+                  <option key={h} value={h} />
+                ))}
+              </datalist>
+            </label>
+            <label>
+              <span>Token</span>
+              <input
+                className="text-input mono"
+                type="password"
+                placeholder="github_pat_…"
+                autoComplete="off"
+                spellCheck={false}
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+              />
+            </label>
+          </div>
+        </Panel>
       </form>
-      {save.isSuccess ? (
-        <p className="msg ok">Saved in the Keychain. Private repositories on {host} open now.</p>
-      ) : null}
-      {save.error ? <p className="msg err">{save.error.message}</p> : null}
-      {remove.error ? <p className="msg err">{remove.error.message}</p> : null}
-      {how ? (
-        <p className="hint">
-          Create{" "}
-          <a href={how.url} target="_blank" rel="noopener">
-            {how.text}
-          </a>
-          .
-        </p>
-      ) : null}
-    </>
+    </Page>
   );
 }
