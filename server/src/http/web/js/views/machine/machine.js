@@ -61,6 +61,7 @@ export class MachineView {
     this.titleEl.title = `${t.prompt || "(no first task)"}\n${t.repo}`;
     const s = t.status.state;
     const ended = isEnded(t);
+    this.stage.classList.toggle("ended", ended);
     for (const b of [this.saveBtn, this.closeBtn, this.snapBtn, this.seg, this.auto.el]) b.hidden = !t.interactive || ended;
     this.auto.paint(t);
     this.saveBtn.disabled = this.closeBtn.disabled = this.snapBtn.disabled = s !== "running";
