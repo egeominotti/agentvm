@@ -1,6 +1,6 @@
 // One machine, full size: its terminal always whole, the details beside it. A closed machine
 // shows what it produced instead of its terminal.
-import { type DragEvent, useEffect, useState } from "react";
+import { type DragEvent, useEffect, useRef, useState } from "react";
 import { useTask, useTasks } from "../../api/queries";
 import { TOGGLE_PANEL_EVENT } from "../../app/keys";
 import { useToast } from "../../components/Toast";
@@ -11,6 +11,7 @@ import { setupFailed } from "./boot";
 import { Inspector, type InspectorTab } from "./inspector/Inspector";
 import { DiffView } from "./outcome/DiffView";
 import { Outcome } from "./outcome/Outcome";
+import { panelShown, useNarrow } from "./panel";
 import { PortsBar } from "./PortsBar";
 import { TailnetBar } from "./TailnetBar";
 import { Toolbar } from "./Toolbar";
@@ -37,6 +38,12 @@ export function MachineView({ id }: { id: string }) {
   const say = useToast();
   const sessions = useSessions(id);
   const [panel, setPanel] = useState(storedPanel);
+  // Narrow: the details are a drawer, opened only on demand and closed again by a resize.
+  const narrow = useNarrow();
+  const narrowRef = useRef(narrow);
+  narrowRef.current = narrow;
+  const [drawer, setDrawer] = useState(false);
+  useEffect(() => setDrawer(false), [narrow]);
   const [tab, setTab] = useState<InspectorTab>("telemetry");
   const [dropping, setDropping] = useState(false);
 
@@ -51,7 +58,8 @@ export function MachineView({ id }: { id: string }) {
 
   // ⌘J anywhere shows or hides the details.
   useEffect(() => {
-    const toggle = () =>
+    const toggle = () => {
+      if (narrowRef.current) return setDrawer((d) => !d);
       setPanel((p) => {
         try {
           localStorage.setItem(PANEL_KEY, p ? "off" : "on");
@@ -60,6 +68,7 @@ export function MachineView({ id }: { id: string }) {
         }
         return !p;
       });
+    };
     window.addEventListener(TOGGLE_PANEL_EVENT, toggle);
     return () => window.removeEventListener(TOGGLE_PANEL_EVENT, toggle);
   }, []);
@@ -75,7 +84,7 @@ export function MachineView({ id }: { id: string }) {
   }
 
   const running = state === "running";
-  const showPanel = panel;
+  const showPanel = panelShown({ narrow, docked: panel, drawer });
   const togglePanel = () => window.dispatchEvent(new Event(TOGGLE_PANEL_EVENT));
   const accepts = (e: DragEvent) => running && t.interactive && e.dataTransfer.types.includes("Files");
   const drop = async (e: DragEvent) => {
@@ -101,7 +110,7 @@ export function MachineView({ id }: { id: string }) {
               className="link"
               onClick={() => {
                 setTab("diagnostics");
-                if (!panel) togglePanel();
+                if (!showPanel) togglePanel();
               }}
             >
               Show the log

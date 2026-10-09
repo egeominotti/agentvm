@@ -16,9 +16,17 @@
 .card-id { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--ink-3); }
 .card-body { flex: 1; min-height: 0; position: relative; }
 .preview { position: absolute; inset: 8px 8px 4px 12px; overflow: hidden; }
-.preview-term { transform-origin: top left; width: max-content; }
-.preview .xterm-viewport { overflow: hidden !important; }
-.preview .xterm { cursor: pointer; }
+/* A preview's text, scaled down to its card. The terminals' font file, shown as soon as it is
+   there (the full terminals wait for it: their cells are measured once). */
+@font-face { font-family: "JetBrains Mono Preview"; src: url("/fonts/JetBrainsMonoNerdFontMono-Regular.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "JetBrains Mono Preview"; src: url("/fonts/JetBrainsMonoNerdFontMono-Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+.preview-screen {
+  width: calc(var(--cols, 80) * 1ch); height: calc(var(--rows, 24) * 15px); transform-origin: top left;
+  font: 12px/15px "JetBrains Mono Preview", var(--mono); white-space: pre; overflow: hidden; contain: strict;
+}
+.preview-screen > div { height: 15px; }
+/* A colored run fills its whole row: no hairline of the card between two colored lines. */
+.preview-screen span { display: inline-block; height: 15px; vertical-align: top; }
 .card-boot, .card-note { position: absolute; inset: 0; display: grid; align-content: center; gap: 8px; padding: 0 28px; color: var(--ink-3); font-size: var(--fs-sm); }
 .card-boot b, .card-note b { color: var(--ink); font-weight: 510; font-size: var(--fs-base); }
 .card-foot { flex-shrink: 0; display: flex; align-items: center; gap: 14px; height: 32px; padding: 0 12px; border-top: 1px solid var(--line); background: var(--surface); font-size: var(--fs-2xs); color: var(--ink-3); white-space: nowrap; overflow: hidden; }

@@ -1,9 +1,16 @@
 /* One machine: the stage (toolbar, ports, terminal or outcome) and the inspector beside it. */
 .machine { flex: 1; min-height: 0; display: flex; }
-.stage { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.stage { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; container: stage / inline-size; }
+/* A narrow stage (a narrow window, or wide details beside it): the dot alone says the state, so
+   the sessions' tabs and the actions keep their room. */
+@container stage (max-width: 760px) {
+  .toolbar .tb-id { display: none; }
+  .toolbar .status-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
 
 .toolbar { flex-shrink: 0; display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--line); min-width: 0; }
-.tb-title { flex: 0 1 auto; min-width: 60px; margin: 0; font-size: var(--fs-md); font-weight: 590; letter-spacing: -0.012em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The title gives way first (it shrinks a hundred times faster): the sessions' tabs stay whole. */
+.tb-title { flex: 0 100 auto; min-width: 60px; margin: 0; font-size: var(--fs-md); font-weight: 590; letter-spacing: -0.012em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb-id { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--ink-3); flex-shrink: 0; }
 .tb-gap { flex: 1 1 0; min-width: 4px; }
 .toolbar .seg { flex-shrink: 0; margin-left: 6px; }
@@ -35,7 +42,6 @@
 .screen .term { position: absolute; inset: 0; padding: 10px 6px 6px 14px; }
 .screen .term.away { visibility: hidden; }
 .term-host { width: 100%; height: 100%; }
-.preview-term .term-host { width: auto; height: auto; }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; z-index: 4; padding: 24px; background: var(--term); animation: fade-in .2s ease; }
 .overlay-note { display: grid; justify-items: center; gap: 6px; text-align: center; color: var(--ink-2); }
 .overlay-note .boot-mark { width: 36px; height: 36px; margin-bottom: 8px; }
