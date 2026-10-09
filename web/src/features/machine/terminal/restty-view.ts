@@ -119,11 +119,14 @@ export async function openRestty(el: HTMLElement, opts: ViewOptions): Promise<Te
   };
 }
 
-/** Whether restty got a renderer, given up to 2 s to start (it is usually there in a few ms). */
+/** Whether restty got a renderer, given up to 2 s to start. It is usually there within a few ms:
+ *  looked at every 5 ms, the terminal connects as soon as it can draw (steps of 50 ms held every
+ *  opening back by about 50 ms). Counted in steps, not time: a background tab's slowed timers
+ *  must not make a terminal give up on the GPU. */
 async function drawing(restty: { getBackend: () => string }): Promise<boolean> {
-  for (let waited = 0; waited < 2000; waited += 50) {
+  for (let waited = 0; waited < 2000; waited += 5) {
     if (restty.getBackend() !== "none") return true;
-    await new Promise((ok) => setTimeout(ok, 50));
+    await new Promise((ok) => setTimeout(ok, 5));
   }
   return false;
 }
