@@ -51,9 +51,13 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
         return apply(TaskEvent::Finished(Final::Stopped, id.branch()));
     }
 
-    let vm = VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &vm_config(&record, &ws), &ws.events())
+    let mut vm = VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &vm_config(&record, &ws), &ws.events())
         .map_err(|e| e.to_string())?;
-    let _ = ws.write_pid(vm.pid());
+    // Without its pid on disk a restart could not find this VM again: it would run unsupervised.
+    if let Err(e) = ws.write_pid(vm.pid()) {
+        vm.kill();
+        return Err(format!("could not record the VM's process id ({e}): it was stopped"));
+    }
     tracing::info!(task = %id, pid = vm.pid(), cpus = record.cpus, memory_mb = record.memory_mb, "vm started");
     supervise(ctx, id, &record, ws, vm, token).await
 }

@@ -31,5 +31,23 @@ pub fn init(logs_dir: &Path, level: &str) -> Option<WorkerGuard> {
         .with(fmt::layer().compact().with_writer(std::io::stderr))
         .try_init()
         .ok()?;
+    log_panics();
     Some(guard)
+}
+
+/// A panic anywhere (a supervisor, a background loop) goes to the log with its place, not only
+/// to a terminal nobody reads.
+fn log_panics() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let place = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
+        let what = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_owned())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_default();
+        tracing::error!(place, panic = what, "panic");
+        default(info);
+    }));
 }

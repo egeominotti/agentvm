@@ -5,7 +5,6 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::process::OutputWithin;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -207,11 +206,7 @@ impl VmProcess {
     }
 }
 
-/// The pid belongs to a running `agentvm-vm` (guards against reused pids).
+/// The pid belongs to a running `agentvm-vm`.
 pub fn is_helper(pid: u32) -> bool {
-    Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "comm="])
-        .output_within(std::time::Duration::from_secs(5))
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().ends_with("agentvm-vm"))
-        .unwrap_or(false)
+    crate::pids::helper_pid(pid) == crate::pids::HelperPid::Ours
 }

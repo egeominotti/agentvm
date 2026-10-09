@@ -185,6 +185,16 @@ pub enum SettingsError {
 }
 
 impl Settings {
+    /// These settings brought within what this Mac and agentvm allow (defaults from the
+    /// environment may not be): every value that fits stays as it is.
+    pub fn fitted(mut self, host: &HostLimits) -> Settings {
+        self.max_vms = self.max_vms.clamp(1, MAX_VMS);
+        self.cpus = self.cpus.clamp(1, host.cpus.max(1));
+        self.memory_mb = self.memory_mb.clamp(MIN_MEMORY_MB, host.max_memory_mb());
+        self.timeout_s = self.timeout_s.clamp(60, 86_400);
+        self
+    }
+
     pub fn validate(&self, host: &HostLimits) -> Result<(), SettingsError> {
         if !(1..=MAX_VMS).contains(&self.max_vms) {
             return Err(SettingsError::MaxVms);

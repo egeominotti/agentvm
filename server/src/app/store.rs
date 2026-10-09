@@ -102,7 +102,9 @@ impl Store {
     /// Adds or replaces a task (reloading the saved ones after a restart).
     pub fn insert(&self, record: TaskRecord) {
         let entry = self.entry(record);
+        let first = (entry.record.clone(), entry.file.clone());
         self.tasks.lock().unwrap().insert(entry.record.id.clone(), entry);
+        first.1.write(&first.0, 1);
     }
 
     /// Adds a new task, unless its id is already taken: it is handed back untouched.
@@ -112,7 +114,11 @@ impl Store {
             return Err(Box::new(record));
         }
         let entry = self.entry(record);
+        let first = (entry.record.clone(), entry.file.clone());
         tasks.insert(entry.record.id.clone(), entry);
+        drop(tasks);
+        // Written once the store is free again: disk I/O never blocks the store.
+        first.1.write(&first.0, 1);
         Ok(())
     }
 
@@ -120,7 +126,6 @@ impl Store {
         let log = Arc::new(EventLog::new());
         log.push(StreamItem::State(record.state.clone()));
         let file = RecordFile::new(self.dir.as_ref().map(|d| d.join(record.id.as_str()).join("record.json")));
-        file.write(&record, 1);
         Entry { record, log, stop: watch::channel(false).0, version: 1, file }
     }
 
@@ -221,7 +226,17 @@ impl Store {
 
     /// Forgets a task (the caller deletes its files).
     pub fn remove(&self, id: &TaskId) -> Option<TaskRecord> {
-        self.tasks.lock().unwrap().remove(id).map(|e| e.record)
+        let entry = self.tasks.lock().unwrap().remove(id)?;
+        entry.file.forget();
+        Some(entry.record)
+    }
+
+    /// Writes the records that could not be written yet (a full disk, a folder in the way).
+    pub fn retry_unsaved(&self) {
+        let files: Vec<RecordFile> = self.tasks.lock().unwrap().values().map(|e| e.file.clone()).collect();
+        for file in files {
+            file.retry();
+        }
     }
 
     pub fn running_count(&self) -> usize {

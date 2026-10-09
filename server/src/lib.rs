@@ -7,5 +7,6 @@ pub mod guestfs;
 pub mod http;
 pub mod jsonl;
 pub mod logging;
+pub mod pids;
 pub mod process;
 pub mod secret;

@@ -30,3 +30,14 @@ fn large_output_does_not_block() {
     let out = output(Command::new("sh").args(["-c", "head -c 1000000 /dev/zero"]), Duration::from_secs(5)).unwrap();
     assert_eq!(out.stdout.len(), 1_000_000);
 }
+
+/// Recognising agentvm's VM helper by its pid asks the kernel, not `ps`: no process to spawn, so
+/// a busy Mac at restart never mistakes a running VM for a dead one.
+#[test]
+fn a_pid_is_recognised_as_a_vm_helper_without_spawning_anything() {
+    use agentvm::pids::{HelperPid, helper_pid};
+    let t0 = std::time::Instant::now();
+    assert_eq!(helper_pid(std::process::id()), HelperPid::Other);
+    assert_eq!(helper_pid(999_999), HelperPid::Gone);
+    assert!(t0.elapsed() < std::time::Duration::from_millis(50), "{:?}", t0.elapsed());
+}

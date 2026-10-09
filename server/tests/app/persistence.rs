@@ -52,3 +52,24 @@ fn usage_updates_never_overwrite_a_newer_state_on_disk() {
         assert!(leftovers.is_empty(), "{leftovers:?}");
     }
 }
+
+/// A record that cannot be written (the disk is full, the folder is in the way) is not dropped:
+/// it is written as soon as it can be, so a restart never sees an older state.
+#[test]
+fn a_record_that_could_not_be_written_is_written_later() {
+    let (home, repo) = (tempfile::tempdir().unwrap(), git_repo());
+    let jobs = home.path().join("jobs");
+    let store = Store::persistent(jobs.clone());
+    let record = crate::helpers::record(&repo);
+    let id = record.id.clone();
+    store.insert(record);
+    let file = jobs.join(id.as_str()).join("record.json");
+    // A directory where the file goes: every write fails until it is gone.
+    std::fs::remove_file(&file).unwrap();
+    std::fs::create_dir(&file).unwrap();
+    store.apply(&id, TaskEvent::SlotAcquired).unwrap();
+    std::fs::remove_dir(&file).unwrap();
+    store.retry_unsaved();
+    let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(saved["state"]["state"], "preparing", "{saved}");
+}

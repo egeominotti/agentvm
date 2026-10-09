@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
     let live = agentvm::app::supervisor::recover(&ctx);
     cleanup_orphans(&ctx.config.jobs(), &live);
     agentvm::app::backups::remove_leftovers(&ctx);
-    tokio::spawn(agentvm::app::snapshots::run_schedule(ctx.clone()));
+    agentvm::app::background::start(&ctx);
     eprintln!("agentvm listening on http://{addr}");
     axum::serve(listener, agentvm::http::router(ctx)).await?;
     Ok(())

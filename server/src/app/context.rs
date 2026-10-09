@@ -50,7 +50,8 @@ impl AppCtx {
             claude_version: Default::default(),
             s3: None,
             auto_snapshots: Default::default(),
-        };
+        }
+        .fitted(&limits);
         let settings = SettingsService::load(config.home.join("settings.json"), defaults, limits);
         AppCtx {
             scheduler: Scheduler::new(settings.get().max_vms),
