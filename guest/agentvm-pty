@@ -173,7 +173,8 @@ def main():
     srv = socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((socket.VMADDR_CID_ANY, PORT))
-    srv.listen(16)
+    # Room for many terminals opened at once (a wall of previews, several tabs).
+    srv.listen(128)
     while True:
         # A failed accept (too many open files, an aborted connection) must not take down the
         # terminals already open with the server: wait a moment and go on.

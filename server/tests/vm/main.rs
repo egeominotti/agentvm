@@ -6,3 +6,4 @@ mod lifecycle;
 mod resources;
 mod saves;
 mod terminal;
+mod terminals_at_once;

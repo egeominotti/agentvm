@@ -31,6 +31,14 @@
 </p>
 
 <p align="center">
+  <b>One command, and it runs:</b>
+</p>
+
+```bash
+git clone https://github.com/egeominotti/agentvm.git && cd agentvm && ./quickstart
+```
+
+<p align="center">
   <img src="docs/assets/wall.jpg" alt="The Machines wall: five Claude Code agents working in parallel, each in its own VM" width="100%">
 </p>
 
@@ -76,13 +84,36 @@ repository as a git branch, and the VM is thrown away.
 ## Quick start
 
 **Requirements:** a Mac with Apple Silicon and a recent macOS, Xcode Command Line Tools
-(`swiftc`), a Rust toolchain, and a Claude subscription. No Apple Developer account is needed:
+(`swiftc`), Rust, [Bun](https://bun.sh) and a Claude subscription. No Apple Developer account is needed:
 the VM helper is ad-hoc signed with the `com.apple.security.virtualization` entitlement.
 
 ```bash
-git clone https://github.com/egeominotti/agentvm.git && cd agentvm
+./quickstart          # build, start, open http://127.0.0.1:7777
+./quickstart --dev    # the same, plus the dashboard with hot reload on :5173
+```
 
-scripts/build.sh           # bin/agentvm-vm (Swift, signed) + bin/agentvm-server (Rust)
+<p align="center">
+  <img src="docs/assets/quickstart.png" alt="./quickstart: tools checked, only what changed rebuilt, server restarted with its VMs still running, dashboard ready in seconds" width="720">
+</p>
+
+`./quickstart` does everything, and only what is needed:
+
+| Step | What it does | Time |
+|---|---|---|
+| **Tools** | Checks macOS on Apple Silicon, `swiftc`, Rust and Bun, and says how to install what is missing. | instant |
+| **Build** | Builds the VM helper and the dashboard side by side, then the server. Only what changed is rebuilt. | ~1 s when nothing changed |
+| **VM image** | Builds the Debian 13 image with Claude Code the first time. | ~2 min, once |
+| **Server** | Starts the server, or restarts it on a new build. Running VMs keep running and re-attach. | ~0.1 s |
+
+Then it opens the dashboard. Run it again after every `git pull`: it takes about a second when
+nothing changed. The Claude token is set once, in **Settings → Claude account** (create it with
+`claude setup-token`).
+
+<details>
+<summary>The same, step by step</summary>
+
+```bash
+scripts/build.sh           # bin/agentvm-vm (Swift, signed) + bin/agentvm-server (Rust), incremental
 scripts/build-golden.sh    # once, ~2 min: Debian 13 image with Claude Code preinstalled
 
 claude setup-token         # once: a long-lived token for your Claude subscription
@@ -90,6 +121,8 @@ security add-generic-password -U -s agentvm -a agentvm -w    # paste it (or use 
 
 bin/agentvm-server         # → http://127.0.0.1:7777
 ```
+
+</details>
 
 Open **http://127.0.0.1:7777**, press **New VM** (⌘K), pick a repository and, optionally, a first
 task. A few seconds later Claude Code is running in its own machine.
@@ -244,7 +277,8 @@ web/         The dashboard: React, TypeScript (types generated from the Rust one
 vm-helper/   Swift: one VM per process, vsock bridge for terminals
 guest/       Golden image setup, plus the job runner, PTY server, Claude wrapper, status line
              and telemetry collector that the server ships to every VM at launch
-scripts/     build.sh, build-golden.sh, dev-s3.sh, test.sh (all test binaries in parallel)
+scripts/     build.sh (incremental), build-golden.sh, dev-s3.sh, test.sh (all test binaries
+             in parallel); ./quickstart at the root runs them for you
 dev/s3/      docker-compose.yml with RustFS for local S3
 docs/        Design specs and implementation plan
 ```
@@ -254,8 +288,7 @@ VMs, real Claude and a real S3 server. An architecture test enforces the layerin
 touches adapters, the domain does no I/O, adapters do not know each other.
 
 ```bash
-cd web && bun install && bun run build   # once, before cargo: the server embeds the dashboard
-AGENTVM_API=http://127.0.0.1:7777 bun run dev   # the dashboard with hot reload, on a running server
+./quickstart --dev           # server + the dashboard with hot reload on :5173
 scripts/test.sh               # dashboard, domain, adapters, app, HTTP, architecture (in parallel)
 scripts/dev-s3.sh up
 scripts/test.sh --ignored     # real VMs, Claude and S3

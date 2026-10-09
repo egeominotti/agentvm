@@ -32,7 +32,7 @@ final class VsockBridge {
         let bound = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
-        guard bound == 0, listen(fd, 16) == 0 else { throw ConfigError("bind/listen \(path): \(errno)") }
+        guard bound == 0, listen(fd, 128) == 0 else { throw ConfigError("bind/listen \(path): \(errno)") }
         chmod(path, 0o600)
         Thread.detachNewThread { [self] in
             while true {
@@ -44,10 +44,15 @@ final class VsockBridge {
         }
     }
 
-    /// Must be called on the main queue (the VM's queue).
-    private func connect(_ client: Int32) {
+    /// Must be called on the main queue (the VM's queue). A refused connection (the guest busy
+    /// accepting many at once) is tried again a few times before the channel is given up.
+    private func connect(_ client: Int32, attempt: Int = 1) {
         device.connect(toPort: port) { [self] result in
             switch result {
+            case .failure where attempt < 6:
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50 * attempt)) {
+                    self.connect(client, attempt: attempt + 1)
+                }
             case .failure:
                 close(client)
             case .success(let conn):

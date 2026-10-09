@@ -90,7 +90,7 @@ async fn interactive_vm_serves_a_shell_over_vsock_and_closes_on_request() {
 }
 
 /// Opens the shell once the guest PTY server is ready (before that, the bridge closes immediately).
-async fn open_ready_shell(ws: &JobWorkspace) -> agentvm::adapters::pty::PtyConnection {
+pub(crate) async fn open_ready_shell(ws: &JobWorkspace) -> agentvm::adapters::pty::PtyConnection {
     use agentvm::adapters::pty::{Frame, PtyConnection};
     let t0 = Instant::now();
     'retry: loop {
