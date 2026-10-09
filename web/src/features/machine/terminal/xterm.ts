@@ -29,9 +29,15 @@ const THEME = {
   brightWhite: "#ffffff",
 };
 
-/** `webgl`: the GPU renderer, for full-size terminals; a page gets only a few GPU contexts, so
- *  the many previews of the wall draw with the DOM renderer. */
-export function openXterm(el: HTMLElement, { fontSize = 13, readOnly = false, webgl = true } = {}) {
+/** The terminal font, loaded before any terminal opens: xterm measures its cells once, and the
+ *  GPU's glyph atlas is drawn from that measure. */
+export const monoFont = (): Promise<unknown> =>
+  document.fonts.check('13px "Geist Mono"') ? Promise.resolve() : document.fonts.load('13px "Geist Mono"');
+
+/** Every terminal draws on the GPU (WebGL). When the browser takes the GPU context back (too
+ *  many at once, sleep, a driver reset) the terminal falls back to the DOM renderer at once and
+ *  gets the GPU again a moment later. */
+export function openXterm(el: HTMLElement, { fontSize = 13, readOnly = false } = {}) {
   const xterm = new Terminal({
     fontFamily: '"Geist Mono", "SF Mono", ui-monospace, Menlo, monospace',
     fontSize,
@@ -41,20 +47,34 @@ export function openXterm(el: HTMLElement, { fontSize = 13, readOnly = false, we
     macOptionIsMeta: true,
     macOptionClickForcesSelection: true,
     scrollback: 5000,
+    smoothScrollDuration: 0,
     theme: THEME,
   });
   const fit = new FitAddon();
   xterm.loadAddon(fit);
   xterm.open(el);
-  if (!webgl) return { xterm, fit };
-  try {
-    const gl = new WebglAddon();
-    gl.onContextLoss(() => gl.dispose());
-    xterm.loadAddon(gl);
-  } catch {
-    // The DOM renderer is slower but always there.
-  }
-  return { xterm, fit };
+  let losses = 0;
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  const gpu = () => {
+    try {
+      const gl = new WebglAddon();
+      gl.onContextLoss(() => {
+        gl.dispose();
+        // A context lost again and again (no GPU to give) stays on the DOM renderer.
+        if (++losses <= 5) retry = setTimeout(gpu, 1000 * losses);
+      });
+      xterm.loadAddon(gl);
+    } catch {
+      // No WebGL here: the DOM renderer is slower but always there.
+    }
+  };
+  gpu();
+  /** Disposes the terminal and its pending GPU retry. */
+  const close = () => {
+    clearTimeout(retry);
+    xterm.dispose();
+  };
+  return { xterm, fit, close };
 }
 
 /** Text selected in tmux arrives as OSC 52 (base64): it goes to the Mac's clipboard. */

@@ -1,20 +1,26 @@
 // A terminal attached to a tmux session of a VM, streamed over a WebSocket. It reconnects while
 // the VM runs, follows the size of its box, and stays mounted when hidden (no redraw on return).
 import type { Terminal } from "@xterm/xterm";
-import { type Ref, useEffect, useImperativeHandle, useRef } from "react";
+import { memo, type Ref, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useToast } from "../../../components/Toast";
-import { copySelections, openXterm } from "./xterm";
+import { copySelections, monoFont, openXterm } from "./xterm";
 
 export type TerminalHandle = { paste: (text: string) => void; focus: () => void };
 
 type Props = { id: string; session: "claude" | "shell"; live: boolean; visible: boolean; ref?: Ref<TerminalHandle> };
 
-export function VmTerminal({ id, session, live, visible, ref }: Props) {
+// Memoized: the machine view re-renders every second with fresh numbers; the terminal has
+// nothing to redraw for them.
+export const VmTerminal = memo(function VmTerminal({ id, session, live, visible, ref }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const term = useRef<{ xterm: Terminal; resize: () => void } | null>(null);
   const say = useToast();
   const liveRef = useRef(live);
   liveRef.current = live;
+  const [fontReady, setFontReady] = useState(false);
+  useEffect(() => {
+    monoFont().then(() => setFontReady(true));
+  }, []);
 
   useImperativeHandle(ref, () => ({
     paste: (text) => {
@@ -26,8 +32,8 @@ export function VmTerminal({ id, session, live, visible, ref }: Props) {
 
   useEffect(() => {
     const box = el.current;
-    if (!box || !live) return;
-    const { xterm, fit: fitter } = openXterm(box);
+    if (!box || !live || !fontReady) return;
+    const { xterm, fit: fitter, close } = openXterm(box);
     const resize = () => {
       if (!box.offsetWidth) return;
       const d = fitter.proposeDimensions();
@@ -89,10 +95,10 @@ export function VmTerminal({ id, session, live, visible, ref }: Props) {
       input.dispose();
       resized.dispose();
       ws?.close();
-      xterm.dispose();
+      close();
       term.current = null;
     };
-  }, [id, session, live, say]);
+  }, [id, session, live, say, fontReady]);
 
   // Back in view: take the box's size and the keyboard (once the browser has shown it).
   useEffect(() => {
@@ -105,4 +111,4 @@ export function VmTerminal({ id, session, live, visible, ref }: Props) {
   }, [visible]);
 
   return <div ref={el} className="term" hidden={!visible} />;
-}
+});

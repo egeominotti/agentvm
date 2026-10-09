@@ -4,9 +4,10 @@ import { useTasks } from "../api/queries";
 import { ToastProvider } from "../components/Toast";
 import { Launcher } from "../features/launcher/Launcher";
 import { MachineView } from "../features/machine/MachineView";
+import { SettingsView } from "../features/settings/Settings";
+import { Snapshots } from "../features/snapshots/Snapshots";
 import { Wall } from "../features/wall/Wall";
 import { useAttention } from "./attention";
-import { Placeholder } from "./Placeholder";
 import { useRoute } from "./router";
 import { Sidebar } from "./sidebar/Sidebar";
 import "../styles/app.css";
@@ -15,6 +16,8 @@ import "../styles/dialog.css";
 import "../styles/inspector.css";
 import "../styles/machine.css";
 import "../styles/outcome.css";
+import "../styles/settings.css";
+import "../styles/snapshots.css";
 import "../styles/wall.css";
 
 export function App() {
@@ -27,8 +30,8 @@ export function App() {
         <main className="view">
           {route.name === "machine" ? <MachineView key={route.id} id={route.id} /> : null}
           {route.name === "wall" ? <Wall /> : null}
-          {route.name === "snapshots" ? <Placeholder what="Snapshots" /> : null}
-          {route.name === "settings" ? <Placeholder what="Settings" /> : null}
+          {route.name === "snapshots" ? <Snapshots /> : null}
+          {route.name === "settings" ? <SettingsView section={route.section} /> : null}
         </main>
       </div>
       <Launcher />

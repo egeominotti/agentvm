@@ -17,6 +17,9 @@
       "recommended": true,
       "complexity": {
         "noImportantStyles": "off"
+      },
+      "a11y": {
+        "useSemanticElements": "off"
       }
     }
   },

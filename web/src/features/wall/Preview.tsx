@@ -1,8 +1,8 @@
-// A live, read-only preview of a machine's Claude session. It keeps the session's real size and
+// A live, read-only preview of a machine's Claude session, drawn on the GPU like every terminal. It keeps the session's real size and
 // is scaled down to its box (attaching smaller would crop it), streams only while on screen and
 // while the page is visible, and parses at most 4 times a second whatever the VM prints.
-import { useEffect, useRef } from "react";
-import { openXterm } from "../machine/terminal/xterm";
+import { useEffect, useRef, useState } from "react";
+import { monoFont, openXterm } from "../machine/terminal/xterm";
 
 const COLS = 140;
 const ROWS = 42;
@@ -10,12 +10,16 @@ const ROWS = 42;
 export function Preview({ id }: { id: string }) {
   const box = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
+  const [fontReady, setFontReady] = useState(false);
+  useEffect(() => {
+    monoFont().then(() => setFontReady(true));
+  }, []);
 
   useEffect(() => {
     const outer = box.current;
     const el = inner.current;
-    if (!outer || !el) return;
-    const { xterm } = openXterm(el, { fontSize: 12, readOnly: true, webgl: false });
+    if (!outer || !el || !fontReady) return;
+    const { xterm, close } = openXterm(el, { fontSize: 12, readOnly: true });
     xterm.resize(COLS, ROWS);
     const scale = () => {
       const screen = el.querySelector<HTMLElement>(".xterm-screen");
@@ -78,9 +82,9 @@ export function Preview({ id }: { id: string }) {
       sized.disconnect();
       document.removeEventListener("visibilitychange", follow);
       pause();
-      xterm.dispose();
+      close();
     };
-  }, [id]);
+  }, [id, fontReady]);
 
   return (
     <div ref={box} className="preview" aria-hidden="true">

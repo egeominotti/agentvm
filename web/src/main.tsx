@@ -2,7 +2,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
+import { monoFont } from "./features/machine/terminal/xterm";
 import "./styles/tokens.css";
+
+// The terminal font starts loading with the page, not when the first terminal opens.
+monoFont();
 
 const client = new QueryClient({
   defaultOptions: {
