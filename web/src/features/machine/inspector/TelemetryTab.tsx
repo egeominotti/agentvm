@@ -3,15 +3,16 @@ import { useState } from "react";
 import type { TaskDto } from "../../../api/generated/TaskDto";
 import { useTelemetry } from "../../../api/queries";
 import { BLUE, LineChart, ORANGE } from "../../../components/LineChart";
+import { Segmented } from "../../../components/Segmented";
 import { gb, rate } from "../../../lib/format";
 import { isEnded } from "../../../lib/task";
 import { Facts, Processes } from "./Facts";
 
-const RANGES = [
+const RANGES: [string, string][] = [
   ["5m", "5 min"],
   ["1h", "1 hour"],
   ["all", "Whole life"],
-] as const;
+];
 /** Numbers older than this are shown as stale, not as live. */
 const STALE_S = 5;
 
@@ -33,13 +34,7 @@ export function TelemetryTab({ task: t }: { task: TaskDto }) {
           ones.
         </p>
       ) : null}
-      <div className="seg" role="tablist" aria-label="Time range">
-        {RANGES.map(([key, label]) => (
-          <button key={key} type="button" role="tab" aria-selected={range === key} onClick={() => setRange(key)}>
-            {label}
-          </button>
-        ))}
-      </div>
+      <Segmented label="Time range" value={range} options={RANGES} onChange={setRange} />
       <LineChart
         title="CPU"
         times={times}

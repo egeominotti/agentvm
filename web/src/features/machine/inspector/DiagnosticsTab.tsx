@@ -9,10 +9,19 @@ const time = (at: number) =>
   new Date(at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const step = (s: number) => (s < 60 ? `+${Math.round(s)}s` : `+${Math.floor(s / 60)}m ${Math.round(s % 60)}s`);
 
-export function DiagnosticsTab({ id }: { id: string }) {
+export function DiagnosticsTab({ id, ended }: { id: string; ended: boolean }) {
   const q = useDiagnostics(id, true);
   const say = useToast();
-  if (q.error) return <p className="hint">{q.error.message}</p>;
+  if (q.error) {
+    return (
+      <p className="msg err">
+        Could not read the diagnostics: {q.error.message}{" "}
+        <button type="button" className="link" onClick={() => q.refetch()}>
+          Try again
+        </button>
+      </p>
+    );
+  }
   const d = q.data;
   if (!d) return <p className="hint">Reading the logs…</p>;
   const first = openFirst(d);
@@ -58,7 +67,13 @@ export function DiagnosticsTab({ id }: { id: string }) {
           <pre>{d.server_log.join("\n")}</pre>
         </details>
       ) : null}
-      {d.logs.length === 0 ? <p className="hint">Its logs were cleaned up in Settings › Storage.</p> : null}
+      {d.logs.length === 0 ? (
+        <p className="hint">
+          {ended
+            ? "No logs left: it ended before writing any, or they were deleted in Settings › Storage."
+            : "No logs yet: the machine has not written any."}
+        </p>
+      ) : null}
     </div>
   );
 }

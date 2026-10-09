@@ -3,11 +3,11 @@ import type { HostLimits } from "../../api/generated/HostLimits";
 import type { Settings } from "../../api/generated/Settings";
 import { Segmented } from "../../components/Segmented";
 import { gb } from "../../lib/format";
+import { memoryChoices } from "../../lib/memory";
 import type { SetSetting } from "./useDraft";
 
 /** Memory kept for macOS, never given to VMs. */
 const RESERVE_MB = 8192;
-const MEMORY = [1024, 2048, 4096, 6144, 8192, 12288, 16384];
 
 export function Resources({ s, set, limits }: { s: Settings; set: SetSetting; limits: HostLimits }) {
   const total = limits.ram_mb;
@@ -41,7 +41,7 @@ export function Resources({ s, set, limits }: { s: Settings; set: SetSetting; li
           <Segmented
             label="Memory per VM"
             value={s.memory_mb}
-            options={MEMORY.filter((m) => m <= total - RESERVE_MB).map((m) => [m, gb(m)])}
+            options={memoryChoices(total, s.memory_mb).map((m) => [m, gb(m)])}
             onChange={(v) => set("memory_mb", v)}
             wide
           />

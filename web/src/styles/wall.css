@@ -24,14 +24,14 @@
 .card-foot { flex-shrink: 0; display: flex; align-items: center; gap: 14px; height: 32px; padding: 0 12px; border-top: 1px solid var(--line); background: var(--surface); font-size: var(--fs-2xs); color: var(--ink-3); white-space: nowrap; overflow: hidden; }
 .card-foot b { color: var(--ink-2); font-weight: 510; font-variant-numeric: tabular-nums; }
 .card-spend { margin-left: auto; overflow: hidden; text-overflow: ellipsis; }
-.port-chip { font-family: var(--mono); color: var(--ink-2); text-decoration: none; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line-2); }
+.port-chip { font: 11px var(--mono); color: var(--ink-2); text-decoration: none; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line-2); background: none; cursor: pointer; }
 .port-chip:hover { color: var(--ink); background: var(--hover); }
 
 .finished-section header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .finished-section h2 { margin: 0; font-size: var(--fs-sm); font-weight: 510; color: var(--ink-3); }
 .finished { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
 .finished li + li { border-top: 1px solid var(--line); }
-.finished a { display: grid; grid-template-columns: 170px minmax(0, 1fr) auto auto 64px 64px; align-items: center; gap: 14px; height: 38px; padding: 0 14px; color: var(--ink-2); text-decoration: none; font-size: var(--fs-sm); }
+.finished a { display: grid; grid-template-columns: 170px minmax(0, 1fr) auto auto 64px 84px; align-items: center; gap: 14px; height: 38px; padding: 0 14px; color: var(--ink-2); text-decoration: none; font-size: var(--fs-sm); }
 .finished a:hover { background: var(--hover); color: var(--ink); }
 .f-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 .f-id { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--ink-3); }
@@ -44,3 +44,5 @@
 .empty ol { margin: 10px 0 0; padding: 0 0 0 18px; display: grid; gap: 8px; color: var(--ink-3); font-size: var(--fs-sm); }
 .empty li b { color: var(--ink-2); font-weight: 510; }
 .card-warn { color: var(--wait); font-weight: 510; }
+/* Inside the row: the list clips anything drawn outside it. */
+.finished a:focus-visible { outline-offset: -2px; border-radius: var(--r); }

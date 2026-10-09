@@ -1,4 +1,5 @@
 // One entry of Claude's conversation: a prompt, a message, a tool call, or its folded result.
+import { memo } from "react";
 import type { HistoryEntry } from "../../../api/generated/HistoryEntry";
 
 const time = (at: string) => {
@@ -10,7 +11,8 @@ const lines = (text: string) => {
   return n === 1 ? "1 line" : `${n} lines`;
 };
 
-export function Entry({ e }: { e: HistoryEntry }) {
+// Memoized: entries never change once read; only new ones are drawn.
+export const Entry = memo(function Entry({ e }: { e: HistoryEntry }) {
   const meta = (
     <span className="at">
       {time(e.at)}
@@ -51,4 +53,4 @@ export function Entry({ e }: { e: HistoryEntry }) {
         </details>
       );
   }
-}
+});

@@ -40,6 +40,7 @@ export function useMachineActions(id: string) {
   const remove = useMutation({
     mutationFn: () => api(base, "DELETE"),
     onSuccess: () => {
+      say("Machine deleted. Its branch stays in your repository.");
       go("#/wall");
       refresh();
     },

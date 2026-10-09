@@ -2,11 +2,11 @@
 // for this launch; with what still fits in this Mac's memory.
 import { useGolden, useReleases, useSettings, useStatus } from "../../api/queries";
 import { gb } from "../../lib/format";
+import { memoryChoices } from "../../lib/memory";
 import { MODELS } from "../../lib/models";
 
 export type Choice = { model: string; version: string; cpus: number; memoryMb: number };
 
-const MEMORY = [1024, 2048, 4096, 6144, 8192, 12288, 16384, 24576, 32768];
 /** Kept for macOS, as the server's scheduler does. */
 const RESERVED_MB = 8192;
 
@@ -26,7 +26,7 @@ export function Options({
   const hostCpus = settings?.limits.cpus ?? v.cpus;
   const hostRam = settings?.limits.ram_mb ?? 0;
   const cpus = [...new Set([1, 2, 4, 6, 8, 12, 16, hostCpus])].filter((n) => n <= hostCpus).sort((a, b) => a - b);
-  const memory = MEMORY.filter((m) => m <= hostRam - RESERVED_MB);
+  const memory = memoryChoices(hostRam, v.memoryMb);
   const set = (part: Partial<Choice>) => onChange({ ...v, ...part });
   const free = status ? status.host.ram_mb - RESERVED_MB - status.ram_committed_mb : null;
   const fits = free == null ? null : Math.floor(free / v.memoryMb);

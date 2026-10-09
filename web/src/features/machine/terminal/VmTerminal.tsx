@@ -17,6 +17,8 @@ export const VmTerminal = memo(function VmTerminal({ id, session, live, visible,
   const say = useToast();
   const liveRef = useRef(live);
   liveRef.current = live;
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
   const [fontReady, setFontReady] = useState(false);
   useEffect(() => {
     monoFont().then(() => setFontReady(true));
@@ -91,6 +93,8 @@ export const VmTerminal = memo(function VmTerminal({ id, session, live, visible,
     });
     observer.observe(box);
     connect();
+    // Opened in view (the page was loaded on this machine): it takes the keyboard at once.
+    if (visibleRef.current) requestAnimationFrame(() => xterm.focus());
 
     return () => {
       closed = true;

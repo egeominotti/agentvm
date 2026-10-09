@@ -30,3 +30,13 @@ export function duration(seconds: number): string {
 /** Local wall-clock time, `HH:MM:SS`. */
 export const clock = (epochSeconds: number) =>
   new Date(epochSeconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+/** How long ago `epochSeconds` was, in the largest unit that fits. */
+export function ago(epochSeconds: number, now = Date.now() / 1000): string {
+  const s = Math.max(0, now - epochSeconds);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  const days = Math.floor(s / 86400);
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}

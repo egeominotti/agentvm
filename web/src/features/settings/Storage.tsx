@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { StorageUsage } from "../../api/generated/StorageUsage";
-import { Button } from "../../components/Button";
+import { ConfirmButton } from "../../components/ConfirmButton";
 import { gb, plural } from "../../lib/format";
 import { Fact } from "./Image";
 
@@ -29,9 +29,14 @@ export function Storage() {
         </dl>
       ) : null}
       <div className="row-actions">
-        <Button variant="danger" disabled={cleanup.isPending} onClick={() => cleanup.mutate()}>
+        <ConfirmButton
+          size="md"
+          disabled={cleanup.isPending}
+          confirm="Delete their logs and Claude's history for good?"
+          onConfirm={() => cleanup.mutate()}
+        >
           Delete logs of closed machines
-        </Button>
+        </ConfirmButton>
         {cleanup.data ? <span className="msg ok">Deleted {plural(cleanup.data.removed, "folder")}.</span> : null}
         {cleanup.error ? <span className="msg err">{cleanup.error.message}</span> : null}
       </div>

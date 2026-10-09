@@ -31,7 +31,13 @@ fn is_loopback_request(port: u16, req: &Request) -> bool {
     let host_ok = header(header::HOST).is_some_and(|h| allowed.iter().any(|a| a == h));
     let origin_ok = header(header::ORIGIN).is_none_or(|o| allowed.iter().any(|a| o == format!("http://{a}")));
     // Origin must be checked on GETs too: a cross-site WebSocket to a terminal is a GET.
-    host_ok && origin_ok
+    // Browsers leave Origin out of no-cors GETs (`<img src>`) but say where they come from: the API
+    // answers only the dashboard itself (or what the user typed), never another site's page nor
+    // a page a VM serves under `<port>.<vm>.localhost` (same-site). Pages may still be linked.
+    let api = req.uri().path().starts_with("/api/");
+    let fetch_site = req.headers().get("sec-fetch-site").and_then(|v| v.to_str().ok());
+    let site_ok = !api || fetch_site.is_none_or(|s| s == "same-origin" || s == "none");
+    host_ok && origin_ok && site_ok
 }
 
 /// No other site may show the dashboard in a frame and trick clicks on it.

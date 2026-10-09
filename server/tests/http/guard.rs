@@ -83,3 +83,32 @@ async fn proxied_names_never_reach_the_api() {
     let text = String::from_utf8_lossy(&body);
     assert!(text.contains("no running machine is called nothing-0000") && !text.contains("golden"), "{text}");
 }
+
+fn fetch_from(site: &str, mode: &str, path: &str) -> Request<Body> {
+    Request::get(path)
+        .header("host", "127.0.0.1:7777")
+        .header("sec-fetch-site", site)
+        .header("sec-fetch-mode", mode)
+        .body(Body::empty())
+        .unwrap()
+}
+
+/// Browsers send no Origin on a no-cors GET (`<img src>`, `<script src>`), but they do say where
+/// it comes from: another site, or a page a VM serves under `<port>.<vm>.localhost`, cannot reach
+/// the API (it could probe the Mac's folders through /api/repos/check by timing).
+#[tokio::test]
+async fn the_api_refuses_requests_from_other_sites_even_without_an_origin() {
+    for site in ["cross-site", "same-site"] {
+        let req = fetch_from(site, "no-cors", "/api/repos/check?path=/Users");
+        assert_eq!(status_of(req).await, StatusCode::FORBIDDEN, "{site}");
+    }
+    assert_eq!(status_of(fetch_from("same-origin", "cors", "/api/status")).await, StatusCode::OK);
+    assert_eq!(status_of(fetch_from("none", "navigate", "/api/status")).await, StatusCode::OK);
+}
+
+/// A link from elsewhere (a chat, a note) still opens the dashboard.
+#[tokio::test]
+async fn a_link_from_another_site_opens_the_dashboard() {
+    let res = status_of(fetch_from("cross-site", "navigate", "/")).await;
+    assert_ne!(res, StatusCode::FORBIDDEN);
+}

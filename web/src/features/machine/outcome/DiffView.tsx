@@ -1,17 +1,32 @@
 // The changes a finished machine brought to its branch: a summary, then a block per file.
+
 import { useQuery } from "@tanstack/react-query";
+import { memo } from "react";
 import { plural } from "../../../lib/format";
 import { parseDiff } from "./diff";
 
-export function DiffView({ id }: { id: string }) {
+// Memoized: the machine view re-renders every second; a long diff has nothing new to draw.
+export const DiffView = memo(function DiffView({ id }: { id: string }) {
   const diff = useQuery({
     queryKey: ["diff", id],
     queryFn: async () => {
       const r = await fetch(`/api/tasks/${id}/diff`);
-      return r.ok ? parseDiff(await r.text()) : [];
+      if (!r.ok) throw new Error(`the server answered ${r.status}`);
+      return parseDiff(await r.text());
     },
+    // A finished branch never changes: read once, unless the read failed.
     staleTime: Number.POSITIVE_INFINITY,
   });
+  if (diff.error) {
+    return (
+      <p className="msg err">
+        Could not read the changes: {diff.error.message}.{" "}
+        <button type="button" className="link" onClick={() => diff.refetch()}>
+          Try again
+        </button>
+      </p>
+    );
+  }
   const files = diff.data ?? [];
   if (!files.length) return null;
   const add = files.reduce((n, f) => n + f.add, 0);
@@ -47,4 +62,4 @@ export function DiffView({ id }: { id: string }) {
       ))}
     </section>
   );
-}
+});

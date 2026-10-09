@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { keys, useTasks } from "../../api/queries";
 import { Button } from "../../components/Button";
+import { ConfirmButton } from "../../components/ConfirmButton";
 import { useToast } from "../../components/Toast";
 import { plural } from "../../lib/format";
 import { isEnded, isQueued, isWaiting } from "../../lib/task";
@@ -22,10 +23,12 @@ export function Wall() {
   const queued = live.filter(isQueued).length;
   const running = live.length - queued;
   const clear = useMutation({
-    mutationFn: async () => {
-      for (const t of ended) await api(`/api/tasks/${t.id}`, "DELETE");
+    // The machines as they were when you clicked: the list refreshes every second meanwhile.
+    mutationFn: async (ids: string[]) => {
+      for (const id of ids) await api(`/api/tasks/${id}`, "DELETE");
+      return ids.length;
     },
-    onSuccess: () => say(`Removed ${plural(ended.length, "finished machine")} from the list. Their branches stay.`),
+    onSuccess: (n) => say(`Deleted ${plural(n, "finished machine")}. Their branches stay in your repository.`),
     onError: (e: Error) => say(e.message, "err"),
     onSettled: () => qc.invalidateQueries({ queryKey: keys.tasks }),
   });
@@ -66,9 +69,13 @@ export function Wall() {
           <section className="finished-section" aria-label="Finished machines">
             <header>
               <h2>Finished</h2>
-              <Button size="sm" variant="ghost" disabled={clear.isPending} onClick={() => clear.mutate()}>
-                Clear {ended.length} from the list
-              </Button>
+              <ConfirmButton
+                disabled={clear.isPending}
+                confirm={`Delete ${ended.length} with their logs and Claude's history? Branches stay`}
+                onConfirm={() => clear.mutate(ended.map((t) => t.id))}
+              >
+                Delete {ended.length} finished
+              </ConfirmButton>
             </header>
             <FinishedList tasks={ended} />
           </section>

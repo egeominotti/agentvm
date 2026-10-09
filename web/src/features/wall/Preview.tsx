@@ -1,6 +1,8 @@
-// A live, read-only preview of a machine's Claude session, drawn on the GPU like every terminal. It keeps the session's real size and
-// is scaled down to its box (attaching smaller would crop it), streams only while on screen and
-// while the page is visible, and parses at most 4 times a second whatever the VM prints.
+// A live, read-only preview of a machine's Claude session, drawn on the GPU like every terminal.
+// It keeps the session's real size and is scaled down to its box (attaching smaller would crop
+// it). It exists only while on screen: off screen it gives back its GPU context and its stream,
+// so a wall of many machines never runs out of GPU contexts. While the page is hidden it streams
+// nothing, and it parses at most 4 times a second whatever the VM prints.
 import { useEffect, useRef, useState } from "react";
 import { monoFont, openXterm } from "../machine/terminal/xterm";
 
@@ -11,14 +13,22 @@ export function Preview({ id }: { id: string }) {
   const box = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
   const [fontReady, setFontReady] = useState(false);
+  const [onScreen, setOnScreen] = useState(false);
   useEffect(() => {
     monoFont().then(() => setFontReady(true));
+  }, []);
+  useEffect(() => {
+    const outer = box.current;
+    if (!outer) return;
+    const seen = new IntersectionObserver(([e]) => setOnScreen(!!e?.isIntersecting), { rootMargin: "200px" });
+    seen.observe(outer);
+    return () => seen.disconnect();
   }, []);
 
   useEffect(() => {
     const outer = box.current;
     const el = inner.current;
-    if (!outer || !el || !fontReady) return;
+    if (!outer || !el || !fontReady || !onScreen) return;
     const { xterm, close } = openXterm(el, { fontSize: 12, readOnly: true });
     xterm.resize(COLS, ROWS);
     const scale = () => {
@@ -31,7 +41,6 @@ export function Preview({ id }: { id: string }) {
     sized.observe(outer);
 
     let ws: WebSocket | null = null;
-    let onScreen = true;
     let gone = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let chunks: Uint8Array[] = [];
@@ -45,7 +54,7 @@ export function Preview({ id }: { id: string }) {
       }, 250);
     };
     const connect = () => {
-      if (ws || gone || !onScreen || document.hidden) return;
+      if (ws || gone || document.hidden) return;
       const sock = new WebSocket(
         `ws://${location.host}/api/tasks/${id}/pty?session=claude&cols=${COLS}&rows=${ROWS}&view=true`,
       );
@@ -65,12 +74,7 @@ export function Preview({ id }: { id: string }) {
       ws = null;
       sock?.close();
     };
-    const follow = () => (onScreen && !document.hidden ? connect() : pause());
-    const seen = new IntersectionObserver(([e]) => {
-      onScreen = !!e?.isIntersecting;
-      follow();
-    });
-    seen.observe(outer);
+    const follow = () => (document.hidden ? pause() : connect());
     document.addEventListener("visibilitychange", follow);
     connect();
 
@@ -78,13 +82,12 @@ export function Preview({ id }: { id: string }) {
       gone = true;
       clearTimeout(retry);
       clearTimeout(flush);
-      seen.disconnect();
       sized.disconnect();
       document.removeEventListener("visibilitychange", follow);
       pause();
       close();
     };
-  }, [id, fontReady]);
+  }, [id, fontReady, onScreen]);
 
   return (
     <div ref={box} className="preview" aria-hidden="true">

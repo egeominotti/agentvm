@@ -11,6 +11,8 @@ export function Segmented<T extends string | number>({ label, value, options, on
     const next = options[(i + (e.key === "ArrowRight" ? 1 : options.length - 1)) % options.length];
     if (next) onChange(next[0]);
   };
+  // With no option chosen yet, the first one still takes the keyboard.
+  const focusable = options.some(([v]) => v === value) ? value : options[0]?.[0];
   return (
     <div className={`seg${wide ? " wide" : ""}`} role="radiogroup" aria-label={label} onKeyDown={keys}>
       {options.map(([v, text]) => (
@@ -19,7 +21,7 @@ export function Segmented<T extends string | number>({ label, value, options, on
           type="button"
           role="radio"
           aria-checked={v === value}
-          tabIndex={v === value ? 0 : -1}
+          tabIndex={v === focusable ? 0 : -1}
           onClick={() => onChange(v)}
         >
           {text}

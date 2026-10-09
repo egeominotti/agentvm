@@ -26,7 +26,28 @@ export function useDraft(initial: Settings | undefined) {
       setDraft(initial);
     }
   }, [initial]);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  const send = async () => {
+    timer.current = undefined;
+    try {
+      const saved = await api<SettingsView>("/api/settings", "PUT", latest.current);
+      qc.setQueryData(keys.settings, saved);
+      qc.invalidateQueries({ queryKey: keys.status });
+      setSave({ kind: "saved" });
+    } catch (e) {
+      setSave({ kind: "error", message: (e as Error).message });
+    }
+  };
+  // Leaving the page with a change still waiting sends it now: it is never dropped.
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  useEffect(
+    () => () => {
+      if (timer.current === undefined) return;
+      clearTimeout(timer.current);
+      sendRef.current();
+    },
+    [],
+  );
 
   const set: SetSetting = (key, value) => {
     if (!latest.current) return;
@@ -35,16 +56,7 @@ export function useDraft(initial: Settings | undefined) {
     setDraft(next);
     setSave({ kind: "saving" });
     clearTimeout(timer.current);
-    timer.current = setTimeout(async () => {
-      try {
-        const saved = await api<SettingsView>("/api/settings", "PUT", latest.current);
-        qc.setQueryData(keys.settings, saved);
-        qc.invalidateQueries({ queryKey: keys.status });
-        setSave({ kind: "saved" });
-      } catch (e) {
-        setSave({ kind: "error", message: (e as Error).message });
-      }
-    }, DELAY_MS);
+    timer.current = setTimeout(send, DELAY_MS);
   };
   return { draft, set, save };
 }

@@ -10,7 +10,7 @@ import { Button } from "../../components/Button";
 import { shortPath } from "../../lib/format";
 import { type Choice, Options } from "./Options";
 import { NEW_VM_EVENT } from "./open";
-import { rememberRepo, splitPrompts, storedRecent } from "./prompts";
+import { notLaunched, rememberRepo, splitPrompts, storedRecent } from "./prompts";
 import { RepoField, useSettledCheck } from "./RepoField";
 
 /** A task that is only a path was most likely meant as the repository. */
@@ -34,7 +34,7 @@ export function Launcher() {
 
   const recent = [
     ...new Set([
-      ...(settings?.settings.default_repo ? [settings.settings.default_repo] : []),
+      ...(settings?.settings.default_repo?.trim() ? [settings.settings.default_repo.trim()] : []),
       ...storedRecent(),
       ...tasks.map((t) => shortPath(t.repo)),
     ]),
@@ -56,16 +56,19 @@ export function Launcher() {
     };
   }, []);
 
-  // On opening: the last repository and the settings' choices, ready to change.
+  // On every opening: the last repository, and the choices as Settings has them now (changes
+  // made for one launch do not stick to the next).
   useEffect(() => {
     if (!open) return;
     setError(null);
+    setChoice(null);
     setRepo((r) => r || recent[0] || "");
-    if (settings) {
-      const s = settings.settings;
-      setChoice((c) => c ?? { model: s.model, version: "", cpus: s.cpus, memoryMb: s.memory_mb });
-    }
-  }, [open, settings, recent[0]]);
+  }, [open, recent[0]]);
+  useEffect(() => {
+    if (!open || !settings) return;
+    const s = settings.settings;
+    setChoice((c) => c ?? { model: s.model, version: "", cpus: s.cpus, memoryMb: s.memory_mb });
+  }, [open, settings]);
 
   const prompts = splitPrompts(task, perLine);
   const blocker = !status
@@ -88,6 +91,7 @@ export function Launcher() {
     setBusy(true);
     setError(null);
     const ids: string[] = [];
+    let failure: string | null = null;
     for (const prompt of prompts) {
       try {
         const r = await api<{ id: string }>("/api/tasks", "POST", {
@@ -101,16 +105,26 @@ export function Launcher() {
         });
         ids.push(r.id);
       } catch (err) {
-        setError((err as Error).message);
+        failure = (err as Error).message;
+        setError(failure);
         break;
       }
     }
     setBusy(false);
-    if (!ids.length) return;
-    rememberRepo(repo.trim());
+    if (ids.length) {
+      rememberRepo(repo.trim());
+      await qc.invalidateQueries({ queryKey: keys.tasks });
+    }
+    if (ids.length < prompts.length) {
+      // Some did not launch: the dialog stays, with the reason and only the tasks still to launch.
+      if (ids.length) {
+        setError(`${ids.length} of ${prompts.length} launched, then: ${failure ?? "a launch failed"}`);
+        setTask(notLaunched(prompts, ids.length));
+      }
+      return;
+    }
     setTask("");
     setOpen(false);
-    await qc.invalidateQueries({ queryKey: keys.tasks });
     go(ids.length === 1 ? `#/vm/${ids[0]}` : "#/wall");
   };
 

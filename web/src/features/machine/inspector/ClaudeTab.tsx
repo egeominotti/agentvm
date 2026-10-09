@@ -1,5 +1,6 @@
 // Claude's work in a machine: what it cost, its tokens and context over time, and the whole
 // conversation. It stays after the machine is closed.
+import { memo } from "react";
 import { useClaudeUsage } from "../../../api/queries";
 import { BLUE, LineChart } from "../../../components/LineChart";
 import { money, tokens } from "../../../lib/format";
@@ -7,8 +8,9 @@ import { Entry } from "./Entry";
 import { turns } from "./turns";
 import { useConversation } from "./useConversation";
 
-export function ClaudeTab({ id, live }: { id: string; live: boolean }) {
-  const { entries, loaded } = useConversation(id, live);
+// Memoized: the machine view re-renders every second; the conversation changes on its own clock.
+export const ClaudeTab = memo(function ClaudeTab({ id, live }: { id: string; live: boolean }) {
+  const { entries, loaded, error, retry } = useConversation(id, live);
   const samples = useClaudeUsage(id, live).data?.samples ?? [];
   const last = samples.at(-1);
   const per = turns(entries);
@@ -65,8 +67,17 @@ export function ClaudeTab({ id, live }: { id: string; live: boolean }) {
           // biome-ignore lint/suspicious/noArrayIndexKey: append-only list
           <Entry key={i} e={e} />
         ))}
-        {loaded && !entries.length ? <p className="hint">No conversation yet.</p> : null}
+        {error ? (
+          <p className="msg err">
+            Could not read the conversation: {error}{" "}
+            <button type="button" className="link" onClick={retry}>
+              Try again
+            </button>
+          </p>
+        ) : loaded && !entries.length ? (
+          <p className="hint">No conversation yet.</p>
+        ) : null}
       </div>
     </div>
   );
-}
+});

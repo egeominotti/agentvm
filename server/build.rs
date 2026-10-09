@@ -15,6 +15,9 @@ fn main() {
     let mut files = Vec::new();
     if dist.join("index.html").is_file() {
         collect(&dist, &dist, &mut files);
+    } else if std::env::var("PROFILE").as_deref() == Ok("release") {
+        // A release without its dashboard would answer / with "file not found".
+        panic!("web/dist is missing: build the dashboard first (scripts/build.sh does it)");
     } else {
         println!("cargo:warning=web/dist is missing: the dashboard is empty (cd web && bun install && bun run build)");
     }
@@ -25,7 +28,10 @@ fn main() {
     }
     table.push_str("];\n");
     let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("set by Cargo")).join("web_assets.rs");
-    std::fs::write(&out, table).unwrap_or_else(|e| panic!("cannot write {}: {e}", out.display()));
+    // Rewritten only when it changes: the same table must not recompile the crate.
+    if std::fs::read_to_string(&out).ok().as_deref() != Some(table.as_str()) {
+        std::fs::write(&out, table).unwrap_or_else(|e| panic!("cannot write {}: {e}", out.display()));
+    }
 }
 
 /// `(path relative to root with `/` separators, absolute source path)` of every file under `dir`.

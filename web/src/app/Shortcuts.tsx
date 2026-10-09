@@ -2,15 +2,15 @@
 // hides a machine's details. Keys typed into a field or a terminal are left alone.
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useState } from "react";
-import { isTyping, SHORTCUTS, TOGGLE_PANEL_EVENT } from "./keys";
+import { goTarget, isTyping, SHORTCUTS, TOGGLE_PANEL_EVENT } from "./keys";
 import { go } from "./router";
-
-const GO: Record<string, string> = { m: "#/wall", s: "#/snapshots", ",": "#/settings" };
 
 export function Shortcuts() {
   const [help, setHelp] = useState(false);
   useEffect(() => {
-    let leader = 0;
+    // The keys typed lately, for "g" then a letter; forgotten after a pause.
+    let recent: string[] = [];
+    let last = 0;
     const keydown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
         e.preventDefault();
@@ -21,12 +21,16 @@ export function Shortcuts() {
       if (e.key === "?") {
         e.preventDefault();
         setHelp(true);
-      } else if (e.key === "g") {
-        leader = Date.now();
-      } else if (Date.now() - leader < 1200 && GO[e.key]) {
+        return;
+      }
+      if (Date.now() - last > 1200) recent = [];
+      last = Date.now();
+      recent = [...recent.slice(-1), e.key];
+      const target = goTarget(recent);
+      if (target) {
         e.preventDefault();
-        go(GO[e.key] as string);
-        leader = 0;
+        recent = [];
+        go(target);
       }
     };
     document.addEventListener("keydown", keydown);

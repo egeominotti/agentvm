@@ -80,3 +80,4 @@ input[type="range"] { width: 100%; accent-color: var(--brand); height: 20px; }
 .facts-grid dd { margin: 0; font-weight: 510; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .set-card form:not(.inline-form) { display: grid; gap: 14px; }
 code { background: var(--raised); padding: 1px 5px; border-radius: 4px; }
+.settings-nav a:focus-visible, .choices button:focus-visible { outline-offset: -2px; }

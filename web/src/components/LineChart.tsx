@@ -109,7 +109,7 @@ export function LineChart({ title, times, series, format, max, reference, empty 
         {at != null ? (
           <>
             <div className="hair" style={{ left: `${left}%` }} />
-            <div className={`tip${left > 55 ? " flip" : ""}`} style={{ left: `${left}%` }} role="status">
+            <div className={`tip${left > 55 ? " flip" : ""}`} style={{ left: `${left}%` }} aria-hidden="true">
               <div className="when">{clock(times[at] ?? t0)}</div>
               {series.map((s) => {
                 const v = s.values[at];
@@ -125,6 +125,14 @@ export function LineChart({ title, times, series, format, max, reference, empty 
           </>
         ) : null}
       </div>
+      {/* What the arrow keys point at, for screen readers (the plot itself is an image). */}
+      <span className="sr-only" aria-live="polite">
+        {at != null
+          ? `${clock(times[at] ?? t0)}: ${series
+              .map((s) => `${s.name} ${s.values[at] == null ? "not measured" : format(s.values[at] as number)}`)
+              .join(", ")}`
+          : ""}
+      </span>
       <div className="x-axis">
         <span>{clock(t0)}</span>
         {span > 0 ? <span>{clock(t1)}</span> : null}

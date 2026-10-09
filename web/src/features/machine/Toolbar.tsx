@@ -5,6 +5,7 @@ import { useSettings } from "../../api/queries";
 import { Button, IconButton } from "../../components/Button";
 import { Icon } from "../../components/Icon";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "../../components/Menu";
+import { Segmented } from "../../components/Segmented";
 import { StatusMark } from "../../components/StatusMark";
 import { isEnded, shortId, titleOf } from "../../lib/task";
 import type { MachineActions } from "./actions";
@@ -39,13 +40,15 @@ export function Toolbar({ task: t, session, onSession, actions: a, inspector, on
         #{shortId(t)}
       </span>
       {terminal ? (
-        <div className="seg" role="tablist" aria-label="Session">
-          {(["claude", "shell"] as const).map((s) => (
-            <button key={s} type="button" role="tab" aria-selected={session === s} onClick={() => onSession(s)}>
-              {s === "claude" ? "Claude" : "Shell"}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label="Session"
+          value={session}
+          options={[
+            ["claude", "Claude"],
+            ["shell", "Shell"],
+          ]}
+          onChange={onSession}
+        />
       ) : null}
       <span className="tb-gap" />
       {terminal ? (
@@ -95,8 +98,12 @@ export function Toolbar({ task: t, session, onSession, actions: a, inspector, on
         ) : null}
         <MenuItem onSelect={() => navigator.clipboard.writeText(t.branch)}>Copy branch name</MenuItem>
         {ended ? (
-          <MenuItem danger confirm="Remove it? Its branch stays" onSelect={() => a.remove.mutate()}>
-            Remove from the list
+          <MenuItem
+            danger
+            confirm="Delete its logs and Claude's history? Its branch stays"
+            onSelect={() => a.remove.mutate()}
+          >
+            Delete this machine
           </MenuItem>
         ) : (
           <MenuItem danger confirm="Power off without saving?" onSelect={() => a.stop.mutate()}>

@@ -66,7 +66,7 @@ export function Agent({ s, set }: { s: Settings; set: SetSetting }) {
             placeholder="~/code/my-app"
             spellCheck={false}
             value={s.default_repo ?? ""}
-            onChange={(e) => set("default_repo", e.target.value.trim() || null)}
+            onChange={(e) => set("default_repo", e.target.value.trim() ? e.target.value : null)}
           />
           <span className="hint">Suggested first in New VM.</span>
         </label>

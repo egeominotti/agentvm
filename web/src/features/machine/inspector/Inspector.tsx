@@ -23,6 +23,14 @@ function storedWidth(): number {
   }
 }
 
+function remember(width: number) {
+  try {
+    localStorage.setItem(WIDTH_KEY, String(width));
+  } catch {
+    // Not remembered: it still works.
+  }
+}
+
 type Props = { task: TaskDto; tab: InspectorTab; onTab: (t: InspectorTab) => void };
 
 export function Inspector({ task: t, tab, onTab }: Props) {
@@ -40,11 +48,7 @@ export function Inspector({ task: t, tab, onTab }: Props) {
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      try {
-        localStorage.setItem(WIDTH_KEY, String(last));
-      } catch {
-        // Not remembered: it still works.
-      }
+      remember(last);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -52,7 +56,26 @@ export function Inspector({ task: t, tab, onTab }: Props) {
 
   return (
     <aside className="inspector" style={{ width }} aria-label="Machine details">
-      <div className="inspector-edge" onPointerDown={drag} title="Drag to resize" />
+      {/* biome-ignore lint/a11y/useSemanticElements: a draggable splitter has no HTML element */}
+      <div
+        className="inspector-edge"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize the details"
+        aria-valuemin={MIN}
+        aria-valuemax={MAX}
+        aria-valuenow={width}
+        tabIndex={0}
+        onPointerDown={drag}
+        onKeyDown={(e) => {
+          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+          e.preventDefault();
+          const next = Math.max(MIN, Math.min(MAX, width + (e.key === "ArrowLeft" ? 24 : -24)));
+          setWidth(next);
+          remember(next);
+        }}
+        title="Drag, or use the arrow keys, to resize"
+      />
       <Tabs.Root value={tab} onValueChange={(v) => onTab(v as InspectorTab)} className="inspector-tabs">
         <Tabs.List className="tabs" aria-label="Details">
           <Tabs.Trigger value="telemetry">Telemetry</Tabs.Trigger>
@@ -66,7 +89,7 @@ export function Inspector({ task: t, tab, onTab }: Props) {
           <ClaudeTab id={t.id} live={live} />
         </Tabs.Content>
         <Tabs.Content value="diagnostics" className="tab-body">
-          <DiagnosticsTab id={t.id} />
+          <DiagnosticsTab id={t.id} ended={!live} />
         </Tabs.Content>
       </Tabs.Root>
     </aside>

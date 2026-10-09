@@ -12,6 +12,9 @@ export function splitPrompts(text: string, perLine: boolean): string[] {
   return lines.length ? lines : [""];
 }
 
+/** The tasks after the first `launched`, one per line, to try again. */
+export const notLaunched = (prompts: string[], launched: number) => prompts.slice(launched).filter(Boolean).join("\n");
+
 /** `path` first, then the others, without duplicates, at most 8. */
 export const mergeRecent = (path: string, recent: string[]) => [path, ...recent.filter((p) => p !== path)].slice(0, 8);
 

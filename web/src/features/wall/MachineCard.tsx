@@ -2,12 +2,14 @@
 import type { TaskDto } from "../../api/generated/TaskDto";
 import { useStatus } from "../../api/queries";
 import { StatusMark } from "../../components/StatusMark";
+import { useToast } from "../../components/Toast";
 import { gb, money, tokens } from "../../lib/format";
 import { age, shortId, statusOf, titleOf } from "../../lib/task";
 import { bootSteps, setupFailed } from "../machine/boot";
 import { Preview } from "./Preview";
 
 export function MachineCard({ task: t }: { task: TaskDto }) {
+  const say = useToast();
   const { tone } = statusOf(t);
   const ready = t.status.state === "running" && t.ready;
   const m = t.metrics;
@@ -38,17 +40,26 @@ export function MachineCard({ task: t }: { task: TaskDto }) {
         <span>
           <b>{m ? gb(m.mem_used_mb) : "—"}</b> RAM
         </span>
-        {port ? (
-          <a
-            className="port-chip"
-            href={port.url ?? `http://localhost:${port.host_port}`}
-            target="_blank"
-            rel="noopener"
-            title={port.url ?? `localhost:${port.host_port}`}
-          >
+        {port?.url ? (
+          <a className="port-chip" href={port.url} target="_blank" rel="noopener" title={`Opens ${port.url}`}>
             :{port.port}
             {t.ports.length > 1 ? ` +${t.ports.length - 1}` : ""}
           </a>
+        ) : port ? (
+          // Not a web page: its address on the Mac, to connect a client to.
+          <button
+            type="button"
+            className="port-chip"
+            title={`Not a web page: copy localhost:${port.host_port}`}
+            onClick={() =>
+              navigator.clipboard
+                .writeText(`localhost:${port.host_port}`)
+                .then(() => say(`Copied localhost:${port.host_port}`))
+            }
+          >
+            :{port.port}
+            {t.ports.length > 1 ? ` +${t.ports.length - 1}` : ""}
+          </button>
         ) : null}
         {setupFailed(t) ? (
           <span className="card-warn" title="The repository's .agentvm/setup.sh failed">
