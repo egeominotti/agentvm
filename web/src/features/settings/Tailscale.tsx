@@ -15,9 +15,11 @@ export function Tailscale({ s, set }: { s: Settings; set: SetSetting }) {
   return (
     <>
       <p className="lede">
-        A VM on your tailnet can be reached from your other devices: a shell over Tailscale SSH, the services it runs.
-        Join from a VM's page with one button, or have every new VM join. Each VM is its own machine on the tailnet and
-        leaves it when it ends; Tailscale's connectivity logs are off.
+        A VM on your tailnet is reachable from your laptop or phone: <code>ssh root@agent-…</code> over Tailscale SSH,
+        the services it runs. To set it up, generate an auth key in Tailscale (Settings › Keys, with Reusable on) and
+        paste it below, or on any VM's page: it stays in this Mac's Keychain. Then a VM joins with one button, or every
+        new VM joins by itself. Each VM is its own machine, <code>agent-&lt;its id&gt;</code>, ephemeral: it leaves the
+        tailnet when it ends. Tailscale's connectivity logs are off.
       </p>
       {key.saved ? (
         <ul className="token-list">

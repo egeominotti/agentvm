@@ -69,7 +69,7 @@ fn a_vm_that_left_the_tailnet_forgets_it() {
     std::fs::write(ws.share().join("tailscale.json"), r#"{"name":"x"}"#).unwrap();
     JobWorkspace::forget_tailnet(&ws.share());
     assert!(!ws.share().join("tailscale-spec.json").exists());
-    assert_eq!(ws.read_tailnet(), None);
+    assert_eq!(JobWorkspace::tailnet_in(&ws.share()), None);
 }
 
 /// What the guest says of the tailnet: joined (its name and addresses) or why not. Anything else
@@ -80,11 +80,11 @@ fn workspace_reads_the_tailnet_the_guest_joined() {
     let tmp = tempfile::tempdir().unwrap();
     let ws = JobWorkspace::create(tmp.path(), &task_id()).unwrap();
     let file = ws.share().join("tailscale.json");
-    assert_eq!(ws.read_tailnet(), None);
+    assert_eq!(JobWorkspace::tailnet_in(&ws.share()), None);
     std::fs::write(&file, r#"{"name":"agentvm-demo-4f94.tail1234.ts.net","ips":["100.64.0.5","fd7a:115c::5"]}"#)
         .unwrap();
     assert_eq!(
-        ws.read_tailnet(),
+        JobWorkspace::tailnet_in(&ws.share()),
         Some(Tailnet {
             name: Some("agentvm-demo-4f94.tail1234.ts.net".into()),
             ips: vec!["100.64.0.5".into(), "fd7a:115c::5".into()],
@@ -92,9 +92,12 @@ fn workspace_reads_the_tailnet_the_guest_joined() {
         })
     );
     std::fs::write(&file, r#"{"error":"invalid key: unable to validate"}"#).unwrap();
-    assert_eq!(ws.read_tailnet().and_then(|t| t.error).as_deref(), Some("invalid key: unable to validate"));
+    assert_eq!(
+        JobWorkspace::tailnet_in(&ws.share()).and_then(|t| t.error).as_deref(),
+        Some("invalid key: unable to validate")
+    );
     std::fs::write(&file, "{torn").unwrap();
-    assert_eq!(ws.read_tailnet(), None);
+    assert_eq!(JobWorkspace::tailnet_in(&ws.share()), None);
 }
 
 #[test]

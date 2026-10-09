@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::ids::TaskId;
+
 /// Whether new VMs join the tailnet, and how.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
@@ -59,15 +61,16 @@ pub struct Tailnet {
     pub error: Option<String>,
 }
 
-/// What a VM named `vm_name` is told to join with.
-pub fn spec_for(vm_name: &str, settings: &TailscaleSettings) -> TailscaleSpec {
-    TailscaleSpec { hostname: tailnet_hostname(vm_name), ssh: settings.ssh, tags: settings.tags.clone() }
+/// What VM `id` is told to join with.
+pub fn spec_for(id: &TaskId, settings: &TailscaleSettings) -> TailscaleSpec {
+    TailscaleSpec { hostname: tailnet_hostname(id), ssh: settings.ssh, tags: settings.tags.clone() }
 }
 
-/// The VM's name on the tailnet (and in MagicDNS): `agentvm-demo-web-4f94`, from its `vm_name`.
-pub fn tailnet_hostname(vm_name: &str) -> String {
-    let name: String = format!("agentvm-{vm_name}").chars().take(63).collect();
-    name.trim_end_matches('-').to_owned()
+/// The VM's name on the tailnet (and in MagicDNS): `agent-<its id>`, a UUIDv7. Unique: two VMs
+/// never collide, Tailscale never renames one "-1", and a VM restored from a snapshot is a
+/// machine of its own.
+pub fn tailnet_hostname(id: &TaskId) -> String {
+    format!("agent-{}", id.as_str())
 }
 
 /// An auth key (`tskey-auth-…`) or an OAuth client secret (`tskey-client-…`, which may carry

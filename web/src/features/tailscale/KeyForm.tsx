@@ -28,8 +28,14 @@ export function KeyForm({ busy, action, onSubmit, error }: Props) {
       <Button type="submit" variant="primary" disabled={busy || !key.trim()}>
         {action}
       </Button>
-      <a className="hint" href={NEW_KEY_URL} target="_blank" rel="noopener">
-        Create a key (reusable, ephemeral)
+      <a
+        className="hint"
+        href={NEW_KEY_URL}
+        target="_blank"
+        rel="noopener"
+        title="In Tailscale: Settings › Keys › Generate auth key, with Reusable on (and Pre-approved if your tailnet approves devices)"
+      >
+        Get a key: Generate auth key, Reusable on
       </a>
       {error ? <span className="err-text">{error}</span> : null}
     </form>

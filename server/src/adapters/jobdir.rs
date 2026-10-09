@@ -198,8 +198,8 @@ impl JobWorkspace {
     }
 
     /// The guest's report on the tailnet (`agentvm-tailscale`): joined, or why not.
-    pub fn read_tailnet(&self) -> Option<crate::domain::tailscale::Tailnet> {
-        let b = guestfs::read(&self.share().join("tailscale.json"), 4096)?;
+    pub fn tailnet_in(share: &Path) -> Option<crate::domain::tailscale::Tailnet> {
+        let b = guestfs::read(&share.join("tailscale.json"), 4096)?;
         serde_json::from_slice(&b).ok()
     }
 

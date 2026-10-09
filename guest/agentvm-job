@@ -22,8 +22,8 @@ finish() {
   if [ ! -s "$JOB/result.json" ] && mountpoint -q "$JOB"; then
     write_result failed -1 0 "guest_error (exit $rc)"
   fi
-  # Off the tailnet first: its node goes at once instead of lingering offline.
-  /usr/local/bin/agentvm-tailscale down
+  # Off the tailnet first: logged out, its node goes instead of lingering offline.
+  /usr/local/bin/agentvm-tailscale off
   sync
   poweroff -f
 }

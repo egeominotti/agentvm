@@ -51,9 +51,7 @@ impl<'a> Ticker<'a> {
             }
             self.ctx.store.record_metrics(self.id, m);
         }
-        if self.record.tailscale {
-            self.ctx.store.set_tailnet(self.id, self.ws.read_tailnet());
-        }
+        crate::app::tailscale::refresh(self.ctx, self.id);
         if let Some(u) = self.ws.read_usage() {
             self.usage.lock().unwrap().record(&u);
             self.ctx.store.set_usage(self.id, u);
@@ -97,7 +95,8 @@ impl<'a> Ticker<'a> {
     fn sync_ports(&self, m: &VmMetrics) {
         let socket = JobWorkspace::pty_socket_of(&self.ctx.config.jobs(), self.id);
         let vm = vm_name(self.record);
-        let ports = self.ctx.forwards.sync(socket, self.id, &vm, self.ctx.config.port, &m.ports);
+        let services = crate::domain::metrics::user_services(&m.ports);
+        let ports = self.ctx.forwards.sync(socket, self.id, &vm, self.ctx.config.port, &services);
         self.ctx.store.set_ports(self.id, ports);
     }
 }

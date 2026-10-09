@@ -98,7 +98,7 @@ async fn prepare(ctx: &AppCtx, id: &TaskId, record: &TaskRecord) -> Result<(JobW
     let token = token?;
     ws.write_token(&token).map_err(|e| format!("token: {e}"))?;
     if record.tailscale {
-        let spec = crate::domain::tailscale::spec_for(&super::proxy::vm_name(record), &ctx.settings.get().tailscale);
+        let spec = crate::domain::tailscale::spec_for(&record.id, &ctx.settings.get().tailscale);
         // A key removed since the launch was asked: the VM boots, and says it could not join.
         JobWorkspace::offer_tailnet(&ws.share(), &spec, tailscale_key.as_ref())
             .map_err(|e| format!("Tailscale: {e}"))?;

@@ -74,3 +74,24 @@ async fn leaving_needs_a_running_terminal() {
     let unknown = TaskId::parse("20261008-185855-4f94").unwrap();
     assert!(matches!(leave(&ctx(home.path()), &unknown).await, Err(TailscaleError::NotFound)));
 }
+
+/// A VM launched without Tailscale and joined from its page: what its guest reports reaches the
+/// dashboard (it used to be read only for VMs that joined at launch).
+#[tokio::test]
+async fn a_vm_joined_after_launch_shows_its_tailnet() {
+    let (home, repo) = (tempfile::tempdir().unwrap(), git_repo());
+    let id = running_task(home.path(), &repo, true);
+    let ctx = ctx(home.path());
+    ctx.store.insert(agentvm::app::store::Store::load(&home.path().join("jobs")).remove(0));
+    let share = agentvm::adapters::jobdir::JobWorkspace::share_of(&home.path().join("jobs"), &id);
+    std::fs::create_dir_all(&share).unwrap();
+    std::fs::write(share.join("tailscale.json"), r#"{"name":"agentvm-x-4f94.tail1.ts.net","ips":["100.64.0.5"]}"#)
+        .unwrap();
+
+    agentvm::app::tailscale::refresh(&ctx, &id);
+    assert_eq!(ctx.store.get(&id).unwrap().tailnet, None, "not asked to join: nothing shown");
+    ctx.store.set_tailscale(&id, true);
+    agentvm::app::tailscale::refresh(&ctx, &id);
+    let tailnet = ctx.store.get(&id).unwrap().tailnet.expect("joined after launch, and shown");
+    assert_eq!(tailnet.name.as_deref(), Some("agentvm-x-4f94.tail1.ts.net"));
+}

@@ -31,16 +31,24 @@ export function TailnetBar({ task }: { task: TaskDto }) {
   if (!task.tailscale) {
     body = key.saved ? (
       <>
-        <span className="hint">Reach and manage this VM from your tailnet (SSH, its ports).</span>
+        <span className="hint" title="It joins as agent-<its id>; it leaves the tailnet when it ends">
+          Reach this VM from your other devices: SSH, the services it runs.
+        </span>
         <Button variant="primary" size="sm" disabled={busy} onClick={() => join.mutate()}>
           Join tailnet
         </Button>
       </>
     ) : key.loaded ? (
-      <KeyForm busy={busy} action="Save and join" onSubmit={(k) => saveAndJoin.mutate(k)} />
+      <>
+        <span className="hint" title="The key is saved in this Mac's Keychain, once, for every VM">
+          Reach this VM from your laptop or phone: paste a Tailscale auth key once.
+        </span>
+        <KeyForm busy={busy} action="Save and join" onSubmit={(k) => saveAndJoin.mutate(k)} />
+      </>
     ) : null;
   } else if (net?.name) {
-    const host = net.name.split(".")[0] ?? net.name;
+    const name = net.name;
+    const host = name.split(".")[0] ?? name;
     const ip = net.ips[0];
     body = (
       <>
@@ -48,25 +56,29 @@ export function TailnetBar({ task }: { task: TaskDto }) {
         <button
           type="button"
           className="port-link"
-          title="Copy its tailnet name"
-          onClick={() => copy(net.name ?? "", net.name ?? "")}
+          title="Its name on your tailnet (click to copy)"
+          onClick={() => copy(name, name)}
         >
-          <b>{host}</b>
-          <span className="addr">{net.name}</span>
+          <span className="addr">{name}</span>
         </button>
         {ip ? (
-          <button type="button" className="port-link" title="Copy its address" onClick={() => copy(ip, ip)}>
+          <button
+            type="button"
+            className="port-link"
+            title="Its tailnet address (click to copy)"
+            onClick={() => copy(ip, ip)}
+          >
             <span className="addr">{ip}</span>
           </button>
         ) : null}
         <button
           type="button"
           className="port-link"
-          title="Copy the SSH command"
+          title={`ssh root@${host} (click to copy): from any device on your tailnet`}
           onClick={() => copy(`ssh root@${host}`, "the SSH command")}
         >
           <Icon name="terminal" />
-          <span className="addr">ssh root@{host}</span>
+          <b>ssh</b>
         </button>
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => leave.mutate()}>
           Leave
@@ -90,7 +102,7 @@ export function TailnetBar({ task }: { task: TaskDto }) {
   } else {
     body = (
       <>
-        <span className="hint">Joining your tailnet…</span>
+        <span className="hint">Joining your tailnet… (a few seconds)</span>
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => leave.mutate()}>
           Leave
         </Button>

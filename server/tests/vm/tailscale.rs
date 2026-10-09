@@ -18,7 +18,7 @@ const BAD_KEY: &str = "tskey-auth-kNotReal1CNTRL-0123456789abcdefNotARealKey";
 async fn tailnet_report(ws: &JobWorkspace) -> agentvm::domain::tailscale::Tailnet {
     let t0 = Instant::now();
     loop {
-        if let Some(t) = ws.read_tailnet() {
+        if let Some(t) = JobWorkspace::tailnet_in(&ws.share()) {
             return t;
         }
         assert!(t0.elapsed() < Duration::from_secs(120), "the VM never said how joining went");
@@ -105,13 +105,13 @@ async fn a_running_vm_joins_and_leaves_when_asked() {
     while !shell(&sock, "echo ready-$((1+1))").await.contains("ready-2") {
         assert!(t0.elapsed() < Duration::from_secs(60), "the terminal never came up");
     }
-    assert_eq!(ws.read_tailnet(), None, "nothing asked, nothing tried");
+    assert_eq!(JobWorkspace::tailnet_in(&ws.share()), None, "nothing asked, nothing tried");
 
     let spec = TailscaleSpec { hostname: "agentvm-test-0001".into(), ssh: true, tags: vec![] };
     JobWorkspace::offer_tailnet(&ws.share(), &spec, Some(&Secret::new(BAD_KEY.into()))).unwrap();
     agentvm::adapters::jobdir::write_request(&ws.share(), "tailscale-up.request", "j1").unwrap();
     let report = tailnet_report(&ws).await;
-    assert!(report.error.is_some_and(|e| !e.contains("NotARealKey")), "{:?}", ws.read_tailnet());
+    assert!(report.error.is_some_and(|e| !e.contains("NotARealKey")), "{:?}", JobWorkspace::tailnet_in(&ws.share()));
     assert!(ws.share().join("tailscale-up.started").exists(), "the guest did not answer the request");
 
     agentvm::adapters::jobdir::write_request(&ws.share(), "tailscale-down.request", "j2").unwrap();
@@ -120,8 +120,9 @@ async fn a_running_vm_joins_and_leaves_when_asked() {
         assert!(t0.elapsed() < Duration::from_secs(30), "the guest never left the tailnet");
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
-    let out = shell(&sock, "systemctl is-active tailscaled").await;
-    assert!(out.contains("inactive") || out.contains("failed"), "tailscaled still running: {out:?}");
+    // Left: not connected (its identity stays in memory, for an instant join again).
+    let out = shell(&sock, "echo STATE=$(tailscale status --json 2>/dev/null | jq -r .BackendState)").await;
+    assert!(out.contains("STATE=") && !out.contains("STATE=Running"), "still on the tailnet: {out:?}");
 
     agentvm::adapters::jobdir::write_request(&ws.share(), "close.request", "t1").unwrap();
     let _ = tokio::time::timeout(Duration::from_secs(30), vm.wait()).await;

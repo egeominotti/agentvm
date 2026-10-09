@@ -99,7 +99,7 @@
 .port-link .moved { font-size: var(--fs-2xs); color: var(--ink-3); }
 .tailnet-bar { flex-shrink: 0; display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 14px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
 .tailnet-bar .ports-label { display: inline-flex; align-items: center; gap: 6px; }
-.tailnet-bar > .live { width: 6px; height: 6px; border-radius: 50%; background: var(--done); box-shadow: 0 0 0 3px color-mix(in srgb, var(--done) 18%, transparent); }
+.tailnet-bar > .live { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--done); box-shadow: 0 0 0 3px color-mix(in srgb, var(--done) 18%, transparent); }
 .tailnet-bar .hint { white-space: nowrap; }
 .tailnet-bar .ts-key { flex: 1; align-items: center; }
 .tailnet-bar .ts-key .text-input { max-width: 340px; }

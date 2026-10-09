@@ -25,3 +25,13 @@ fn agent_usage_parses_the_status_line_copy() {
     let empty: AgentUsage = serde_json::from_str("{}").unwrap();
     assert_eq!(empty.output_tokens, 0);
 }
+
+/// What the VM's own system listens on (Tailscale's peer API, its web client) is not a service of
+/// the user's to open on the Mac.
+#[test]
+fn the_systems_own_ports_are_not_the_users_services() {
+    use agentvm::domain::metrics::{ListeningPort, user_services};
+    let port = |port, name: &str| ListeningPort { port, name: name.into() };
+    let listening = [port(3000, "node"), port(42228, "tailscaled"), port(5432, "postgres"), port(49771, "tailscaled")];
+    assert_eq!(user_services(&listening), [port(3000, "node"), port(5432, "postgres")]);
+}

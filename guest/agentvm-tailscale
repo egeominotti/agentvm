@@ -4,7 +4,9 @@
 # /mnt/job/tailscale.json for the dashboard: {"name","ips"} once joined, {"error"} if not.
 #
 #   agentvm-tailscale up     join (in the background of the job: never delays the terminal)
-#   agentvm-tailscale down   leave (the VM shuts down: its node goes from the tailnet at once)
+#   agentvm-tailscale down   leave from the VM's page: offline at once, its identity kept in
+#                            memory, so joining again is instant, under the same name
+#   agentvm-tailscale off    the VM shuts down: logged out, the (ephemeral) node is removed
 #
 # Never `set -x`: the auth key passes through this script. It arrives once in the job folder, is
 # moved to a root-only file in /run and deleted after use; tailscale reads it from that file, so it
@@ -37,12 +39,36 @@ case "${1:-}" in
     (umask 077; cat "$JOB/.tailscale-key" > "$KEY")
     rm -f "$JOB/.tailscale-key"
     NAME=$(jq -r '.hostname' "$SPEC")
+    report() {
+      local status
+      status=$(tailscale status --json 2>/dev/null) || fail "joined, but tailscale status failed"
+      publish "$(printf '%s' "$status" | jq -c '{name: (.Self.DNSName | rtrimstr(".")), ips: .Self.TailscaleIPs}')"
+      echo "[$(cut -d' ' -f1 /proc/uptime)s] tailscale joined as $NAME" >> "$JOB/job.log"
+    }
     args=(--auth-key="file:$KEY" --hostname="$NAME" --accept-dns=false)
     [ "$(jq -r '.ssh' "$SPEC")" = true ] && args+=(--ssh)
     TAGS=$(jq -r '.tags | join(",")' "$SPEC")
     [ -n "$TAGS" ] && args+=(--advertise-tags="$TAGS")
-    # A new node at every join: a VM restored from a snapshot must not take its original's place.
+    # This VM is a node already (asked again, or back after leaving): the same node comes up,
+    # with its name, no new one beside it.
+    if systemctl is-active --quiet tailscaled \
+      && tailscale status --json 2>/dev/null | jq -e '.BackendState == "Running" or .BackendState == "Stopped"' >/dev/null; then
+      rm -f "$KEY"
+      again=()
+      for a in "${args[@]}"; do case "$a" in --auth-key=*) ;; *) again+=("$a") ;; esac; done
+      said=$(timeout 60 tailscale up "${again[@]}" 2>&1) || fail "${said:-tailscale up timed out}"
+      report
+      exit 0
+    fi
     systemctl stop tailscaled 2>/dev/null
+    # An ephemeral node, whatever the key: its state lives in memory only (no identity on the
+    # disk, so a snapshot never carries one), and the node is removed from the tailnet when the VM
+    # goes. A new node at every join.
+    install -d /etc/systemd/system/tailscaled.service.d
+    printf '%s\n' '[Service]' 'ExecStart=' \
+      'ExecStart=/usr/sbin/tailscaled --state=mem: --statedir=/run/agentvm/tailscale --socket=/run/tailscale/tailscaled.sock --port=${PORT} $FLAGS' \
+      > /etc/systemd/system/tailscaled.service.d/agentvm.conf
+    systemctl daemon-reload
     rm -rf /var/lib/tailscale
     # No connectivity logs to Tailscale (Tailscale's own guide: "Disable logging").
     grep -qs '^TS_NO_LOGS_NO_SUPPORT=true' /etc/default/tailscaled || echo 'TS_NO_LOGS_NO_SUPPORT=true' >> /etc/default/tailscaled
@@ -50,17 +76,19 @@ case "${1:-}" in
     systemctl start tailscaled || fail "tailscaled did not start"
     said=$(timeout 90 tailscale up "${args[@]}" 2>&1) || fail "${said:-tailscale up timed out}"
     rm -f "$KEY"
-    status=$(tailscale status --json 2>/dev/null) || fail "joined, but tailscale status failed"
-    publish "$(printf '%s' "$status" | jq -c '{name: (.Self.DNSName | rtrimstr(".")), ips: .Self.TailscaleIPs}')"
-    echo "[$(cut -d' ' -f1 /proc/uptime)s] tailscale joined as $NAME" >> "$JOB/job.log"
+    report
     ;;
   down)
+    if systemctl is-active --quiet tailscaled; then timeout 10 tailscale down >/dev/null 2>&1; fi
+    rm -f "$KEY"
+    ;;
+  off)
     if systemctl is-active --quiet tailscaled; then timeout 10 tailscale logout >/dev/null 2>&1; fi
     systemctl stop tailscaled 2>/dev/null
     rm -f "$KEY"
     ;;
   *)
-    echo "usage: agentvm-tailscale up|down" >&2
+    echo "usage: agentvm-tailscale up|down|off" >&2
     exit 2
     ;;
 esac

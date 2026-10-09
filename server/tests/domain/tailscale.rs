@@ -1,13 +1,16 @@
 //! Tailscale: the names VMs take on the tailnet, the keys and tags agentvm accepts.
 
+use agentvm::domain::ids::TaskId;
 use agentvm::domain::tailscale::{self, TailscaleSettings};
 
+/// Every VM is `agent-<its id>`, a UUIDv7: unique, so two VMs never collide on the tailnet (nor
+/// does Tailscale rename one "-1"), and a VM restored from a snapshot is a machine of its own.
 #[test]
-fn a_vm_joins_the_tailnet_under_its_own_name() {
-    assert_eq!(tailscale::tailnet_hostname("demo-web-4f94"), "agentvm-demo-web-4f94");
-    // Always a valid DNS label, whatever the VM's name.
-    let long = tailscale::tailnet_hostname(&"x".repeat(100));
-    assert!(long.len() <= 63 && !long.ends_with('-'), "{long}");
+fn a_vm_joins_the_tailnet_under_its_own_unique_name() {
+    let id = TaskId::parse("01a12130-a1d9-70bb-a1f6-54136ef18b6a").unwrap();
+    let name = tailscale::tailnet_hostname(&id);
+    assert_eq!(name, "agent-01a12130-a1d9-70bb-a1f6-54136ef18b6a");
+    assert!(name.len() <= 63 && name.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-'));
 }
 
 #[test]
@@ -50,11 +53,14 @@ fn off_until_asked_and_with_ssh_once_on() {
 #[test]
 fn a_joining_vm_is_told_its_name_and_options() {
     let settings = TailscaleSettings { enabled: true, ssh: false, tags: vec!["tag:agentvm".into()] };
-    let spec = tailscale::spec_for("demo-web-4f94", &settings);
-    assert_eq!(spec.hostname, "agentvm-demo-web-4f94");
+    let spec = tailscale::spec_for(&TaskId::parse("01a12130-a1d9-70bb-a1f6-54136ef18b6a").unwrap(), &settings);
+    assert_eq!(spec.hostname, "agent-01a12130-a1d9-70bb-a1f6-54136ef18b6a");
     assert!(!spec.ssh);
     assert_eq!(spec.tags, ["tag:agentvm"]);
     // The guest reads these three keys with jq.
     let json = serde_json::to_value(&spec).unwrap();
-    assert_eq!(json, serde_json::json!({"hostname": "agentvm-demo-web-4f94", "ssh": false, "tags": ["tag:agentvm"]}));
+    assert_eq!(
+        json,
+        serde_json::json!({"hostname": "agent-01a12130-a1d9-70bb-a1f6-54136ef18b6a", "ssh": false, "tags": ["tag:agentvm"]})
+    );
 }

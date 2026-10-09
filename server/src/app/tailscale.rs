@@ -64,7 +64,7 @@ pub async fn join(ctx: &AppCtx, id: &TaskId) -> Result<(), TailscaleError> {
         .ok_or(TailscaleError::NoKey)?;
     let jobs = ctx.config.jobs();
     let share = JobWorkspace::share_of(&jobs, id);
-    let spec = crate::domain::tailscale::spec_for(&super::proxy::vm_name(&record), &ctx.settings.get().tailscale);
+    let spec = crate::domain::tailscale::spec_for(&record.id, &ctx.settings.get().tailscale);
     JobWorkspace::offer_tailnet(&share, &spec, Some(&key))?;
     ctx.store.set_tailscale(id, true);
     ask(ctx, id, "tailscale-up", "tailscale-up.started", START_TIMEOUT).await
@@ -77,6 +77,15 @@ pub async fn leave(ctx: &AppCtx, id: &TaskId) -> Result<(), TailscaleError> {
     JobWorkspace::forget_tailnet(&JobWorkspace::share_of(&ctx.config.jobs(), id));
     ctx.store.set_tailscale(id, false);
     Ok(())
+}
+
+/// Publishes what the guest says of the tailnet, for a VM asked to join: at launch, or since from
+/// its page (so the live record decides, not the one the VM was launched with).
+pub fn refresh(ctx: &AppCtx, id: &TaskId) {
+    if ctx.store.get(id).is_some_and(|r| r.tailscale) {
+        let share = JobWorkspace::share_of(&ctx.config.jobs(), id);
+        ctx.store.set_tailnet(id, JobWorkspace::tailnet_in(&share));
+    }
 }
 
 fn running_terminal(ctx: &AppCtx, id: &TaskId) -> Result<super::record::TaskRecord, TailscaleError> {

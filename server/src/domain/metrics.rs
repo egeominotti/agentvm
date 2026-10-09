@@ -41,6 +41,15 @@ pub struct ListeningPort {
     pub name: String,
 }
 
+/// Processes of the VM's own system whose ports are not services of the user's (Tailscale listens
+/// on random ports for its peer API).
+const SYSTEM_LISTENERS: &[&str] = &["tailscaled"];
+
+/// The ports to open on the Mac: those of the user's services, not the system's.
+pub fn user_services(listening: &[ListeningPort]) -> Vec<ListeningPort> {
+    listening.iter().filter(|l| !SYSTEM_LISTENERS.contains(&l.name.as_str())).cloned().collect()
+}
+
 /// A VM port reachable from the Mac on `127.0.0.1:host_port`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
