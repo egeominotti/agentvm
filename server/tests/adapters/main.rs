@@ -8,6 +8,7 @@ mod guest_files;
 mod guest_save;
 mod helpers;
 mod jsonl;
+mod kernel;
 mod lock;
 mod private_git;
 mod process;

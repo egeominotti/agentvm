@@ -48,6 +48,11 @@ impl Config {
         self.home.join("golden/disk.raw")
     }
 
+    /// The kernel built with the golden image, kept beside it (see `adapters::kernel`).
+    pub fn golden_kernel(&self) -> PathBuf {
+        self.home.join("golden/boot")
+    }
+
     pub fn jobs(&self) -> PathBuf {
         self.home.join("jobs")
     }

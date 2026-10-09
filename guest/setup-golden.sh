@@ -61,7 +61,8 @@ systemctl mask apt-daily.timer apt-daily-upgrade.timer man-db.timer e2scrub_all.
 sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub
 # The kernel's warnings and errors (a panic, out of memory, disk errors) go to the console the
 # host keeps in console.log: a VM that freezes says why. Not tty0, which nobody records.
-sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="console=hvc0 loglevel=4"/' /etc/default/grub
+CMDLINE="console=hvc0 loglevel=4"
+sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"$CMDLINE\"/" /etc/default/grub
 grep -q '^GRUB_TIMEOUT_STYLE' /etc/default/grub || echo 'GRUB_TIMEOUT_STYLE=hidden' >> /etc/default/grub
 update-grub
 # /boot/efi is read by the firmware and GRUB before Linux starts, never after: checking its FAT
@@ -86,4 +87,12 @@ truncate -s 0 /etc/machine-id
 # Keep the machine id transient (new each boot): restored snapshots must not share DHCP leases.
 systemctl mask systemd-machine-id-commit.service
 rm -f /var/lib/dbus/machine-id /var/lib/systemd/network/* 2>/dev/null || true
+
+# The kernel GRUB would boot (the newest), its initrd and GRUB's command line, for the host: it
+# boots every clone straight into them, without the firmware and GRUB (~0.7 s of every launch).
+KVER=$(find /boot -name 'vmlinuz-*' | sed 's|^/boot/vmlinuz-||' | sort -V | tail -1)
+install -d "$SRC/boot"
+cp "/boot/vmlinuz-$KVER" "$SRC/boot/vmlinuz"
+cp "/boot/initrd.img-$KVER" "$SRC/boot/initrd.img"
+echo "root=PARTUUID=$(findmnt -no PARTUUID /) ro $CMDLINE" > "$SRC/boot/cmdline"
 echo GOLDEN_OK

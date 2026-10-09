@@ -35,6 +35,17 @@ pub struct VmConfig {
     pub pty_socket: Option<PathBuf>,
     /// File holding the memory (MB) the VM may keep; the helper follows it with the balloon.
     pub balloon: Option<PathBuf>,
+    /// Booted straight into this kernel; without it, through EFI and GRUB from the disk.
+    #[serde(flatten)]
+    pub direct: Option<DirectBoot>,
+}
+
+/// A kernel, its initial ramdisk and its command line: the VM skips the firmware and GRUB.
+#[derive(Debug, Clone, Serialize)]
+pub struct DirectBoot {
+    pub kernel: PathBuf,
+    pub initrd: PathBuf,
+    pub cmdline: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]

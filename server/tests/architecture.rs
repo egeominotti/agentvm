@@ -49,6 +49,7 @@ fn adapters_do_not_know_each_other_or_outer_layers() {
             "git",
             "host",
             "jobdir",
+            "kernel",
             "keychain",
             "lock",
             "orphans",

@@ -31,12 +31,15 @@ impl Drop for Server {
     }
 }
 
-/// Each test server has its own AGENTVM_HOME (with the golden image linked), never the user's.
+/// Each test server has its own AGENTVM_HOME (with the golden image and its kernel linked), never
+/// the user's.
 pub(crate) fn test_home() -> tempfile::TempDir {
     let home = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(home.path().join("golden")).unwrap();
-    let golden = PathBuf::from(std::env::var("HOME").unwrap()).join("AgentVMs/golden/disk.raw");
-    std::os::unix::fs::symlink(golden, home.path().join("golden/disk.raw")).unwrap();
+    let golden = PathBuf::from(std::env::var("HOME").unwrap()).join("AgentVMs/golden");
+    for name in ["disk.raw", "boot"] {
+        std::os::unix::fs::symlink(golden.join(name), home.path().join("golden").join(name)).unwrap();
+    }
     home
 }
 

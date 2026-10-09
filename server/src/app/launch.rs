@@ -8,7 +8,9 @@ use super::context::AppCtx;
 use super::record::TaskRecord;
 use super::supervise::supervise;
 use crate::adapters::jobdir::JobWorkspace;
-use crate::adapters::vm::{VmConfig, VmProcess};
+use crate::adapters::kernel::{GoldenKernel, disk_identity};
+use crate::adapters::vm::{DirectBoot, VmConfig, VmProcess};
+use crate::domain::boot::{boots_directly, kernel_cmdline};
 use crate::domain::ids::TaskId;
 use crate::domain::outcome::Final;
 use crate::domain::spec::TaskSpec;
@@ -42,7 +44,7 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
     let apply = |e| ctx.store.apply(id, e).map(drop).map_err(|e| e.to_string());
     apply(TaskEvent::SlotAcquired)?;
     let record = ctx.store.get(id).ok_or("task disappeared")?;
-    let (ws, token) = prepare(ctx, id, &record).await?;
+    let (ws, token, direct) = prepare(ctx, id, &record).await?;
     apply(TaskEvent::Prepared)?;
 
     let stop_requested_early = ctx.store.stop_signal(id).is_some_and(|s| *s.borrow());
@@ -51,8 +53,9 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
         return apply(TaskEvent::Finished(Final::Stopped, id.branch()));
     }
 
-    let mut vm = VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &vm_config(&record, &ws), &ws.events())
-        .map_err(|e| e.to_string())?;
+    let config = vm_config(&record, &ws, direct);
+    let mut vm =
+        VmProcess::spawn(&ctx.config.vm_helper, &ws.config_path(), &config, &ws.events()).map_err(|e| e.to_string())?;
     // Without its pid on disk a restart could not find this VM again: it would run unsupervised.
     if let Err(e) = ws.write_pid(vm.pid()) {
         vm.kill();
@@ -65,7 +68,11 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
 /// Fills the job folder with everything the VM boots from: repository, task spec, token, disk.
 /// The repository, the token and the disk do not depend on each other: they are prepared at once,
 /// the first two on blocking threads while the disk is cloned.
-async fn prepare(ctx: &AppCtx, id: &TaskId, record: &TaskRecord) -> Result<(JobWorkspace, Secret), String> {
+async fn prepare(
+    ctx: &AppCtx,
+    id: &TaskId,
+    record: &TaskRecord,
+) -> Result<(JobWorkspace, Secret, Option<DirectBoot>), String> {
     let timeout_s = ctx.settings.get().timeout_s;
     let ws = JobWorkspace::create(&ctx.config.jobs(), id).map_err(|e| format!("job directory: {e}"))?;
     let t = Instant::now();
@@ -94,7 +101,7 @@ async fn prepare(ctx: &AppCtx, id: &TaskId, record: &TaskRecord) -> Result<(JobW
         let how = if shared { "shared" } else { "packed" };
         ctx.store.push_boot(id, format!("host: repository {how} in {} ms", took.as_millis()));
     }
-    disk?;
+    let direct = disk?;
     let token = token?;
     ws.write_token(&token).map_err(|e| format!("token: {e}"))?;
     if record.tailscale {
@@ -103,8 +110,9 @@ async fn prepare(ctx: &AppCtx, id: &TaskId, record: &TaskRecord) -> Result<(JobW
         JobWorkspace::offer_tailnet(&ws.share(), &spec, tailscale_key.as_ref())
             .map_err(|e| format!("Tailscale: {e}"))?;
     }
-    ctx.store.push_boot(id, format!("host: disk ready in {} ms", t.elapsed().as_millis()));
-    Ok((ws, token))
+    let how = if direct.is_some() { ", booting straight into its kernel" } else { "" };
+    ctx.store.push_boot(id, format!("host: disk ready in {} ms{how}", t.elapsed().as_millis()));
+    Ok((ws, token, direct))
 }
 
 /// Puts the repository bundle in the job folder, on a blocking thread (packing a large repository
@@ -122,20 +130,43 @@ fn pack_repo(
     })
 }
 
-/// The VM's disk: the snapshot's it is restored from (written back from its chunks), or a clone
-/// of the golden image.
-async fn install_disk(ctx: &AppCtx, record: &TaskRecord, ws: &JobWorkspace) -> Result<(), String> {
-    match &record.restore_from {
+/// The VM's disk: the snapshot's it is restored from (written back from its chunks, booted
+/// through EFI with the kernel on it), or a clone of the golden image, booted straight into the
+/// kernel kept beside the image when that kernel was built with this very disk.
+async fn install_disk(ctx: &AppCtx, record: &TaskRecord, ws: &JobWorkspace) -> Result<Option<DirectBoot>, String> {
+    let direct = match &record.restore_from {
         Some(snap) => {
             super::snapshot_disks::restore_disk(ctx, snap, ws.disk())
                 .await
                 .map_err(|e| format!("snapshot disk: {e}"))?;
             ws.copy_efivars(&ctx.snapshots.efivars(snap)).map_err(|e| format!("snapshot EFI variables: {e}"))?;
+            None
         }
-        None => ws.clone_disk(&ctx.config.golden()).map_err(|e| format!("disk clone: {e}"))?,
-    }
+        None => {
+            let golden = ctx.config.golden();
+            let before = disk_identity(&golden).unwrap_or_default();
+            ws.clone_disk(&golden).map_err(|e| format!("disk clone: {e}"))?;
+            direct_boot(ctx, ws, &before)
+        }
+    };
     // Never boot through a link: the VM would write into the image it points to.
-    ws.check_own_disk().map_err(|e| e.to_string())
+    ws.check_own_disk().map_err(|e| e.to_string())?;
+    Ok(direct)
+}
+
+/// The golden image's kernel, copied beside the clone, if it was built with the disk just cloned
+/// (`before` names the image as it was just before the clone). Anything amiss and the VM boots
+/// through EFI and GRUB, as it did before kernels were kept beside the image.
+fn direct_boot(ctx: &AppCtx, ws: &JobWorkspace, before: &str) -> Option<DirectBoot> {
+    let golden = GoldenKernel::new(ctx.config.golden_kernel());
+    let after = disk_identity(&ctx.config.golden()).ok()?;
+    if !boots_directly(golden.stamp().as_deref(), before, &after) {
+        return None;
+    }
+    let cmdline = kernel_cmdline(&golden.cmdline()?)?;
+    let files =
+        golden.copy_into(ws.dir()).inspect_err(|e| tracing::warn!(error = %e, "kernel copy failed: EFI boot")).ok()?;
+    Some(DirectBoot { kernel: files.kernel, initrd: files.initrd, cmdline })
 }
 
 /// What the guest job reads from `task.json`.
@@ -153,7 +184,7 @@ fn task_spec(id: &TaskId, record: &TaskRecord, timeout_s: u64) -> TaskSpec {
     }
 }
 
-fn vm_config(record: &TaskRecord, ws: &JobWorkspace) -> VmConfig {
+fn vm_config(record: &TaskRecord, ws: &JobWorkspace, direct: Option<DirectBoot>) -> VmConfig {
     VmConfig {
         disk: ws.disk(),
         efivars: ws.efivars(),
@@ -164,5 +195,6 @@ fn vm_config(record: &TaskRecord, ws: &JobWorkspace) -> VmConfig {
         seed_iso: None,
         pty_socket: record.interactive.then(|| ws.pty_socket()),
         balloon: Some(ws.balloon()),
+        direct,
     }
 }

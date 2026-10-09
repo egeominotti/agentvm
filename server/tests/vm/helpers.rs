@@ -11,7 +11,7 @@ pub(crate) fn helper() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../bin/agentvm-vm")
 }
 
-fn golden() -> PathBuf {
+pub(crate) fn golden() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap()).join("AgentVMs/golden/disk.raw")
 }
 
@@ -49,6 +49,7 @@ pub(crate) fn config(ws: &JobWorkspace) -> VmConfig {
         seed_iso: None,
         pty_socket: None,
         balloon: None,
+        direct: None,
     }
 }
 

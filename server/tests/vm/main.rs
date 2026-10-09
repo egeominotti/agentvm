@@ -1,6 +1,7 @@
 //! Real VMs: require `scripts/build.sh` and `scripts/build-golden.sh`.
 //! Run with `cargo test --test vm -- --ignored`.
 
+mod direct_boot;
 mod helpers;
 mod lifecycle;
 mod resources;

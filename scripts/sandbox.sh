@@ -31,6 +31,8 @@ PORT=${1:-7790}
 [ -f "$GOLDEN" ] || { echo "no VM image at $GOLDEN: run ./quickstart once" >&2; exit 1; }
 mkdir -p "$SANDBOX/golden" "$SANDBOX/logs"
 ln -sf "$GOLDEN" "$SANDBOX/golden/disk.raw"
+# The kernel kept beside it: the sandbox boots its VMs straight into it, as the real agentvm.
+ln -sfn "$(dirname "$GOLDEN")/boot" "$SANDBOX/golden/boot"
 echo "$PORT" > "$SANDBOX/port"
 scripts/build.sh >/dev/null
 pid=$(server_on "$PORT")

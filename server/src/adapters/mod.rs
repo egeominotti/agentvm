@@ -5,6 +5,7 @@ pub mod forward;
 pub mod git;
 pub mod host;
 pub mod jobdir;
+pub mod kernel;
 pub mod keychain;
 pub mod lock;
 pub mod orphans;

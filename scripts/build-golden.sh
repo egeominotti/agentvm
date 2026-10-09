@@ -51,5 +51,48 @@ echo "preparing the golden image (installing packages and Claude Code in the VM)
 "$HELPER" --config "$BUILD/vm.json"
 
 grep -q GOLDEN_OK "$BUILD/share/setup.log" || { echo "setup failed, see $BUILD/share/setup.log" >&2; exit 1; }
+for f in vmlinuz initrd.img cmdline; do
+  [ -s "$BUILD/share/boot/$f" ] || { echo "setup left no $f in share/boot" >&2; exit 1; }
+done
+
+# A clone boots straight into the kernel once, before any VM does: with nothing to do, the guest's
+# job writes its result in the shared folder and powers off. A result there means the initrd found
+# the disk and the kernel its modules (virtiofs). Otherwise the image goes without a kernel beside
+# it, and VMs boot through EFI and GRUB as they always did.
+direct_boot_works() {
+  local check=$BUILD/check boot=$BUILD/share/boot pid ok=1
+  rm -rf "$check"
+  mkdir -p "$check/share"
+  chmod 777 "$check/share"
+  cp -c "$BUILD/disk.raw" "$check/disk.raw"
+  cat > "$check/vm.json" <<JSON
+{"disk":"$check/disk.raw","efivars":"$check/efivars","share":"$check/share",
+ "console":"$check/console.log","cpus":2,"memory_mb":2048,
+ "kernel":"$boot/vmlinuz","initrd":"$boot/initrd.img","cmdline":"$(cat "$boot/cmdline")"}
+JSON
+  "$HELPER" --config "$check/vm.json" >/dev/null 2>&1 &
+  pid=$!
+  for _ in $(seq 1 600); do
+    [ -s "$check/share/result.json" ] && { ok=0; break; }
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill "$pid" 2>/dev/null
+  wait "$pid" 2>/dev/null
+  rm -rf "$check"
+  return $ok
+}
+DIRECT=1
+direct_boot_works || { DIRECT=0; echo "a clone did not boot straight into the kernel: VMs boot through EFI" >&2; }
+
+# The image's kernel goes beside it with the identity of the disk it was built with. The old
+# kernel goes first: a VM launched meanwhile boots through EFI, never a kernel with a disk whose
+# modules are not its own.
+rm -rf "$GOLDEN/boot"
 mv "$BUILD/disk.raw" "$GOLDEN/disk.raw"
+if [ "$DIRECT" = 1 ]; then
+  mv "$BUILD/share/boot" "$BUILD/boot"
+  stat -L -f '%i %m' "$GOLDEN/disk.raw" > "$BUILD/boot/disk-id"
+  mv "$BUILD/boot" "$GOLDEN/boot"
+fi
 echo "GOLDEN_OK: $GOLDEN/disk.raw"

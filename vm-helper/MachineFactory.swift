@@ -9,7 +9,7 @@ enum MachineFactory {
     static func make(_ c: VMConfig) throws -> VZVirtualMachineConfiguration {
         let cfg = VZVirtualMachineConfiguration()
         cfg.platform = VZGenericPlatformConfiguration()
-        cfg.bootLoader = try bootLoader(efivars: c.efivars)
+        cfg.bootLoader = try bootLoader(c)
         cfg.cpuCount = c.cpus
         cfg.memorySize = c.memoryMB << 20
         cfg.storageDevices = try storage(c)
@@ -23,7 +23,19 @@ enum MachineFactory {
         return cfg
     }
 
-    private static func bootLoader(efivars: URL) throws -> VZEFIBootLoader {
+    /// Straight into the kernel when the server gives one (no firmware, no GRUB: ~0.7 s sooner),
+    /// else through EFI. The EFI variables are there either way: a snapshot keeps them, and a VM
+    /// restored from it boots through EFI from its own disk, whose kernel may be another.
+    private static func bootLoader(_ c: VMConfig) throws -> VZBootLoader {
+        let efi = try efiBootLoader(efivars: c.efivars)
+        guard let kernel = c.kernel else { return efi }
+        let linux = VZLinuxBootLoader(kernelURL: kernel)
+        linux.initialRamdiskURL = c.initrd
+        linux.commandLine = c.cmdline ?? ""
+        return linux
+    }
+
+    private static func efiBootLoader(efivars: URL) throws -> VZEFIBootLoader {
         let boot = VZEFIBootLoader()
         boot.variableStore = FileManager.default.fileExists(atPath: efivars.path)
             ? VZEFIVariableStore(url: efivars)

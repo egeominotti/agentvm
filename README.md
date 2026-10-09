@@ -19,7 +19,7 @@ Run Claude Code agents in parallel on your Mac, each in its own disposable Debia
 </div>
 
 agentvm gives every Claude Code agent its own Debian 13 virtual machine on Apple's
-Virtualization.framework, ready about 2 seconds after you press **New VM**. Inside, Claude runs as
+Virtualization.framework, ready about 1.5 seconds after you press **New VM**. Inside, Claude runs as
 root with every permission: it can install packages, start servers and break things without
 touching your files or your checkout. You watch and drive every VM from a dashboard at
 `http://127.0.0.1:7777`. When the work is done, it comes back to your repository as commits on an
@@ -41,8 +41,9 @@ account** and press **New VM**. Needs a Mac with Apple silicon, Xcode Command Li
 
 ## Highlights
 
-- **Ready in ~2 s.** Each VM boots from a copy-on-write clone of a prebuilt image, so a new machine
-  costs milliseconds of disk work and about a second of Linux boot.
+- **Ready in ~1.5 s.** Each VM boots from a copy-on-write clone of a prebuilt image, straight into
+  its kernel (no firmware, no GRUB), so a new machine costs milliseconds of disk work and about a
+  second of Linux boot.
 - **Claude unrestricted, your files out of reach.** Claude Code runs as root with
   `--dangerously-skip-permissions`. The VM sees only its own job folder; your checkout never enters
   it.
@@ -258,8 +259,10 @@ flowchart LR
 - **Golden image.** `scripts/build-golden.sh` turns Debian's official
   `debian-13-genericcloud-arm64` image into a ready machine: Claude Code, git, build tools, Python,
   Node, Chromium, tmux, zsh, Tailscale (off until a VM joins). Each VM starts from an APFS
-  `clonefile` of it. The scripts that run in the guest come from the server at every launch, so
-  most upgrades need no new image.
+  `clonefile` of it and boots straight into the kernel and initrd kept beside the image, skipping
+  the firmware and GRUB (a VM restored from a snapshot boots through EFI, with the kernel on its own
+  disk). The scripts that run in the guest come from the server at every launch, so most upgrades
+  need no new image.
 - **One process per VM.** A small Swift helper owns a single VM and writes its events to a file,
   so a crashing VM never takes the server down and the server can restart without stopping VMs.
 - **No network between Mac and VM for control.** The repository goes in and comes back as a
@@ -278,7 +281,7 @@ Measured on an M5 Max (18 cores, 64 GB):
 
 | | |
 |---|---|
-| New VM → terminal ready | 2.0 s |
+| New VM → terminal ready | 1.6 s |
 | Debian boot inside it | 1.05 s |
 | Keystroke → echo, through the server and the VM | ~2 ms in zsh, 0.8 ms with `cat` |
 | 20 MB colored log in the terminal (Chrome) | 105 ms with restty, 226 ms with xterm.js |

@@ -14,13 +14,17 @@ struct VMConfig: Decodable {
     let ptySocket: URL?
     /// File with the memory (MB) the VM may keep; followed with the memory balloon.
     let balloon: URL?
+    /// Booted straight into this kernel, with its initrd and command line, skipping EFI and GRUB.
+    let kernel: URL?
+    let initrd: URL?
+    let cmdline: String?
 
     enum CodingKeys: String, CodingKey {
         case disk, efivars, share, console, cpus
         case memoryMB = "memory_mb"
         case seedISO = "seed_iso"
         case ptySocket = "pty_socket"
-        case balloon
+        case balloon, kernel, initrd, cmdline
     }
 
     init(from decoder: Decoder) throws {
@@ -35,6 +39,9 @@ struct VMConfig: Decodable {
         seedISO = try c.decodeIfPresent(String.self, forKey: .seedISO).map { URL(fileURLWithPath: $0) }
         ptySocket = try c.decodeIfPresent(String.self, forKey: .ptySocket).map { URL(fileURLWithPath: $0) }
         balloon = try c.decodeIfPresent(String.self, forKey: .balloon).map { URL(fileURLWithPath: $0) }
+        kernel = try c.decodeIfPresent(String.self, forKey: .kernel).map { URL(fileURLWithPath: $0) }
+        initrd = try c.decodeIfPresent(String.self, forKey: .initrd).map { URL(fileURLWithPath: $0) }
+        cmdline = try c.decodeIfPresent(String.self, forKey: .cmdline)
     }
 
     static func load(_ path: String) throws -> VMConfig {
@@ -52,6 +59,12 @@ struct VMConfig: Decodable {
             throw ConfigError("shared directory missing: \(share.path)")
         }
         if let seed = seedISO, !fm.fileExists(atPath: seed.path) { throw ConfigError("seed ISO missing: \(seed.path)") }
+        if let kernel {
+            guard let initrd, cmdline != nil else { throw ConfigError("a kernel needs its initrd and command line") }
+            for file in [kernel, initrd] where !fm.fileExists(atPath: file.path) {
+                throw ConfigError("boot file missing: \(file.path)")
+            }
+        }
         let cpuRange = VZVirtualMachineConfiguration.minimumAllowedCPUCount...VZVirtualMachineConfiguration.maximumAllowedCPUCount
         guard cpuRange.contains(cpus) else { throw ConfigError("cpus out of range \(cpuRange): \(cpus)") }
         let mem = memoryMB << 20

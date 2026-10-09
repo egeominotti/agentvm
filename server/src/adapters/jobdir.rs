@@ -37,7 +37,7 @@ const RUNTIME: &[(&str, &str)] = &[
 const SMALL_FILE: u64 = 1 << 20;
 const JOB_LOG_MAX: u64 = 256 << 10;
 
-/// Owns `<jobs>/<id>/`. On `Drop` it deletes the disk, EFI variables, token and input bundle;
+/// Owns `<jobs>/<id>/`. On `Drop` it deletes the disk, EFI variables, kernel, token and bundle;
 /// the logs (`stream.jsonl`, `result.json`, `job.log`, `console.log`) are kept.
 pub struct JobWorkspace {
     dir: PathBuf,
@@ -269,6 +269,8 @@ impl Drop for JobWorkspace {
         ] {
             let _ = fs::remove_file(p);
         }
+        // Its copy of the golden image's kernel, if it booted straight into it.
+        let _ = fs::remove_dir_all(self.dir.join("boot"));
     }
 }
 

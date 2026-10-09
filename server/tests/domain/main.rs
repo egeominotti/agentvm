@@ -1,6 +1,7 @@
 //! Domain rules: pure logic without I/O, tested directly.
 
 mod agent_event;
+mod boot;
 mod branches;
 mod chunks;
 mod console_text;
