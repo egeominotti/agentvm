@@ -1,6 +1,7 @@
 // Snapshots as people look for them: by the machine they came from, a kept disk of an interrupted
 // machine first, the automatic ones apart.
 import type { SnapshotMeta } from "../../api/generated/SnapshotMeta";
+import { repoName } from "../../lib/format";
 
 export type SnapshotGroup = {
   task: string;
@@ -33,9 +34,10 @@ export function groupSnapshots(list: SnapshotMeta[]): SnapshotGroup[] {
     else g.manual.push(s);
   }
   for (const g of groups.values()) {
-    // Generated names carry the machine's title; a name typed by hand may not.
-    const named = g.interrupted[0] ?? g.auto[0] ?? g.manual.at(-1);
-    g.title = named ? baseTitle(named.name) : g.task;
+    // Generated names carry the machine's title; names typed by hand do not, so a machine with
+    // only those is named by its repository and the end of its id.
+    const named = g.interrupted[0] ?? g.auto[0];
+    g.title = named ? baseTitle(named.name) : `${repoName(g.repo)} #${g.task.slice(-4)}`;
   }
   return [...groups.values()];
 }

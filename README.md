@@ -26,9 +26,9 @@ touching your files or your checkout. You watch and drive every VM from a dashbo
 `agent/<id>` branch, and the VM is thrown away.
 
 <p align="center">
-  <img src="docs/assets/wall.jpg" alt="The Machines wall: five Claude Code agents, each in its own VM" width="100%">
+  <img src="docs/assets/wall.webp" alt="The Machines wall: four Claude Code agents, each in its own VM, waiting for review" width="100%">
 </p>
-<p align="center"><i>The Machines wall: five agents, five VMs, one screen.</i></p>
+<p align="center"><i>The Machines wall: four agents, four VMs, one screen.</i></p>
 
 ## Highlights
 
@@ -90,7 +90,7 @@ Then save your Claude token once: create it with `claude setup-token` and paste 
 ```
 
 <p align="center">
-  <img src="docs/assets/quickstart.png" alt="./quickstart: tools checked, only what changed rebuilt, server restarted with its VMs still running" width="720">
+  <img src="docs/assets/quickstart.webp" alt="./quickstart: tools checked, only what changed rebuilt, server restarted with its VMs still running" width="720">
 </p>
 
 <details>
@@ -155,11 +155,11 @@ listens only on the VM's localhost.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/assets/machine.jpg" alt="A machine: Claude Code at work, its telemetry, Claude's cost and a forwarded port"></td>
-    <td width="50%"><img src="docs/assets/boot.jpg" alt="The boot sequence of a VM, with the time of each step"></td>
+    <td width="50%"><img src="docs/assets/machine.webp" alt="A machine: Claude Code's finished work, its telemetry and a dev server on port 3000 open on the Mac"></td>
+    <td width="50%"><img src="docs/assets/boot.webp" alt="The boot sequence of a VM, with the time of each step"></td>
   </tr>
   <tr>
-    <td>A machine: Claude Code at work, its telemetry, Claude's cost and a dev server on port 3000.</td>
+    <td>A machine: Claude Code's work, its telemetry, a dev server on port 3000 open on the Mac, Tailscale one click away.</td>
     <td>The boot sequence, built from real events with their timings.</td>
   </tr>
 </table>
@@ -189,6 +189,11 @@ Backblaze B2, MinIO or RustFS.
 ```bash
 scripts/dev-s3.sh up    # try backups locally: RustFS in Docker on http://127.0.0.1:9100
 ```
+
+<p align="center">
+  <img src="docs/assets/snapshots.webp" alt="The Snapshots page: a summary, then the snapshots of each machine with what deleting each one frees" width="100%">
+</p>
+<p align="center"><i>Four snapshots of four machines take 853 MB on disk in all: each adds only what changed, 5 to 33 MB.</i></p>
 
 ### Tailscale
 
@@ -286,8 +291,13 @@ Report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md).
 
 ## Configuration
 
-Settings are edited in the dashboard and saved in `~/AgentVMs/settings.json`. Environment
-variables set the defaults:
+Settings are edited in the dashboard and saved in `~/AgentVMs/settings.json`.
+
+<p align="center">
+  <img src="docs/assets/settings.webp" alt="Settings › Resources: vCPUs and memory per VM, VMs at the same time, and the memory budget of this Mac" width="100%">
+</p>
+
+Environment variables set the defaults:
 
 | Variable | Default | |
 |---|---|---|

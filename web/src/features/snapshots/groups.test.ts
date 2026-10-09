@@ -50,3 +50,11 @@ it("names a snapshot without repeating its machine or the time shown beside it",
   expect(labelOf(snap({ name: "with snap.txt" }), "Fix the cart")).toBe("with snap.txt");
   expect(labelOf(snap({ name: "Interrupted: Fix the cart" }), "Fix the cart")).toBe("Interrupted");
 });
+
+it("names a machine whose snapshots were all named by hand after its repository, the names on the rows", () => {
+  const [g] = groupSnapshots([
+    snap({ id: "a", name: "Type hints done", source_task: "01a12149-ab9c-7b7b-8b7b-c6330aee2d0e", repo: "/x/calc" }),
+  ]);
+  expect(g?.title).toBe("calc #2d0e");
+  expect(g ? labelOf(g.manual[0] as SnapshotMeta, g.title) : "").toBe("Type hints done");
+});

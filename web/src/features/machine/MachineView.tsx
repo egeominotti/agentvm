@@ -90,7 +90,7 @@ export function MachineView({ id }: { id: string }) {
       <section className="stage">
         <Toolbar task={t} sessions={sessions} actions={actions} inspector={showPanel} onInspector={togglePanel} />
         {!ended ? <PortsBar ports={t.ports} /> : null}
-        {!ended && t.interactive && state === "running" ? <TailnetBar task={t} /> : null}
+        {!ended && t.interactive && state === "running" && t.ready ? <TailnetBar task={t} /> : null}
         {!ended && setupFailed(t) ? (
           <div className="banner warn" role="alert">
             <span>
