@@ -39,6 +39,21 @@ impl Git {
         Some(name.trim().to_owned()).filter(|n| !n.is_empty())
     }
 
+    /// A clone made with `--depth`: its history cannot be bundled whole for a VM.
+    pub fn is_shallow(&self) -> bool {
+        self.run(&["rev-parse", "--is-shallow-repository"]).is_ok_and(|o| o.trim() == "true")
+    }
+
+    /// Makes sure a ref reaches `sha`, so `bundle_all` carries it: when no branch or tag does
+    /// (rewritten, deleted, or a commit given by its id) it is pinned under `refs/agentvm/base/`.
+    pub fn keep_reachable(&self, sha: &CommitSha) -> Result<(), GitError> {
+        let holders = self.run(&["for-each-ref", "--count=1", "--format=%(refname)", "--contains", sha.as_str()])?;
+        if holders.trim().is_empty() {
+            self.run(&["update-ref", &format!("refs/agentvm/base/{}", sha.as_str()), sha.as_str()])?;
+        }
+        Ok(())
+    }
+
     /// Every ref and HEAD: equal fingerprints mean `bundle_all` would produce the same bundle.
     pub fn refs_fingerprint(&self) -> Result<String, GitError> {
         let refs = self.run(&["for-each-ref", "--format=%(objectname) %(refname)"])?;

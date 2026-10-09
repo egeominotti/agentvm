@@ -25,11 +25,15 @@ pub async fn forward(ctx: Arc<AppCtx>, port: u16, vm: String, mut req: Request) 
 
     let public = req.headers().get(header::HOST).cloned();
     let inside = format!("localhost:{port}");
-    // Dev servers (Vite, Next) accept only their own host and origin.
+    // Dev servers (Vite, Next) accept only their own host and origin: the VM's own page gets it,
+    // another site keeps its origin, so the service can refuse it.
     req.headers_mut().insert(header::HOST, HeaderValue::from_str(&inside).expect("valid header"));
-    if req.headers().contains_key(header::ORIGIN) {
-        req.headers_mut()
-            .insert(header::ORIGIN, HeaderValue::from_str(&format!("http://{inside}")).expect("valid header"));
+    let public_host = public.as_ref().and_then(|h| h.to_str().ok()).unwrap_or_default().to_owned();
+    if let Some(origin) = req.headers().get(header::ORIGIN).and_then(|o| o.to_str().ok()).map(str::to_owned) {
+        let mapped = crate::domain::hostname::inside_origin(&origin, &public_host, port);
+        if let Ok(v) = HeaderValue::from_str(&mapped) {
+            req.headers_mut().insert(header::ORIGIN, v);
+        }
     }
     *req.uri_mut() = req.uri().path_and_query().map_or("/", |p| p.as_str()).parse().expect("valid path");
     let client_upgrade = req.headers().contains_key(header::UPGRADE).then(|| hyper::upgrade::on(&mut req));

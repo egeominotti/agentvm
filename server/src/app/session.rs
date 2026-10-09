@@ -35,6 +35,10 @@ pub enum SessionError {
     SaveFailed(String),
     #[error("the VM stays open, nothing is lost: its final save failed ({0})")]
     CloseFailed(String),
+    #[error(
+        "the VM stays open, nothing is lost: the snapshot before closing failed ({0}). To close without it, turn off \"Snapshot before closing\" in Settings"
+    )]
+    SnapshotFailed(String),
 }
 
 fn running_terminal(ctx: &AppCtx, id: &TaskId) -> Result<crate::app::record::TaskRecord, SessionError> {
@@ -85,11 +89,18 @@ pub async fn save(ctx: &AppCtx, id: &TaskId) -> Result<Saved, SessionError> {
     let mut branch = id.branch();
     if commits > 0 {
         // Imported from a copy only the Mac controls, not from the file the guest can swap.
-        let (from, copy) = (JobWorkspace::out_bundle_of(&jobs, id), jobs.join(id.as_str()).join("saved.bundle"));
-        let target = branch.clone();
+        // A copy of its own per save: two saves at once never truncate each other's file.
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let from = JobWorkspace::out_bundle_of(&jobs, id);
+        let copy = jobs.join(id.as_str()).join(format!("saved-{n}.bundle"));
+        let (target, room) = (branch.clone(), ctx.room_bytes());
         branch = tokio::task::spawn_blocking(move || {
-            guestfs::copy_out(&from, &copy).map_err(|e| e.to_string())?;
-            Git::new(record.repo).import_bundle(&copy, &target).map_err(|e| e.to_string())
+            let imported = guestfs::copy_out(&from, &copy, room)
+                .map_err(|e| e.to_string())
+                .and_then(|_| Git::new(record.repo).import_bundle(&copy, &target).map_err(|e| e.to_string()));
+            let _ = std::fs::remove_file(&copy);
+            imported
         })
         .await
         .map_err(|e| SessionError::SaveFailed(e.to_string()))?
@@ -121,8 +132,12 @@ pub async fn close(ctx: &Arc<AppCtx>, id: &TaskId) -> Result<(), SessionError> {
 
 async fn close_and_wait(ctx: &AppCtx, id: &TaskId) -> Result<(), SessionError> {
     // The whole machine as it was (installed packages, Claude's conversation), not just the branch.
-    if ctx.settings.get().auto_snapshots.before_close {
-        let _ = super::snapshots::take_auto(ctx, id, "before close").await;
+    // Promised by the setting: without it the VM is not closed (its disk would be deleted).
+    if ctx.settings.get().auto_snapshots.before_close
+        && let Err(e) = super::snapshots::take_auto(ctx, id, "before close").await
+    {
+        tracing::warn!(task = %id, error = %e, "snapshot before closing failed: the VM stays open");
+        return Err(SessionError::SnapshotFailed(e.to_string()));
     }
     let not_running = || ctx.store.get(id).is_none_or(|r| r.state != TaskState::Running);
     // Success has no reply: the guest saves, then powers off.
@@ -142,10 +157,10 @@ async fn close_and_wait(ctx: &AppCtx, id: &TaskId) -> Result<(), SessionError> {
 
 /// A file dropped on a terminal, being written into the VM's shared folder.
 pub struct Upload {
-    pub file: std::fs::File,
+    /// The file being written; `discard` it if the upload fails.
+    pub file: guestfs::NewFile,
     /// Where the VM sees it: `/mnt/job/uploads/<name>`.
     pub guest_path: String,
-    pub host_path: std::path::PathBuf,
 }
 
 /// Starts an upload into the running terminal `id`; a taken name gets ` (2)`, ` (3)`…
@@ -153,6 +168,6 @@ pub fn start_upload(ctx: &AppCtx, id: &TaskId, name: &str) -> Result<Upload, Ses
     running_terminal(ctx, id)?;
     let dir = JobWorkspace::share_of(&ctx.config.jobs(), id).join("uploads");
     let base = std::path::Path::new(name).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let (file, name) = guestfs::create_unique(&dir, &base).map_err(|e| SessionError::Unreachable(e.to_string()))?;
-    Ok(Upload { file, guest_path: format!("/mnt/job/uploads/{name}"), host_path: dir.join(name) })
+    let file = guestfs::create_unique(&dir, &base).map_err(|e| SessionError::Unreachable(e.to_string()))?;
+    Ok(Upload { guest_path: format!("/mnt/job/uploads/{}", file.name), file })
 }

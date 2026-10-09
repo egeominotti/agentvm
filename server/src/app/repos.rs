@@ -39,6 +39,10 @@ pub fn check(path: &str) -> RepoCheck {
     };
     let git = Git::new(repo);
     answer.branch = git.current_branch();
+    if git.is_shallow() {
+        answer.error = Some(super::submission::SHALLOW.into());
+        return answer;
+    }
     match git.rev_parse("HEAD") {
         Ok(sha) => {
             answer.sha = Some(sha.as_str().to_owned());

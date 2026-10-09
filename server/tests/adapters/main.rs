@@ -1,8 +1,10 @@
 //! Adapter tests against real systems: git, APFS, processes, Keychain. No mocks.
 
+mod forward;
 mod git;
 mod git_concurrency;
 mod guest_files;
+mod guest_save;
 mod helpers;
 mod jsonl;
 mod lock;

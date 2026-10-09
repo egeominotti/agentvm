@@ -22,6 +22,7 @@ unsafe extern "C" {
 /// Guest scripts of this build, installed by the image's `agentvm-boot` at every launch.
 const RUNTIME: &[(&str, &str)] = &[
     ("agentvm-job", include_str!("../../../guest/agentvm-job")),
+    ("agentvm-save", include_str!("../../../guest/agentvm-save")),
     ("agentvm-pty", include_str!("../../../guest/agentvm-pty")),
     ("agentvm-metrics", include_str!("../../../guest/agentvm-metrics")),
     ("agentvm-statusline", include_str!("../../../guest/agentvm-statusline")),
@@ -31,6 +32,8 @@ const RUNTIME: &[(&str, &str)] = &[
 
 /// JSON the guest writes (metrics, usage, result) is a few KiB.
 const SMALL_FILE: u64 = 1 << 20;
+/// `clonefile` flag: copy a link itself, never what it points to.
+const CLONE_NOFOLLOW: u32 = 0x0001;
 const JOB_LOG_MAX: u64 = 256 << 10;
 
 /// Owns `<jobs>/<id>/`. On `Drop` it deletes the disk, EFI variables, token and input bundle;
@@ -285,5 +288,10 @@ pub fn clone_file(src: &Path, dst: &Path) -> io::Result<()> {
     let src = CString::new(src.as_os_str().as_bytes())?;
     let dst = CString::new(dst.as_os_str().as_bytes())?;
     // SAFETY: C strings valid for the duration of the call.
-    if unsafe { clonefile(src.as_ptr(), dst.as_ptr(), 0) } == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
+    // CLONE_NOFOLLOW: a disk that is a link (a planted snapshot) is never followed to a host file.
+    if unsafe { clonefile(src.as_ptr(), dst.as_ptr(), CLONE_NOFOLLOW) } == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
 }

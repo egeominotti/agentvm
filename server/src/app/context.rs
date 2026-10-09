@@ -78,6 +78,13 @@ impl AppCtx {
         }
     }
 
+    /// Bytes that can still be written before the free-space floor: what a guest's file may take.
+    /// Unknown free space does not stop anything.
+    pub fn room_bytes(&self) -> u64 {
+        crate::adapters::host::free_mb(&self.config.home)
+            .map_or(u64::MAX, |free| free.saturating_sub(self.config.min_free_mb) << 20)
+    }
+
     /// Published Claude Code versions, cached for 10 minutes.
     pub async fn claude_releases(&self) -> Result<Releases, String> {
         let mut cache = self.releases.lock().await;

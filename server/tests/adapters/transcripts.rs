@@ -94,3 +94,17 @@ fn guest_planted_symlinks_are_not_read() {
     std::os::unix::fs::symlink(mac.join("secret.jsonl"), share.join("x.jsonl")).unwrap();
     assert!(read_new(&share, &Cursor::default(), PAGE).0.is_empty());
 }
+
+/// A guest that floods its folder with empty session files cannot make every read open them
+/// all, nor grow the cursor the dashboard sends back in its address.
+#[test]
+fn empty_session_files_do_not_grow_the_cursor() {
+    let dir = tempfile::tempdir().unwrap();
+    for n in 0..3000 {
+        std::fs::write(dir.path().join(format!("flood-{n:05}.jsonl")), "").unwrap();
+    }
+    std::fs::write(dir.path().join("a-real.jsonl"), "{\"x\":1}\n").unwrap();
+    let (lines, cursor) = agentvm::adapters::transcripts::read_new(dir.path(), &Default::default(), 1 << 20);
+    assert_eq!(lines, vec!["{\"x\":1}".to_owned()]);
+    assert_eq!(cursor.0.len(), 1, "only files with something read are remembered");
+}

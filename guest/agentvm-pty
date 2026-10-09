@@ -16,6 +16,7 @@ import socket
 import struct
 import termios
 import threading
+import time
 
 PORT = 5000
 USER = "root"
@@ -66,8 +67,16 @@ def spawn(session, cols, rows, view=False):
             "PATH": f"{pw.pw_dir}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "IS_SANDBOX": "1",
         }
-        os.chdir(WORK)
-        os.execvpe(cmd[0], cmd, env)
+        # The child must never return into the server: whatever fails here ends it.
+        try:
+            # The agent may have moved or deleted the checkout: the shell still opens, in /root.
+            try:
+                os.chdir(WORK)
+            except OSError:
+                os.chdir(pw.pw_dir)
+            os.execvpe(cmd[0], cmd, env)
+        finally:
+            os._exit(127)
     set_size(fd, cols, rows)
     return pid, fd
 
@@ -166,7 +175,13 @@ def main():
     srv.bind((socket.VMADDR_CID_ANY, PORT))
     srv.listen(16)
     while True:
-        conn, _ = srv.accept()
+        # A failed accept (too many open files, an aborted connection) must not take down the
+        # terminals already open with the server: wait a moment and go on.
+        try:
+            conn, _ = srv.accept()
+        except OSError:
+            time.sleep(0.2)
+            continue
         threading.Thread(target=serve, args=(conn,), daemon=True).start()
 
 

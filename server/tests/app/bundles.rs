@@ -2,6 +2,12 @@
 
 use crate::helpers::git_repo;
 
+/// The commit a VM starts from: the repository's HEAD.
+fn head(repo: &std::path::Path) -> agentvm::domain::ids::CommitSha {
+    let out = std::process::Command::new("git").arg("-C").arg(repo).args(["rev-parse", "HEAD"]).output().unwrap();
+    agentvm::domain::ids::CommitSha::parse(String::from_utf8_lossy(&out.stdout).trim()).unwrap()
+}
+
 /// Twenty VMs on the same repository pack it once: later launches get an instant copy.
 #[test]
 fn launches_share_one_bundle_per_repository_state() {
@@ -9,8 +15,8 @@ fn launches_share_one_bundle_per_repository_state() {
     let home = tempfile::tempdir().unwrap();
     let repo = git_repo();
     let (a, b) = (home.path().join("a.bundle"), home.path().join("b.bundle"));
-    assert!(!prepare(home.path(), repo.path(), &a).unwrap(), "the first launch packs the repo");
-    assert!(prepare(home.path(), repo.path(), &b).unwrap(), "the second one reuses it");
+    assert!(!prepare(home.path(), repo.path(), &a, &head(repo.path())).unwrap(), "the first launch packs the repo");
+    assert!(prepare(home.path(), repo.path(), &b, &head(repo.path())).unwrap(), "the second one reuses it");
     assert_eq!(std::fs::read(&a).unwrap(), std::fs::read(&b).unwrap());
     // New commits make a new bundle.
     assert!(
@@ -23,7 +29,7 @@ fn launches_share_one_bundle_per_repository_state() {
             .success()
     );
     let c = home.path().join("c.bundle");
-    assert!(!prepare(home.path(), repo.path(), &c).unwrap());
+    assert!(!prepare(home.path(), repo.path(), &c, &head(repo.path())).unwrap());
     assert_ne!(std::fs::read(&a).unwrap(), std::fs::read(&c).unwrap());
 }
 
@@ -42,7 +48,8 @@ fn simultaneous_first_launches_never_delete_each_others_bundle() {
                 std::thread::spawn(move || {
                     let dest = home.path().join(format!("vm{i}.bundle"));
                     start.wait();
-                    prepare(home.path(), repo.path(), &dest).map(|_| std::fs::metadata(&dest).unwrap().len())
+                    prepare(home.path(), repo.path(), &dest, &head(repo.path()))
+                        .map(|_| std::fs::metadata(&dest).unwrap().len())
                 })
             })
             .collect();

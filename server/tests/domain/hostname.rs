@@ -27,3 +27,18 @@ fn proxy_hosts_are_recognised_only_on_this_server() {
     assert_eq!(hostname::parse_proxy_host("3000.a.b.localhost:7777", 7777), None);
     assert_eq!(hostname::proxy_url(3000, "demo-web-4f94", 7777), "http://3000.demo-web-4f94.localhost:7777");
 }
+
+/// Only the VM's own page speaks for the VM's server ("localhost" inside); any other site keeps
+/// its origin, so the server inside (Vite, Jupyter…) can refuse it.
+#[test]
+fn only_the_vms_own_page_is_given_the_inside_origin() {
+    use agentvm::domain::hostname::inside_origin;
+    let public = "5173.shop-a1b2.localhost:7777";
+    assert_eq!(inside_origin("http://5173.shop-a1b2.localhost:7777", public, 5173), "http://localhost:5173");
+    assert_eq!(inside_origin("https://evil.example", public, 5173), "https://evil.example");
+    assert_eq!(
+        inside_origin("http://8888.other-c3d4.localhost:7777", public, 5173),
+        "http://8888.other-c3d4.localhost:7777"
+    );
+    assert_eq!(inside_origin("null", public, 5173), "null");
+}

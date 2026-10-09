@@ -49,7 +49,7 @@ pub(super) fn collect(
         has_out_bundle: ws.has_out_bundle(),
     });
     let (final_, branch) = match (outcome.fetch, outcome.final_) {
-        (true, f) => match import_branch(ws, record, &id.branch()) {
+        (true, f) => match import_branch(ws, record, &id.branch(), ctx.room_bytes()) {
             Ok(landed) => {
                 tracing::info!(task = %id, branch = %landed, "work imported into the repository");
                 (f, landed)
@@ -83,11 +83,11 @@ fn keep_disk(ctx: &AppCtx, record: &TaskRecord, ws: &JobWorkspace, reason: Strin
 
 /// Imports the guest's work into the repository; returns the branch it landed on.
 /// Imported from a copy only the Mac controls, not from the file the guest could swap.
-fn import_branch(ws: &JobWorkspace, record: &TaskRecord, branch: &str) -> Result<String, String> {
+fn import_branch(ws: &JobWorkspace, record: &TaskRecord, branch: &str, room: u64) -> Result<String, String> {
     // git runs for seconds on big repos: tell the runtime this worker is blocked.
     tokio::task::block_in_place(|| {
         let copy = ws.dir().join("final.bundle");
-        guestfs::copy_out(&ws.out_bundle(), &copy).map_err(|e| e.to_string())?;
+        guestfs::copy_out(&ws.out_bundle(), &copy, room).map_err(|e| e.to_string())?;
         Git::new(record.repo.clone()).import_bundle(&copy, branch).map_err(|e| e.to_string())
     })
 }

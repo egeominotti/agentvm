@@ -58,3 +58,18 @@ async fn a_close_returns_once_the_vm_is_going_away() {
     });
     tokio::time::timeout(Duration::from_secs(20), close(&ctx, &id)).await.expect("close never returned").unwrap();
 }
+
+/// With "Snapshot before closing" on, a snapshot that cannot be taken (here: the disk is too
+/// full) stops the close: the VM stays up and nothing is lost, instead of closing without it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_snapshot_before_closing_keeps_the_vm_open() {
+    let (home, repo) = (tempfile::tempdir().unwrap(), git_repo());
+    let id = running_task(home.path(), &repo, true);
+    let ctx = crate::helpers::ctx_with(home.path(), u64::MAX / 2);
+    ctx.store.insert(agentvm::app::store::Store::load(&home.path().join("jobs")).remove(0));
+    let share = home.path().join("jobs").join(id.as_str()).join("share");
+    std::fs::create_dir_all(&share).unwrap();
+    let err = tokio::time::timeout(Duration::from_secs(20), close(&ctx, &id)).await.expect("close hung").unwrap_err();
+    assert!(matches!(&err, SessionError::SnapshotFailed(_)), "{err}");
+    assert!(!share.join("close.request").exists(), "the VM was asked to close without its snapshot");
+}

@@ -95,3 +95,29 @@ fn leftover_temporary_files_are_cleaned_up_at_start() {
     assert!(!home.path().join("snapshots/.import-77").exists());
     assert!(home.path().join("snapshots").join(id.as_str()).join("disk.raw").exists(), "a real snapshot was removed");
 }
+
+/// An archive is data from elsewhere: links and special files in it are refused, so it can never
+/// make a host file the VM's disk, hang the server on a FIFO, or fill its memory from /dev/zero.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_archive_with_links_or_special_files_is_refused() {
+    let home = tempfile::tempdir().unwrap();
+    let ctx = ctx(home.path());
+    let id = stored_snapshot(home.path());
+    let src = home.path().join("snapshots").join(id.as_str());
+    for (file, target) in [("disk.raw", "/etc/hosts"), ("meta.json", "/dev/zero")] {
+        let crafted = tempfile::tempdir().unwrap();
+        for f in ["disk.raw", "efivars", "meta.json"] {
+            std::fs::copy(src.join(f), crafted.path().join(f)).unwrap();
+        }
+        std::fs::remove_file(crafted.path().join(file)).unwrap();
+        std::os::unix::fs::symlink(target, crafted.path().join(file)).unwrap();
+        let archive = home.path().join(format!("crafted-{file}.tar.zst"));
+        agentvm::adapters::archive::pack(crafted.path(), &archive).unwrap();
+        let result =
+            tokio::time::timeout(std::time::Duration::from_secs(20), agentvm::app::backups::import(&ctx, &archive))
+                .await
+                .expect("the import hung");
+        assert!(result.is_err(), "an archive with {file} -> {target} was imported");
+    }
+    assert_eq!(ctx.snapshots.list().len(), 1, "only the snapshot made here");
+}

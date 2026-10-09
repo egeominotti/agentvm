@@ -14,7 +14,21 @@ enum Events {
         obj["event"] = event
         guard var data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]) else { return }
         data.append(0x0A)
-        FileHandle.standardOutput.write(data)
+        // POSIX write, not FileHandle.write: that one raises an Objective-C exception on a write
+        // error (the Mac's disk full) and kills the helper before it says how the VM stopped.
+        data.withUnsafeBytes { buf in
+            var off = 0
+            while off < buf.count {
+                let n = Foundation.write(STDOUT_FILENO, buf.baseAddress! + off, buf.count - off)
+                if n > 0 {
+                    off += n
+                } else if n < 0 && errno == EINTR {
+                    continue
+                } else {
+                    return  // the event is lost; the VM keeps running
+                }
+            }
+        }
     }
 
     static func fail(_ message: String) -> Never {

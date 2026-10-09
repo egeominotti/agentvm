@@ -40,7 +40,9 @@ pub async fn upload(
         .map(percent_decode)
         .ok_or_else(|| ApiError::bad_request("missing x-file-name"))?;
     let up = session::start_upload(&ctx, &id, &name)?;
-    let mut file = tokio::fs::File::from_std(up.file);
+    let guest_path = up.guest_path;
+    let new_file = up.file;
+    let mut file = tokio::fs::File::from_std(new_file.file.try_clone().map_err(ApiError::internal)?);
     let mut body = req.into_body().into_data_stream();
     let mut written = 0u64;
     let result: Result<(), String> = async {
@@ -55,11 +57,13 @@ pub async fn upload(
         file.flush().await.map_err(|e| e.to_string())
     }
     .await;
+    drop(file);
     if let Err(e) = result {
-        let _ = std::fs::remove_file(&up.host_path);
+        // Through the folder's handle: the guest may have made `uploads` a link meanwhile.
+        new_file.discard();
         return Err(ApiError::bad_request(e));
     }
-    Ok(Json(serde_json::json!({ "path": up.guest_path, "bytes": written })))
+    Ok(Json(serde_json::json!({ "path": guest_path, "bytes": written })))
 }
 
 fn percent_decode(s: &str) -> String {

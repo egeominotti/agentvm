@@ -62,3 +62,28 @@ async fn a_repository_without_commits_cannot_be_launched() {
     assert_eq!(body["ok"], false);
     assert!(body["error"].as_str().unwrap().contains("no commits"), "{body}");
 }
+
+/// A shallow clone cannot be bundled whole for the VM: said before launching, with the fix.
+#[tokio::test]
+async fn a_shallow_clone_is_refused_with_the_fix() {
+    let origin = tempfile::tempdir().unwrap();
+    git(origin.path(), &["init", "-q", "-b", "main"]);
+    for n in ["a", "b"] {
+        std::fs::write(origin.path().join(n), n).unwrap();
+        git(origin.path(), &["add", "."]);
+        git(origin.path(), &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", n]);
+    }
+    let parent = tempfile::tempdir().unwrap();
+    let shallow = parent.path().join("shallow");
+    let url = format!("file://{}", origin.path().display());
+    let ok = std::process::Command::new("git")
+        .args(["clone", "-q", "--depth", "1", &url])
+        .arg(&shallow)
+        .status()
+        .unwrap()
+        .success();
+    assert!(ok);
+    let body = check(&shallow.display().to_string()).await;
+    assert_eq!(body["ok"], false, "{body}");
+    assert!(body["error"].as_str().unwrap().contains("git fetch --unshallow"), "{body}");
+}

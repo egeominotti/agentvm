@@ -94,6 +94,25 @@ impl SnapshotStore {
         Ok(dir)
     }
 
+    /// What an archive unpacked into `dir` may hold: plain files and folders only. A link could
+    /// make a file of this Mac the VM's disk or point `meta.json` at /dev/zero; a FIFO would hang
+    /// the reader.
+    pub fn check_extracted(dir: &Path) -> io::Result<()> {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let kind = fs::symlink_metadata(entry.path())?.file_type();
+            if kind.is_dir() {
+                Self::check_extracted(&entry.path())?;
+            } else if !kind.is_file() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "the archive holds links or special files: refused",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Turns an extracted folder (with `disk.raw`, `efivars`, `meta.json`) into the snapshot `meta.id`.
     pub fn adopt(&self, dir: &Path, meta: SnapshotMeta) -> io::Result<SnapshotMeta> {
         if !dir.join("disk.raw").is_file() || !dir.join("efivars").is_file() {

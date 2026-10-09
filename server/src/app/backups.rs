@@ -9,6 +9,7 @@ use super::context::AppCtx;
 use super::random::random_bytes;
 use crate::adapters::archive;
 use crate::adapters::s3::S3Client;
+use crate::adapters::snapshots::SnapshotStore;
 use crate::domain::s3::S3Config;
 use crate::domain::snapshot::{SnapshotId, SnapshotMeta};
 use crate::secret::Secret;
@@ -80,9 +81,16 @@ pub async fn import(ctx: &AppCtx, file: &Path) -> Result<SnapshotMeta, BackupErr
 
 async fn adopt(ctx: &AppCtx, file: &Path, scratch: &Path) -> Result<SnapshotMeta, BackupError> {
     let (from, to) = (file.to_path_buf(), scratch.to_path_buf());
-    blocking(move || Ok(archive::unpack(&from, &to)?)).await?;
-    let meta: SnapshotMeta = serde_json::from_slice(&std::fs::read(scratch.join("meta.json"))?)
-        .map_err(|_| BackupError::Invalid("the archive is not an agentvm snapshot".into()))?;
+    let meta = blocking(move || {
+        archive::unpack(&from, &to)?;
+        SnapshotStore::check_extracted(&to).map_err(|e| BackupError::Invalid(e.to_string()))?;
+        // Bounded, never through a link: a snapshot's meta.json is a few hundred bytes.
+        let bytes = crate::guestfs::read(&to.join("meta.json"), 64 << 10)
+            .ok_or_else(|| BackupError::Invalid("the archive is not an agentvm snapshot".into()))?;
+        serde_json::from_slice::<SnapshotMeta>(&bytes)
+            .map_err(|_| BackupError::Invalid("the archive is not an agentvm snapshot".into()))
+    })
+    .await?;
     let id = match SnapshotId::parse(meta.id.as_str()) {
         Some(id) if ctx.snapshots.get(&id).is_none() => id,
         _ => SnapshotId::generate(SystemTime::now(), &random_bytes()),

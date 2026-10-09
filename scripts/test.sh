@@ -11,7 +11,8 @@ mode=${1:-}
 cd server
 # The binaries run here directly, without Cargo's [env]: say where the API types go (see .cargo/config.toml).
 export TS_RS_EXPORT_DIR="$PWD/../web/src/api/generated" TS_RS_LARGE_INT=number
-cargo test --no-run --quiet 2>/dev/null
+# Compile errors are shown, not hidden: the suite stops here when the code does not build.
+cargo test --no-run --quiet
 bins=$(cargo test --no-run --message-format=json 2>/dev/null \
   | jq -r 'select(.reason == "compiler-artifact" and .profile.test == true) | .executable // empty')
 args=()

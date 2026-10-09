@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::adapters::git::Git;
 use crate::adapters::jobdir::clone_file;
-use crate::domain::ids::RepoPath;
+use crate::domain::ids::{CommitSha, RepoPath};
 
 /// Bundles kept per repository (the newest states).
 const KEEP_PER_REPO: usize = 2;
@@ -19,9 +19,12 @@ fn hash(text: &str) -> String {
     format!("{:016x}", h.finish())
 }
 
-/// Writes the bundle of `repo` to `dest`; `true` when it came from the cache.
-pub fn prepare(home: &Path, repo: &Path, dest: &Path) -> Result<bool, String> {
+/// Writes the bundle of `repo` to `dest`; `true` when it came from the cache. The bundle always
+/// has `base`, the commit the VM starts from, even if its branch moved while the VM waited.
+pub fn prepare(home: &Path, repo: &Path, dest: &Path, base: &CommitSha) -> Result<bool, String> {
     let git = Git::new(RepoPath::new(repo.to_path_buf()).map_err(|e| e.to_string())?);
+    git.keep_reachable(base)
+        .map_err(|e| format!("the starting commit {} is gone from the repository: {e}", base.as_str()))?;
     let repo_key = hash(&repo.display().to_string());
     let state = hash(&git.refs_fingerprint().map_err(|e| e.to_string())?);
     let dir = home.join("cache").join("bundles");

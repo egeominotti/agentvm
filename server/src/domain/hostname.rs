@@ -34,3 +34,10 @@ pub fn parse_proxy_host(host: &str, server_port: u16) -> Option<(u16, String)> {
 pub fn proxy_url(port: u16, vm: &str, server_port: u16) -> String {
     format!("http://{port}.{vm}.localhost:{server_port}")
 }
+
+/// The Origin a request to a VM's service carries inside the VM: the VM's own page (served at
+/// `public`) becomes `http://localhost:<port>`, which dev servers accept; any other origin stays
+/// as it is, so the service can refuse a foreign site.
+pub fn inside_origin(origin: &str, public: &str, port: u16) -> String {
+    if origin == format!("http://{public}") { format!("http://localhost:{port}") } else { origin.to_owned() }
+}

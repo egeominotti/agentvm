@@ -115,3 +115,48 @@ fn git_rev_parse_unknown_ref_fails() {
     let git = Git::new(RepoPath::new(tmp.path().to_path_buf()).unwrap());
     assert!(git.rev_parse("does-not-exist").is_err());
 }
+
+/// A VM waiting for a slot keeps its starting commit even if the branch it came from is
+/// rewritten or deleted meanwhile: the commit is pinned by a hidden ref, so the bundle has it.
+#[test]
+fn a_starting_commit_no_branch_points_to_is_kept_in_the_bundle() {
+    let tmp = tempfile::tempdir().unwrap();
+    new_repo(tmp.path());
+    sh(
+        tmp.path(),
+        "git checkout -qb gone && echo x > x.txt && git add . && git commit -qm gone && git checkout -q main",
+    );
+    let sha = String::from_utf8(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(tmp.path())
+            .args(["rev-parse", "gone"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    sh(tmp.path(), "git branch -qD gone");
+    let git = Git::new(RepoPath::new(tmp.path().to_path_buf()).unwrap());
+    let base = agentvm::domain::ids::CommitSha::parse(sha.trim()).unwrap();
+    git.keep_reachable(&base).unwrap();
+    let bundle = tmp.path().join("all.bundle");
+    git.bundle_all(&bundle).unwrap();
+    let heads = String::from_utf8(
+        std::process::Command::new("git").args(["bundle", "list-heads"]).arg(&bundle).output().unwrap().stdout,
+    )
+    .unwrap();
+    assert!(heads.contains(sha.trim()), "{heads}");
+}
+
+#[test]
+fn a_shallow_clone_is_recognised() {
+    let tmp = tempfile::tempdir().unwrap();
+    let origin = tmp.path().join("origin");
+    std::fs::create_dir_all(&origin).unwrap();
+    new_repo(&origin);
+    sh(&origin, "echo more > more.txt && git add . && git commit -qm more");
+    sh(tmp.path(), "git clone -q --depth 1 file://$PWD/origin shallow");
+    assert!(Git::new(RepoPath::new(tmp.path().join("shallow")).unwrap()).is_shallow());
+    assert!(!Git::new(RepoPath::new(origin).unwrap()).is_shallow());
+}

@@ -12,6 +12,9 @@ use crate::guestfs::GuestDir;
 
 /// A longer line (a tool that printed megabytes) is skipped: the cursor moves past it.
 const MAX_LINE: usize = 1 << 20;
+/// Session files looked at per read: far more than a VM's real sessions, few enough that a guest
+/// creating thousands of files cannot make every read open them all.
+const MAX_FILES: usize = 500;
 
 /// Per session file, the offset of the first line not read yet.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -26,6 +29,7 @@ pub fn read_new(dir: &Path, cursor: &Cursor, max_bytes: u64) -> (Vec<String>, Cu
     let Some(guest) = GuestDir::open(dir) else { return (lines, next) };
     let mut names: Vec<String> = guest.names().into_iter().filter(|n| n.ends_with(".jsonl")).collect();
     names.sort();
+    names.truncate(MAX_FILES);
     let mut budget = max_bytes;
     for name in names {
         let Some(mut file) = guest.open_file(&name) else { continue };
@@ -45,7 +49,12 @@ pub fn read_new(dir: &Path, cursor: &Cursor, max_bytes: u64) -> (Vec<String>, Cu
             budget = budget.saturating_sub(used);
             lines.extend(line);
         }
-        next.0.insert(name, offset);
+        // Only files something was read from: empty ones would grow the cursor for nothing.
+        if offset > 0 {
+            next.0.insert(name, offset);
+        } else {
+            next.0.remove(&name);
+        }
         if budget == 0 {
             break;
         }

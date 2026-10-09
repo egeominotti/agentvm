@@ -1,0 +1,90 @@
+#!/bin/bash
+# Sourced by agentvm-job: saving the agent's work and answering the host's requests. Needs JOB,
+# BRANCH, BASE, ID and a `log` function. Kept apart so it can be tested on real repositories
+# (server/tests/adapters/guest_save.rs).
+
+# Runs git for a save, waiting while another git command (often Claude's) holds the index lock.
+# The repository's hooks never run here: a hook waiting for a terminal (commitizen), failing, or
+# slow (npm install in post-checkout) must not block saving the agent's work. `--no-verify` alone
+# skips only pre-commit and commit-msg.
+git_retry() {
+  local out i
+  for i in $(seq 40); do
+    if out=$(git -c core.hooksPath=/dev/null "$@" 2>&1); then return 0; fi
+    case "$out" in *index.lock*) sleep 0.25 ;; *) printf '%s\n' "$out" >&2; return 1 ;; esac
+  done
+  printf '%s\n' "$out" >&2
+  return 1
+}
+
+# Brings the work back on $BRANCH when the agent left it, never losing a commit: $BRANCH only
+# moves forward (when HEAD descends from it), otherwise HEAD goes back to $BRANCH with the changes
+# not yet committed; when that cannot be done cleanly the save fails, so the VM and its disk stay.
+realign_branch() {
+  local head
+  head=$(git symbolic-ref -q --short HEAD || echo "a detached HEAD")
+  [ "$head" = "$BRANCH" ] && return 0
+  if git merge-base --is-ancestor "$BRANCH" HEAD 2>/dev/null; then
+    log "HEAD ($head) has everything $BRANCH has: moving $BRANCH to it"
+    git_retry checkout -q -B "$BRANCH"
+  elif git_retry checkout -q "$BRANCH" 2>/dev/null; then
+    log "back on $BRANCH from $head (changes not yet committed came along)"
+  else
+    echo "the agent left $BRANCH for $head and its changes do not apply on $BRANCH: run 'git checkout $BRANCH' (or merge) in the VM, then save again" >&2
+    return 1
+  fi
+}
+
+# The steps of a save, run in a subshell with errexit; prints the commit count.
+save_steps() {
+  realign_branch
+  git_retry add -A
+  git diff --cached --quiet || git_retry commit -q --no-verify -m "agentvm: $ID (auto-commit)"
+  local count
+  count=$(git rev-list --count "$BASE..$BRANCH")
+  if [ "$count" -gt 0 ]; then
+    git_retry bundle create -q "$JOB/out.bundle.tmp" "$BASE..$BRANCH"
+    mv -f "$JOB/out.bundle.tmp" "$JOB/out.bundle"
+  else
+    rm -f "$JOB/out.bundle"
+  fi
+  echo "$count"
+}
+
+# Commits whatever is left and bundles the commits since $BASE. Never exits the script: a failed
+# save sets SAVE_ERROR and the VM keeps running. Sets COMMITS and SAVE_ERROR.
+save_work() {
+  local count rc errexit=$- err
+  set +e
+  err=$(mktemp)
+  count=$(set -euo pipefail; save_steps 2> "$err")
+  rc=$?
+  # Back to the caller's mode: the terminal loop runs without errexit.
+  case "$errexit" in *e*) set -e ;; esac
+  if [ "$rc" -eq 0 ]; then
+    COMMITS=$count
+    SAVE_ERROR=""
+  else
+    COMMITS=$(git rev-list --count "$BASE..$BRANCH" 2>/dev/null || echo 0)
+    # The first line says what went wrong ("fatal: Unable to create '…/index.lock': File exists.").
+    # `|| true`: git may fail with nothing on stderr, and grep finding nothing must not end the job.
+    SAVE_ERROR="git failed while saving: $(grep -m1 . "$err" | cut -c1-300 || true)"
+  fi
+  rm -f "$err"
+  log "commits $COMMITS${SAVE_ERROR:+ ($SAVE_ERROR)}"
+}
+
+# Takes the request `name` (sync, save, close) the host left, if any, and prints its id (letters,
+# digits, dashes; echoed in the reply so the host never takes a late answer for the current
+# request). Moved aside first: a newer request written meanwhile is never deleted unanswered.
+take_request() { # name
+  local taken="$JOB/.$1.taken"
+  mv -f "$JOB/$1" "$taken" 2>/dev/null || return 1
+  tr -cd 'a-zA-Z0-9-' < "$taken" | head -c 64
+  rm -f "$taken"
+}
+
+# Atomic: the host must never read a half-written answer.
+reply() { # file json
+  printf '%s' "$2" > "$JOB/$1.tmp" && mv -f "$JOB/$1.tmp" "$JOB/$1"
+}

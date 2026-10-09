@@ -34,7 +34,8 @@ keep_running() { # command...
     set +e
     while true; do
       "$@"
-      log "$(basename "$1") exited ($?): restarting"
+      rc=$?
+      log "$(basename "$1") exited ($rc): restarting"
       sleep 1
     done
   ) &
@@ -42,6 +43,9 @@ keep_running() { # command...
 
 mkdir -p "$JOB"
 mountpoint -q "$JOB" || mount -t virtiofs job "$JOB"
+# Saving the work and answering the host's requests (shipped by the server with this script).
+# shellcheck source=agentvm-save
+source "$JOB/runtime/agentvm-save"
 # Telemetry for the dashboard, once per second, in every mode.
 keep_running /usr/local/bin/agentvm-metrics
 
@@ -97,9 +101,10 @@ if [ "$RESTORE" = "true" ]; then
     log "could not switch to $BRANCH: continuing on $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
   fi
 else
-  git clone -q "$JOB/repo.bundle" "$WORK"
+  # Errors go to job.log: the diagnostics show why a clone failed, not only "exit 128".
+  git clone -q "$JOB/repo.bundle" "$WORK" 2>> "$JOB/job.log"
   cd "$WORK"
-  git checkout -q -b "$BRANCH" "$BASE"
+  git checkout -q -b "$BRANCH" "$BASE" 2>> "$JOB/job.log"
   git config user.name agentvm
   git config user.email agentvm@localhost
 fi
@@ -118,6 +123,12 @@ if [ "$RESTORE" != "true" ] && [ -f "$WORK/.agentvm/setup.sh" ]; then
   else
     log "setup failed (see setup.log)"
   fi
+  # What setup.sh created (installed dependencies, build output) is not the agent's work: kept out
+  # of its commits. Tracked files it changed stay as they are, and are said.
+  git -C "$WORK" ls-files --others --exclude-standard --directory -z \
+    | while IFS= read -r -d '' f; do printf '/%s\n' "$f"; done >> "$WORK/.git/info/exclude" || true
+  changed=$(git -C "$WORK" diff --name-only | head -20 | tr '\n' ' ')
+  [ -z "$changed" ] || log "setup.sh changed tracked files (they will be in the agent's commits): $changed"
 fi
 
 # A launch can pin another Claude Code release than the image's (the version is validated by the server).
@@ -130,68 +141,6 @@ if [ -n "$CLAUDE_VERSION" ]; then
   fi
   log "Claude Code $("$CLAUDE" --version 2>/dev/null)"
 fi
-
-# Runs git, waiting while another git command (often Claude's) holds the index lock.
-git_retry() {
-  local out i
-  for i in $(seq 40); do
-    if out=$(git "$@" 2>&1); then return 0; fi
-    case "$out" in *index.lock*) sleep 0.25 ;; *) printf '%s\n' "$out" >&2; return 1 ;; esac
-  done
-  printf '%s\n' "$out" >&2
-  return 1
-}
-
-# The steps of a save, run in a subshell with errexit; prints the commit count.
-save_steps() {
-  # If the agent switched branches, the work that matters is on HEAD: bring it back to $BRANCH.
-  if [ "$(git symbolic-ref -q --short HEAD || true)" != "$BRANCH" ]; then
-    log "HEAD not on $BRANCH: realigning"
-    git_retry checkout -q -B "$BRANCH"
-  fi
-  git_retry add -A
-  # --no-verify: the repo's hooks (husky, lint-staged) must not block saving the agent's work.
-  git diff --cached --quiet || git_retry commit -q --no-verify -m "agentvm: $ID (auto-commit)"
-  local count
-  count=$(git rev-list --count "$BASE..$BRANCH")
-  if [ "$count" -gt 0 ]; then
-    git bundle create -q "$JOB/out.bundle.tmp" "$BASE..$BRANCH"
-    mv -f "$JOB/out.bundle.tmp" "$JOB/out.bundle"
-  else
-    rm -f "$JOB/out.bundle"
-  fi
-  echo "$count"
-}
-
-# Commits whatever is left and bundles the commits since $BASE. Never exits the script: a failed
-# save sets SAVE_ERROR and the VM keeps running. Sets COMMITS and SAVE_ERROR.
-save_work() {
-  local count rc errexit=$-
-  set +e
-  count=$(set -euo pipefail; save_steps 2> /tmp/agentvm-save.err)
-  rc=$?
-  # Back to the caller's mode: the terminal loop runs without errexit.
-  case "$errexit" in *e*) set -e ;; esac
-  if [ "$rc" -eq 0 ]; then
-    COMMITS=$count
-    SAVE_ERROR=""
-  else
-    COMMITS=$(git rev-list --count "$BASE..$BRANCH" 2>/dev/null || echo 0)
-    # The first line says what went wrong ("fatal: Unable to create '…/index.lock': File exists.").
-    # `|| true`: git may fail with nothing on stderr, and grep finding nothing must not end the job.
-    SAVE_ERROR="git failed while saving: $(grep -m1 . /tmp/agentvm-save.err | cut -c1-300 || true)"
-  fi
-  log "commits $COMMITS${SAVE_ERROR:+ ($SAVE_ERROR)}"
-}
-
-# The id the host put in a request (letters, digits, dashes), echoed in the reply so the host
-# never takes a late answer to an earlier request for the current one.
-request_id() { tr -cd 'a-zA-Z0-9-' < "$JOB/$1" 2>/dev/null | head -c 64; }
-
-# Atomic: the host must never read a half-written answer.
-reply() { # file json
-  printf '%s' "$2" > "$JOB/$1.tmp" && mv -f "$JOB/$1.tmp" "$JOB/$1"
-}
 
 if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
   # Terminal: interactive Claude in tmux, PTY server over vsock, save/close on request.
@@ -211,29 +160,23 @@ if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
   # answered): the host times out on its side, and the next request is served as usual.
   set +e
   while true; do
-    if [ -e "$JOB/sync.request" ]; then
+    if REQ=$(take_request sync.request); then
       # Snapshot: flush everything to the disk image before the host clones it.
-      REQ=$(request_id sync.request)
-      rm -f "$JOB/sync.request"
       sync
       reply sync.done "$(jq -nc --arg id "$REQ" '{id:$id}')"
     fi
-    if [ -e "$JOB/save.request" ]; then
-      REQ=$(request_id save.request)
-      rm -f "$JOB/save.request"
+    if REQ=$(take_request save.request); then
       copy_transcripts
       save_work
       reply save.done "$(jq -nc --arg id "$REQ" --argjson c "$COMMITS" --arg e "$SAVE_ERROR" \
         '{id:$id, commits:$c} + (if $e == "" then {} else {error:$e} end)')"
     fi
-    if [ -e "$JOB/close.request" ]; then
+    if REQ=$(take_request close.request); then
       log "close requested"
-      REQ=$(request_id close.request)
       copy_transcripts
       save_work
       if [ -z "$SAVE_ERROR" ]; then break; fi
       # The final save failed: stay up so nothing is lost, and tell the host why.
-      rm -f "$JOB/close.request"
       reply close.failed "$(jq -nc --arg id "$REQ" --arg e "$SAVE_ERROR" '{id:$id, error:$e}')"
     fi
     sleep 0.3

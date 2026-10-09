@@ -34,15 +34,13 @@ pub struct PortForward {
 }
 
 impl PortForward {
-    /// Prefers the same port on the Mac, falls back to any free port. The socket is bound without
-    /// SO_REUSEADDR, so it can never shadow a service of this Mac listening on 0.0.0.0:<port>.
+    /// Always on a free port the system picks, shown in the dashboard: taking the VM's port number
+    /// on the Mac (5432, 6379…) would let the VM receive what local clients send to a service of
+    /// this Mac started later, passwords included.
     pub fn start(guest_port: u16, socket: PathBuf) -> io::Result<Self> {
-        let bind = |port: u16| -> io::Result<tokio::net::TcpListener> {
-            let s = TcpSocket::new_v4()?;
-            s.bind(([127, 0, 0, 1], port).into())?;
-            s.listen(256)
-        };
-        let listener = bind(guest_port).or_else(|_| bind(0))?;
+        let s = TcpSocket::new_v4()?;
+        s.bind(([127, 0, 0, 1], 0).into())?;
+        let listener = s.listen(256)?;
         let host_port = listener.local_addr()?.port();
         let task = tokio::spawn(async move {
             loop {

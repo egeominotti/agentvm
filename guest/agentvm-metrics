@@ -15,6 +15,12 @@ CLK_TCK = os.sysconf("SC_CLK_TCK")
 PAGE_MB = os.sysconf("SC_PAGE_SIZE") / (1024 * 1024)
 
 
+def rate(now, before, dt):
+    """Bytes per second since the last sample, never negative: a counter that went down (an
+    interface removed, a disk detached) would otherwise be refused by the host."""
+    return max(0, round((now - before) / dt))
+
+
 def cpu_totals():
     fields = [int(v) for v in open("/proc/stat").readline().split()[1:]]
     idle = fields[3] + fields[4]
@@ -153,16 +159,16 @@ def main():
             "mem_total_mb": mem_total,
             "disk_used_mb": (disk.total - disk.free) // (1024 * 1024),
             "disk_total_mb": disk.total // (1024 * 1024),
-            "net_rx_bps": round((rx - prev_rx) / dt),
-            "net_tx_bps": round((tx - prev_tx) / dt),
+            "net_rx_bps": rate(rx, prev_rx, dt),
+            "net_tx_bps": rate(tx, prev_tx, dt),
             "procs": len(procs),
             "top": top[:TOP_N],
             "top_mem": [
                 {"name": name, "cpu_pct": 0.0, "mem_mb": round(rss)}
                 for name, _, rss in sorted(procs.values(), key=lambda p: p[2], reverse=True)[:TOP_N]
             ],
-            "disk_read_bps": round((rd - prev_rd) / dt),
-            "disk_write_bps": round((wr - prev_wr) / dt),
+            "disk_read_bps": rate(rd, prev_rd, dt),
+            "disk_write_bps": rate(wr, prev_wr, dt),
             "ports": [{"port": p, "name": n} for p, n in sorted(port_names.items())],
         })
         prev_idle, prev_total, prev_rx, prev_tx, prev_procs, prev_t = idle, total, rx, tx, procs, now

@@ -19,7 +19,13 @@ if [ ! -f "$IMAGES/disk.raw" ]; then
   curl -fsSL -o "$IMAGES/$TARBALL" "$BASE_URL/$TARBALL"
   SUM=$(curl -fsSL "$BASE_URL/SHA512SUMS" | awk -v f="$TARBALL" '$2 == f {print $1}')
   echo "$SUM  $IMAGES/$TARBALL" | shasum -a 512 -c -
-  tar -xJf "$IMAGES/$TARBALL" -C "$IMAGES"
+  # Into a folder of its own, then renamed: an interrupted extraction never leaves a truncated
+  # disk.raw that later builds would take as complete.
+  rm -rf "$IMAGES/extract"
+  mkdir -p "$IMAGES/extract"
+  tar -xJf "$IMAGES/$TARBALL" -C "$IMAGES/extract"
+  mv -f "$IMAGES/extract/disk.raw" "$IMAGES/disk.raw"
+  rm -rf "$IMAGES/extract"
 fi
 
 rm -rf "${BUILD:?}"

@@ -27,7 +27,12 @@ pub enum SubmitError {
     Resources(#[from] SettingsError),
     #[error(transparent)]
     DiskFull(#[from] crate::domain::disk::DiskFull),
+    #[error("{0}")]
+    Shallow(&'static str),
 }
+
+/// What a shallow clone needs before a VM can start on it.
+pub const SHALLOW: &str = "This repository is a shallow clone: its history cannot be copied into a VM. Run `git fetch --unshallow` in it first.";
 
 pub struct NewTask<'a> {
     pub repo: &'a str,
@@ -61,7 +66,11 @@ pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError
         Err(e) => return Err(e.into()),
     };
     let base_ref = req.base_ref.map(str::trim).filter(|r| !r.is_empty()).unwrap_or("HEAD");
-    let base_sha = Git::new(repo.clone()).rev_parse(base_ref).map_err(SubmitError::UnknownRef)?;
+    let git = Git::new(repo.clone());
+    if git.is_shallow() {
+        return Err(SubmitError::Shallow(SHALLOW));
+    }
+    let base_sha = git.rev_parse(base_ref).map_err(SubmitError::UnknownRef)?;
     if req.restore_from.is_none() && !ctx.config.golden().is_file() {
         return Err(SubmitError::NoGolden(ctx.config.golden().display().to_string()));
     }

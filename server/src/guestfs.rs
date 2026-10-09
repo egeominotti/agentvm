@@ -16,6 +16,7 @@ const O_DIRECTORY: i32 = 0x0010_0000;
 
 unsafe extern "C" {
     fn openat(dirfd: std::ffi::c_int, path: *const std::ffi::c_char, flags: std::ffi::c_int, ...) -> std::ffi::c_int;
+    fn unlinkat(dirfd: std::ffi::c_int, path: *const std::ffi::c_char, flags: std::ffi::c_int) -> std::ffi::c_int;
 }
 
 /// Opens `path` for reading only if it is a regular file: symlinks are refused by the kernel and
@@ -82,9 +83,18 @@ pub fn publish(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 /// Copies a regular file the guest produced to a place only the host controls.
-pub fn copy_out(from: &Path, to: &Path) -> io::Result<u64> {
+/// At most `max_bytes`: a guest's file larger than the room on the Mac's disk (a sparse file is
+/// free in the guest, real bytes here) is refused before anything is written.
+pub fn copy_out(from: &Path, to: &Path, max_bytes: u64) -> io::Result<u64> {
     let mut src =
         open_regular(from).ok_or_else(|| io::Error::other(format!("{} is not a regular file", from.display())))?;
+    let len = src.metadata()?.len();
+    if len > max_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::StorageFull,
+            format!("{} is {} MB, more than the {} MB free on this Mac", from.display(), len >> 20, max_bytes >> 20),
+        ));
+    }
     let mut dst = File::create(to)?;
     io::copy(&mut src, &mut dst)
 }
@@ -93,6 +103,28 @@ pub fn copy_out(from: &Path, to: &Path) -> io::Result<u64> {
 /// symlink and the file is created relative to that handle, so a guest that swaps `dir` for a
 /// symlink cannot make the host write anywhere else; an existing file is never overwritten.
 pub fn create_in(dir: &Path, name: &str) -> io::Result<File> {
+    create_at(dir, name).map(|created| created.file)
+}
+
+/// A file just created in a guest folder, with that folder's handle: removing it goes through
+/// the handle, never through a path the guest may have turned into a link meanwhile.
+pub struct NewFile {
+    pub file: File,
+    pub name: String,
+    dir: File,
+}
+
+impl NewFile {
+    /// Removes the file (a failed upload) from the folder it was created in.
+    pub fn discard(self) {
+        use std::os::fd::AsRawFd;
+        let Ok(name) = std::ffi::CString::new(self.name) else { return };
+        // SAFETY: valid directory descriptor and NUL-terminated name.
+        unsafe { unlinkat(self.dir.as_raw_fd(), name.as_ptr(), 0) };
+    }
+}
+
+fn create_at(dir: &Path, name: &str) -> io::Result<NewFile> {
     use std::os::fd::{AsRawFd, FromRawFd};
     if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\0']) || name.len() > 255 {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("invalid file name {name:?}")));
@@ -109,19 +141,19 @@ pub fn create_in(dir: &Path, name: &str) -> io::Result<File> {
         return Err(io::Error::last_os_error());
     }
     // SAFETY: `fd` was just opened and is owned by nobody else.
-    Ok(unsafe { File::from_raw_fd(fd) })
+    Ok(NewFile { file: unsafe { File::from_raw_fd(fd) }, name: name.to_owned(), dir })
 }
 
 /// `create_in`, picking `notes (2).txt`, `notes (3).txt`… when `name` is taken.
-pub fn create_unique(dir: &Path, name: &str) -> io::Result<(File, String)> {
+pub fn create_unique(dir: &Path, name: &str) -> io::Result<NewFile> {
     let (stem, ext) = match name.rfind('.') {
         Some(i) if i > 0 => (&name[..i], &name[i..]),
         _ => (name, ""),
     };
     for n in 1..1000 {
         let candidate = if n == 1 { name.to_owned() } else { format!("{stem} ({n}){ext}") };
-        match create_in(dir, &candidate) {
-            Ok(f) => return Ok((f, candidate)),
+        match create_at(dir, &candidate) {
+            Ok(created) => return Ok(created),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(e),
         }

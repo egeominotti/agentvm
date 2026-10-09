@@ -87,7 +87,10 @@ async fn prepare(ctx: &AppCtx, id: &TaskId, record: &TaskRecord) -> Result<(JobW
 async fn pack_repo(ctx: &AppCtx, record: &TaskRecord, ws: &JobWorkspace) -> Result<bool, String> {
     // Off the async workers: packing a large repository takes seconds.
     let (home, repo, dest) = (ctx.config.home.clone(), record.repo.as_path().to_path_buf(), ws.repo_bundle());
-    tokio::task::spawn_blocking(move || bundles::prepare(&home, &repo, &dest)).await.map_err(|e| e.to_string())?
+    let base = record.base_sha.clone();
+    tokio::task::spawn_blocking(move || bundles::prepare(&home, &repo, &dest, &base))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// The VM's disk: a clone of the snapshot it is restored from, or of the golden image.

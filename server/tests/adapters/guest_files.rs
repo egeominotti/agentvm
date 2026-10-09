@@ -62,8 +62,8 @@ fn uploads_never_land_outside_the_shared_folder() {
     let mut f = agentvm::guestfs::create_in(&share.join("uploads"), "notes.txt").unwrap();
     std::io::Write::write_all(&mut f, b"one").unwrap();
     // Same name again: a new file next to it, never an overwrite.
-    let (_, second) = agentvm::guestfs::create_unique(&share.join("uploads"), "notes.txt").unwrap();
-    assert_eq!(second, "notes (2).txt");
+    let second = agentvm::guestfs::create_unique(&share.join("uploads"), "notes.txt").unwrap();
+    assert_eq!(second.name, "notes (2).txt");
     assert_eq!(std::fs::read_to_string(share.join("uploads/notes.txt")).unwrap(), "one");
 
     let elsewhere = tmp.path().join("LaunchAgents");
@@ -75,6 +75,24 @@ fn uploads_never_land_outside_the_shared_folder() {
     for bad in ["../x", "a/b", "..", ".", ""] {
         assert!(agentvm::guestfs::create_unique(&tmp.path().join("u2"), bad).is_err(), "{bad:?}");
     }
+}
+
+/// A failed upload removes its file through the folder it was created in: a guest that swaps
+/// `uploads` for a link meanwhile cannot make the host delete a file of this Mac.
+#[test]
+fn a_discarded_upload_never_deletes_through_a_swapped_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let share = tmp.path().join("share");
+    std::fs::create_dir(&share).unwrap();
+    let upload = agentvm::guestfs::create_unique(&share.join("uploads"), "report.pdf").unwrap();
+    let desktop = tmp.path().join("Desktop");
+    std::fs::create_dir(&desktop).unwrap();
+    std::fs::write(desktop.join("report.pdf"), "yours").unwrap();
+    std::fs::rename(share.join("uploads"), share.join("moved")).unwrap();
+    std::os::unix::fs::symlink(&desktop, share.join("uploads")).unwrap();
+    upload.discard();
+    assert_eq!(std::fs::read_to_string(desktop.join("report.pdf")).unwrap(), "yours");
+    assert!(!share.join("moved/report.pdf").exists(), "the upload itself is gone");
 }
 
 /// A request appears with its id already in it: a guest polling for it never reads it empty
@@ -99,4 +117,17 @@ fn a_request_is_never_seen_without_its_id() {
     }
     stop.store(true, std::sync::atomic::Ordering::Relaxed);
     assert_eq!(watcher.join().unwrap(), 0, "the guest could read a request with no id");
+}
+
+/// A bundle the guest leaves is copied only if it fits: a huge sparse file would turn into real
+/// bytes on the Mac's disk and fill it.
+#[test]
+fn a_guest_file_too_big_for_the_disk_is_not_copied() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("out.bundle");
+    std::fs::File::create(&src).unwrap().set_len(10 << 20).unwrap();
+    let dst = tmp.path().join("copy.bundle");
+    assert!(agentvm::guestfs::copy_out(&src, &dst, 1 << 20).is_err());
+    assert!(!dst.exists(), "nothing written");
+    assert_eq!(agentvm::guestfs::copy_out(&src, &dst, 20 << 20).unwrap(), 10 << 20);
 }
