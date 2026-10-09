@@ -5,26 +5,24 @@ import { useSettings } from "../../api/queries";
 import { Button, IconButton } from "../../components/Button";
 import { Icon } from "../../components/Icon";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "../../components/Menu";
-import { Segmented } from "../../components/Segmented";
 import { StatusMark } from "../../components/StatusMark";
 import { isEnded, shortId, titleOf } from "../../lib/task";
 import type { MachineActions } from "./actions";
-
-export type Session = "claude" | "shell";
+import { SessionTabs } from "./SessionTabs";
+import type { Sessions } from "./useSessions";
 
 const INTERVALS = [0, 5, 15, 30, 60, 120];
 const every = (m: number) => (m === 0 ? "Off" : m < 60 ? `Every ${m} min` : `Every ${m / 60} h`);
 
 type Props = {
   task: TaskDto;
-  session: Session;
-  onSession: (s: Session) => void;
+  sessions: Sessions;
   actions: MachineActions;
   inspector: boolean;
   onInspector: () => void;
 };
 
-export function Toolbar({ task: t, session, onSession, actions: a, inspector, onInspector }: Props) {
+export function Toolbar({ task: t, sessions, actions: a, inspector, onInspector }: Props) {
   const ended = isEnded(t);
   const running = t.status.state === "running";
   const terminal = t.interactive && !ended;
@@ -39,29 +37,7 @@ export function Toolbar({ task: t, session, onSession, actions: a, inspector, on
       <span className="tb-id" title={t.id}>
         #{shortId(t)}
       </span>
-      {terminal ? (
-        <Segmented
-          label="Session"
-          value={session}
-          options={[
-            [
-              "claude",
-              <>
-                <Icon name="spark" />
-                Claude
-              </>,
-            ],
-            [
-              "shell",
-              <>
-                <Icon name="terminal" />
-                Shell
-              </>,
-            ],
-          ]}
-          onChange={onSession}
-        />
-      ) : null}
+      {terminal ? <SessionTabs s={sessions} /> : null}
       <span className="tb-gap" />
       {terminal ? (
         <>

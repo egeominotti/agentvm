@@ -17,4 +17,5 @@ mod snapshot;
 mod spec;
 mod task;
 mod telemetry;
+mod terminal_session;
 mod transcript;

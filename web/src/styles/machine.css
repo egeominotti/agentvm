@@ -14,6 +14,19 @@
 .seg button .i { width: 13px; height: 13px; }
 .seg button:hover { color: var(--ink); }
 .seg button[aria-selected="true"] { background: var(--active); color: var(--ink); box-shadow: 0 0 0 1px var(--line-2) inset; }
+/* The terminals' tabs: many shells scroll sideways instead of pushing the toolbar off screen. */
+.toolbar .seg.sessions { flex-shrink: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.sessions .session { display: inline-flex; align-items: center; flex-shrink: 0; position: relative; }
+.sessions .session.extra > [role="radio"] { padding-right: 24px; }
+.sessions .session-close {
+  position: absolute; right: 3px; width: 17px; height: 17px; padding: 0; border-radius: 4px; opacity: 0; color: var(--ink-3);
+}
+.sessions .session-close:focus-visible, .sessions [aria-checked="true"] + .session-close { opacity: 1; }
+.sessions .session:hover .session-close { opacity: 1; }
+.sessions .session-close:hover { background: var(--hover); color: var(--ink); }
+.sessions .session-add { flex-shrink: 0; width: 24px; padding: 0; }
+.sessions .session-close .i { width: 11px; height: 11px; }
+@media (hover: none) { .sessions .session-close { opacity: 1; } }
 
 .check { width: 14px; height: 14px; flex-shrink: 0; display: grid; place-items: center; }
 .check.on::before { content: ""; width: 7px; height: 4px; margin-top: -2px; border: solid var(--ink); border-width: 0 0 1.5px 1.5px; transform: rotate(-45deg); }

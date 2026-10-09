@@ -11,6 +11,7 @@ use super::dto::PtyQuery;
 use super::error::ApiError;
 use super::tasks::find;
 use crate::app::session::{self, Terminal, TerminalInput};
+use crate::domain::terminal_session::{is_extra_shell, is_session};
 
 pub async fn pty(
     State(ctx): Ctx,
@@ -19,11 +20,24 @@ pub async fn pty(
     ws: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
     let (id, _) = find(&ctx, &id)?;
-    if q.session != "claude" && q.session != "shell" {
+    if !is_session(&q.session) {
         return Err(ApiError::bad_request("unknown session"));
     }
     let conn = session::open_terminal(&ctx, &id, &q.session, q.cols, q.rows, q.view).await?;
     Ok(ws.on_upgrade(move |socket| bridge(socket, conn)))
+}
+
+/// `DELETE /api/tasks/{id}/pty/{session}`: closes an extra shell (Claude and the first shell stay).
+pub async fn close_shell(
+    State(ctx): Ctx,
+    Path((id, session_name)): Path<(String, String)>,
+) -> Result<axum::http::StatusCode, ApiError> {
+    if !is_extra_shell(&session_name) {
+        return Err(ApiError::bad_request("only an extra shell (shell-2 … shell-9) can be closed"));
+    }
+    let (id, _) = find(&ctx, &id)?;
+    session::close_shell(&ctx, &id, &session_name).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 /// Pumps both ways until either side hangs up.

@@ -53,6 +53,21 @@ impl PtyConnection {
         self.writer.send(frame).await
     }
 
+    /// Ends session `session` in the VM (its shell and whatever runs in it); its clients close.
+    pub async fn kill(socket: &Path, session: &str) -> std::io::Result<()> {
+        let stream = UnixStream::connect(socket).await?;
+        let (mut read, mut write) = stream.into_split();
+        write.write_all((json!({ "kill": session }).to_string() + "\n").as_bytes()).await?;
+        // The guest answers "ok" once the session is gone, then hangs up.
+        let mut reply = Vec::new();
+        read.read_to_end(&mut reply).await?;
+        if reply.starts_with(b"ok") {
+            Ok(())
+        } else {
+            Err(std::io::Error::other("the VM did not close the shell (started before shells could be closed?)"))
+        }
+    }
+
     pub async fn recv(&mut self) -> std::io::Result<Option<Vec<u8>>> {
         self.reader.recv().await
     }

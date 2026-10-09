@@ -49,6 +49,7 @@ fn task_routes() -> Routes {
         .route("/api/tasks/{id}/save", post(session::save))
         .route("/api/tasks/{id}/close", post(session::close))
         .route("/api/tasks/{id}/pty", get(terminal::pty))
+        .route("/api/tasks/{id}/pty/{session}", delete(terminal::close_shell))
         .route("/api/tasks/{id}/upload", post(session::upload).layer(DefaultBodyLimit::disable()))
         .route("/api/tasks/{id}/snapshot", post(snapshots::take))
         .route("/api/tasks/{id}/auto-snapshots", put(snapshots::set_auto))

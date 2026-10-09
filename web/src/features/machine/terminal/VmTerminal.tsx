@@ -7,7 +7,7 @@ import { copySelections, monoFont, openXterm } from "./xterm";
 
 export type TerminalHandle = { paste: (text: string) => void; focus: () => void };
 
-type Props = { id: string; session: "claude" | "shell"; live: boolean; visible: boolean; ref?: Ref<TerminalHandle> };
+type Props = { id: string; session: string; live: boolean; visible: boolean; ref?: Ref<TerminalHandle> };
 
 // Memoized: the machine view re-renders every second with fresh numbers; the terminal has
 // nothing to redraw for them.

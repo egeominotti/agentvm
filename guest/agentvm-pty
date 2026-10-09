@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """PTY server over vsock (port 5000), run as root in the VM.
 
-Each connection attaches to a persistent root tmux session (`claude` or `shell`),
-so reloading the page does not kill Claude. Protocol: one JSON header line
-`{"session","cols","rows"}`, then frames from the client `[type:1][length:4 BE][payload]`
+Each connection attaches to a persistent root tmux session (`claude`, `shell`, or an extra
+shell `shell-2` … `shell-9`), so reloading the page does not kill Claude. Protocol: one JSON
+header line `{"session","cols","rows"}`, then frames from the client `[type:1][length:4 BE][payload]`
 (0 = input, 1 = resize JSON `{"cols","rows"}`); to the client, the raw terminal bytes.
+A header `{"kill": "shell-N"}` instead ends that extra shell and answers `ok`.
 """
 import fcntl
 import json
@@ -14,6 +15,7 @@ import pwd
 import signal
 import socket
 import struct
+import subprocess
 import termios
 import threading
 import time
@@ -26,6 +28,12 @@ SESSIONS = {
     "claude": ["/usr/local/bin/agentvm-claude"],
     "shell": ["/bin/bash", "-l"],
 }
+# Extra shells beside the first one, opened and closed from the dashboard.
+EXTRA_SHELLS = {f"shell-{n}" for n in range(2, 10)}
+
+
+def command_of(session):
+    return SESSIONS.get(session) or (SESSIONS["shell"] if session in EXTRA_SHELLS else None)
 
 
 def recv_exact(conn, n):
@@ -58,7 +66,7 @@ def spawn(session, cols, rows, view=False):
         # Previews watch without typing and without resizing the window for real clients.
         cmd = ["tmux", "-f", TMUX_CONF, "attach-session", "-f", "ignore-size,read-only", "-t", session]
     else:
-        cmd = ["tmux", "-f", TMUX_CONF, "new-session", "-A", "-s", session, "-c", WORK] + SESSIONS[session]
+        cmd = ["tmux", "-f", TMUX_CONF, "new-session", "-A", "-s", session, "-c", WORK] + command_of(session)
     pid, fd = pty.fork()
     if pid == 0:
         env = {
@@ -115,13 +123,22 @@ def forward(conn, port):
     conn.close()
 
 
+def kill(conn, session):
+    """Ends an extra shell and whatever runs in it; its clients see the session close."""
+    subprocess.run(["tmux", "-f", TMUX_CONF, "kill-session", "-t", f"={session}"], capture_output=True, timeout=10)
+    conn.sendall(b"ok\n")
+    conn.close()
+
+
 def serve(conn):
     pid = fd = None
     try:
         header = read_header(conn)
         if header and isinstance(header.get("forward"), int):
             return forward(conn, header["forward"])
-        if not header or header.get("session") not in SESSIONS:
+        if header and header.get("kill") in EXTRA_SHELLS:
+            return kill(conn, header["kill"])
+        if not header or command_of(header.get("session")) is None:
             return
         pid, fd = spawn(header["session"], int(header.get("cols", 120)), int(header.get("rows", 36)), bool(header.get("view")))
 

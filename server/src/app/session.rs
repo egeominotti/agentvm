@@ -155,6 +155,13 @@ async fn close_and_wait(ctx: &AppCtx, id: &TaskId) -> Result<(), SessionError> {
     }
 }
 
+/// Closes an extra shell of a running terminal: its tmux session in the VM ends.
+pub async fn close_shell(ctx: &AppCtx, id: &TaskId, session: &str) -> Result<(), SessionError> {
+    running_terminal(ctx, id)?;
+    let socket = JobWorkspace::pty_socket_of(&ctx.config.jobs(), id);
+    PtyConnection::kill(&socket, session).await.map_err(|e| SessionError::Unreachable(e.to_string()))
+}
+
 /// A file dropped on a terminal, being written into the VM's shared folder.
 pub struct Upload {
     /// The file being written; `discard` it if the upload fails.

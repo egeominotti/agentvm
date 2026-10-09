@@ -8,4 +8,5 @@ mod helpers;
 mod history;
 mod repos;
 mod settings;
+mod shells;
 mod telemetry;

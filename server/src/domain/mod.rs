@@ -17,5 +17,6 @@ pub mod snapshot;
 pub mod spec;
 pub mod task;
 pub mod telemetry;
+pub mod terminal_session;
 pub mod transcript;
 pub mod usage;
