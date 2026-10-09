@@ -35,9 +35,9 @@ account** and press **New VM**. Needs a Mac with Apple silicon, Xcode Command Li
 [Rust](https://rustup.rs) and [Bun](https://bun.sh); details in [Quickstart](#quickstart).
 
 <p align="center">
-  <img src="docs/assets/wall.webp" alt="The Machines page: ten VMs, seven Claude Code agents waiting for review and three terminals ready" width="100%">
+  <a href="https://youtu.be/evHJM9BRvnw"><img src="docs/assets/video.webp" alt="Watch the one-minute demo of agentvm on YouTube" width="100%"></a>
 </p>
-<p align="center"><i>Ten VMs on one Mac: seven agents waiting for review, three terminals ready, 4.7 GB of memory in use.</i></p>
+<p align="center"><i>One minute of the real dashboard and real VMs: a VM in under two seconds, eight agents at once, root, terminals, ports, snapshots, and the work back as a branch. <a href="https://youtu.be/evHJM9BRvnw">Watch it on YouTube</a>.</i></p>
 
 ## Highlights
 
@@ -162,6 +162,11 @@ http://3000.<vm>.localhost:7777     HTTP and WebSocket, hot reload included
 
 Other TCP services (databases) get a direct port on `127.0.0.1`. Both work even when the service
 listens only on the VM's localhost.
+
+<p align="center">
+  <img src="docs/assets/wall.webp" alt="The Machines page: ten VMs, seven Claude Code agents waiting for review and three terminals ready" width="100%">
+</p>
+<p align="center"><i>Ten VMs on one Mac: seven agents waiting for review, three terminals ready, 4.7 GB of memory in use.</i></p>
 
 <p align="center">
   <img src="docs/assets/machines-list.webp" alt="The Machines page as a list: status, CPU, memory, ports, Claude's spend and uptime of ten VMs" width="100%">
