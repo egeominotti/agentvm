@@ -2,11 +2,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
-import { monoFont } from "./features/machine/terminal/xterm";
+import { monoFont } from "./features/machine/terminal/font";
 import "./styles/tokens.css";
 
-// The terminal font starts loading with the page, not when the first terminal opens.
+// The terminal font and engine start loading with the page, not when the first terminal opens.
 monoFont();
+requestIdleCallback(() => import("./features/machine/terminal/restty-view"), { timeout: 2000 });
 
 const client = new QueryClient({
   defaultOptions: {

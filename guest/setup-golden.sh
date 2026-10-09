@@ -8,9 +8,10 @@ apt-get update -qq
 apt-get install -y -qq git curl ca-certificates ripgrep jq build-essential tmux python3-pip python3-venv >/dev/null
 # The shell of the terminals: zsh with a developer's tools, all from Debian (no install scripts).
 apt-get install -y -qq zsh zsh-autosuggestions zsh-syntax-highlighting fzf bat eza zoxide fd-find lazygit starship >/dev/null
-install -m 644 "$SRC/config/zshrc" /root/.zshrc
-install -d /root/.config
-install -m 644 "$SRC/config/starship.toml" /root/.config/starship.toml
+install -d /etc/agentvm
+install -m 644 "$SRC/config/zshrc" /etc/agentvm/zshrc
+install -m 644 "$SRC/config/starship.toml" /etc/agentvm/starship.toml
+install -m 644 "$SRC/config/zshrc.stub" /root/.zshrc
 # A browser for Claude: headless Chromium driven through the Playwright MCP server.
 apt-get install -y -qq --no-install-recommends chromium nodejs npm fonts-liberation fonts-noto-color-emoji >/dev/null
 npm install -g --no-fund --no-audit --loglevel=error @playwright/mcp@latest

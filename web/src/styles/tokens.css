@@ -2,8 +2,8 @@
 @font-face { font-family: "Geist"; src: url("/fonts/GeistVF.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 @font-face { font-family: "Geist Mono"; src: url("/fonts/GeistMonoVF.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 /* The terminals' font, as in Ghostty: JetBrains Mono with Nerd Font symbols (prompt, icons). OFL. */
-@font-face { font-family: "JetBrains Mono NF"; src: url("/fonts/JetBrainsMonoNerdFontMono-Regular.woff2") format("woff2"); font-weight: 400; font-display: block; }
-@font-face { font-family: "JetBrains Mono NF"; src: url("/fonts/JetBrainsMonoNerdFontMono-Bold.woff2") format("woff2"); font-weight: 700; font-display: block; }
+@font-face { font-family: "JetBrains Mono NF"; src: url("/fonts/JetBrainsMonoNerdFontMono-Regular.ttf") format("truetype"); font-weight: 400; font-display: block; }
+@font-face { font-family: "JetBrains Mono NF"; src: url("/fonts/JetBrainsMonoNerdFontMono-Bold.ttf") format("truetype"); font-weight: 700; font-display: block; }
 
 /* Dark, the default. Terminals use Catppuccin (Mocha here, Latte in light mode): --term is their
    background, so what sits around them matches. */

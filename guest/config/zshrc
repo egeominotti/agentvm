@@ -1,5 +1,6 @@
 # The VM's shell: a developer's setup (starship, zoxide, fzf, eza, bat, lazygit), in the colors
 # of the terminal (Catppuccin Mocha or Latte, as the dashboard). Fast to start: no framework.
+# Installed as /etc/agentvm/zshrc at every launch; ~/.zshrc loads it and holds the user's own.
 export SHELL=/bin/zsh
 export PATH="$HOME/.local/bin:$PATH"
 HISTSIZE=50000; SAVEHIST=50000; HISTFILE=~/.zsh_history
@@ -8,6 +9,7 @@ setopt SHARE_HISTORY HIST_IGNORE_DUPS INTERACTIVE_COMMENTS AUTO_CD
 autoload -Uz compinit && compinit -C
 zstyle ':completion:*' menu select
 
+export STARSHIP_CONFIG=/etc/agentvm/starship.toml
 eval "$(starship init zsh)"
 eval "$(zoxide init zsh)"
 source <(fzf --zsh)

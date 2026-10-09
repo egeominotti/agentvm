@@ -48,8 +48,10 @@ times out under heavy load (many VMs running) can pass alone: rerun it alone bef
 - After changing a Rust type used by the API: `cd server && TS_RS_LARGE_INT=number cargo test --quiet --lib`
   regenerates `web/src/api/generated/`; commit them with the change (CI checks they match).
 - Browser checks: a tab in the background throttles timers, pauses telemetry polling and may drop
-  synthetic key presses. Type through `window.__terms.<session>.xterm.input()` on the Vite dev
-  build, or judge the behavior, not those artifacts.
+  synthetic key presses. Drive the page from a headless Chrome instead (it draws every frame and
+  takes real keys): `playwright-core` with `channel: "chrome"`. On the Vite dev build
+  `window.__terms.<session>.socket.send()` types into a terminal. `data-engine` on a `.term`
+  says what draws it (`restty:webgpu`, `restty:webgl2`, `xterm`).
 
 ## Guest (inside the VMs)
 

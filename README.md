@@ -166,7 +166,7 @@ It prints the values to paste in **Settings → Backups to S3** (provider *Local
 
 ```mermaid
 flowchart LR
-    B[Browser<br/>dashboard + xterm.js] -- HTTP / WebSocket --> S[agentvm-server<br/>Rust · axum]
+    B[Browser<br/>dashboard + restty] -- HTTP / WebSocket --> S[agentvm-server<br/>Rust · axum]
     S -- spawns, one per VM --> H[agentvm-vm<br/>Swift · Virtualization.framework]
     H --> V[Debian 13 arm64 VM<br/>Claude Code as root<br/>tmux: claude + shell]
     S <-- git bundle · virtiofs --> V
@@ -276,7 +276,8 @@ which is handy for scripting.
 server/      Rust: domain (pure) → app (use cases) → http, plus adapters for git, VMs, PTY,
              Keychain, S3, archives; the dashboard's build is embedded in the binary
 web/         The dashboard: React, TypeScript (types generated from the Rust ones), Vite, Bun;
-             terminals are xterm.js on WebGL
+             terminals are restty (Ghostty's core in WebAssembly, on WebGPU), xterm.js when
+             the GPU cannot run it
 vm-helper/   Swift: one VM per process, vsock bridge for terminals
 guest/       Golden image setup, plus the job runner, PTY server, Claude wrapper, status line
              and telemetry collector that the server ships to every VM at launch
@@ -312,7 +313,8 @@ Release notes: [CHANGELOG.md](CHANGELOG.md).
 
 ## Acknowledgements
 
-[xterm.js](https://xtermjs.org) (MIT), [React](https://react.dev) (MIT), [TanStack Query](https://tanstack.com/query)
+[restty](https://github.com/wiedymi/restty) and [libghostty-vt](https://ghostty.org) (MIT),
+[xterm.js](https://xtermjs.org) (MIT), [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (OFL), [React](https://react.dev) (MIT), [TanStack Query](https://tanstack.com/query)
 (MIT), [Radix UI](https://www.radix-ui.com) (MIT) and the [Geist](https://vercel.com/font) fonts (SIL OFL 1.1) are
 bundled into the dashboard; it loads nothing from the internet.
 Local S3 testing uses [RustFS](https://github.com/rustfs/rustfs).

@@ -6,15 +6,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { minimumContrast, pageTheme, terminalTheme } from "./palette";
 
-/** The terminal font, loaded before any terminal opens: xterm measures its cells once, and the
- *  GPU's glyph atlas is drawn from that measure. */
-export const monoFont = (): Promise<unknown> =>
-  document.fonts.check('13px "JetBrains Mono NF"') && document.fonts.check('bold 13px "JetBrains Mono NF"')
-    ? Promise.resolve()
-    : Promise.all([
-        document.fonts.load('13px "JetBrains Mono NF"'),
-        document.fonts.load('bold 13px "JetBrains Mono NF"'),
-      ]);
+export { monoFont } from "./font";
 
 /** Every terminal draws on the GPU (WebGL). When the browser takes the GPU context back (too
  *  many at once, sleep, a driver reset) the terminal falls back to the DOM renderer at once and

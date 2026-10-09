@@ -46,6 +46,14 @@ mountpoint -q "$JOB" || mount -t virtiofs job "$JOB"
 # Saving the work and answering the host's requests (shipped by the server with this script).
 # shellcheck source=agentvm-save
 source "$JOB/runtime/agentvm-save"
+
+# The terminals' shell setup ships with every launch, like these scripts: a change needs no new
+# image. ~/.zshrc only loads it, so what the user adds there is never overwritten.
+if [ -f "$JOB/runtime/zshrc" ]; then
+  install -m 644 "$JOB/runtime/zshrc" /etc/agentvm/zshrc
+  install -m 644 "$JOB/runtime/starship.toml" /etc/agentvm/starship.toml
+  grep -qs "/etc/agentvm/zshrc" /root/.zshrc || install -m 644 "$JOB/runtime/zshrc.stub" /root/.zshrc
+fi
 # Telemetry for the dashboard, once per second, in every mode.
 keep_running /usr/local/bin/agentvm-metrics
 

@@ -27,6 +27,9 @@ const RUNTIME: &[(&str, &str)] = &[
     ("agentvm-statusline", include_str!("../../../guest/agentvm-statusline")),
     ("agentvm-claude", include_str!("../../../guest/agentvm-claude")),
     ("tmux.conf", include_str!("../../../guest/config/tmux.conf")),
+    ("zshrc", include_str!("../../../guest/config/zshrc")),
+    ("zshrc.stub", include_str!("../../../guest/config/zshrc.stub")),
+    ("starship.toml", include_str!("../../../guest/config/starship.toml")),
 ];
 
 /// JSON the guest writes (metrics, usage, result) is a few KiB.

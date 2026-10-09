@@ -1,0 +1,4 @@
+# agentvm's shell setup, kept up to date at every launch: /etc/agentvm/zshrc.
+source /etc/agentvm/zshrc
+
+# Yours below: agentvm never changes what follows.
