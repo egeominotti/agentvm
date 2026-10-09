@@ -18,12 +18,14 @@ export const keys = {
   usage: (id: string) => ["usage", id] as const,
 };
 
-/** Every machine, running ones first, then oldest first. Refreshed every second. */
+/** Every machine, running ones first, then oldest first. Refreshed every second, in a background
+ *  tab too: that is how a machine waiting for you is noticed while you work elsewhere. */
 export function useTasks() {
   return useQuery({
     queryKey: keys.tasks,
     queryFn: () => api<TaskDto[]>("/api/tasks"),
     refetchInterval: 1000,
+    refetchIntervalInBackground: true,
     select: (tasks) => [...tasks].sort(byLiveThenAge),
   });
 }
@@ -34,7 +36,12 @@ export function useTask(id: string): TaskDto | undefined {
 }
 
 export function useStatus() {
-  return useQuery({ queryKey: keys.status, queryFn: () => api<Status>("/api/status"), refetchInterval: 3000 });
+  return useQuery({
+    queryKey: keys.status,
+    queryFn: () => api<Status>("/api/status"),
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
+  });
 }
 
 export function useSettings() {

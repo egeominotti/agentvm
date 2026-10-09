@@ -1,0 +1,119 @@
+// The machine's bar: what it is and its state, the two sessions, and the two things people do
+// with a running machine (Save, Close). Everything else waits in the "⋯" menu.
+import type { TaskDto } from "../../api/generated/TaskDto";
+import { useSettings } from "../../api/queries";
+import { Button, IconButton } from "../../components/Button";
+import { Icon } from "../../components/Icon";
+import { Menu, MenuItem, MenuLabel, MenuSeparator } from "../../components/Menu";
+import { StatusMark } from "../../components/StatusMark";
+import { isEnded, shortId, titleOf } from "../../lib/task";
+import type { MachineActions } from "./actions";
+
+export type Session = "claude" | "shell";
+
+const INTERVALS = [0, 5, 15, 30, 60, 120];
+const every = (m: number) => (m === 0 ? "Off" : m < 60 ? `Every ${m} min` : `Every ${m / 60} h`);
+
+type Props = {
+  task: TaskDto;
+  session: Session;
+  onSession: (s: Session) => void;
+  actions: MachineActions;
+  inspector: boolean;
+  onInspector: () => void;
+};
+
+export function Toolbar({ task: t, session, onSession, actions: a, inspector, onInspector }: Props) {
+  const ended = isEnded(t);
+  const running = t.status.state === "running";
+  const terminal = t.interactive && !ended;
+  const fallback = useSettings().data?.settings.auto_snapshots.every_min ?? 30;
+  const busy = a.save.isPending || a.close.isPending;
+  return (
+    <header className="toolbar">
+      <StatusMark task={t} label />
+      <h1 className="tb-title" title={`${t.prompt || "(no first task)"}\n${t.repo}`}>
+        {titleOf(t)}
+      </h1>
+      <span className="tb-id" title={t.id}>
+        #{shortId(t)}
+      </span>
+      {terminal ? (
+        <div className="seg" role="tablist" aria-label="Session">
+          {(["claude", "shell"] as const).map((s) => (
+            <button key={s} type="button" role="tab" aria-selected={session === s} onClick={() => onSession(s)}>
+              {s === "claude" ? "Claude" : "Shell"}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <span className="tb-gap" />
+      {terminal ? (
+        <>
+          <Button
+            disabled={!running || busy}
+            onClick={() => a.save.mutate()}
+            title={`Copy the VM's commits to the branch ${t.branch} in your repository. The VM keeps running.`}
+          >
+            {a.save.isPending ? "Saving…" : "Save"}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!running || busy}
+            onClick={() => a.close.mutate()}
+            title="Save, then shut the VM down"
+          >
+            {a.close.isPending ? "Closing…" : "Close"}
+          </Button>
+        </>
+      ) : null}
+      <Menu
+        trigger={
+          <IconButton aria-label="More actions" title="More actions">
+            <Icon name="more" />
+          </IconButton>
+        }
+      >
+        {terminal ? (
+          <>
+            <MenuItem disabled={!running || a.snapshot.isPending} onSelect={() => a.snapshot.mutate()}>
+              Take a snapshot now
+            </MenuItem>
+            <MenuLabel>Automatic snapshots</MenuLabel>
+            <MenuItem onSelect={() => a.autoSnapshots.mutate(null)}>
+              <Check on={t.auto_snapshot_min == null} />
+              As in Settings ({every(fallback).toLowerCase()})
+            </MenuItem>
+            {INTERVALS.map((m) => (
+              <MenuItem key={m} onSelect={() => a.autoSnapshots.mutate(m)}>
+                <Check on={t.auto_snapshot_min === m} />
+                {every(m)}
+              </MenuItem>
+            ))}
+            <MenuSeparator />
+          </>
+        ) : null}
+        <MenuItem onSelect={() => navigator.clipboard.writeText(t.branch)}>Copy branch name</MenuItem>
+        {ended ? (
+          <MenuItem danger confirm="Remove it? Its branch stays" onSelect={() => a.remove.mutate()}>
+            Remove from the list
+          </MenuItem>
+        ) : (
+          <MenuItem danger confirm="Power off without saving?" onSelect={() => a.stop.mutate()}>
+            Force stop
+          </MenuItem>
+        )}
+      </Menu>
+      <IconButton
+        aria-pressed={inspector}
+        aria-label="Details panel"
+        title="Telemetry, Claude's history and diagnostics"
+        onClick={onInspector}
+      >
+        <Icon name="panel" />
+      </IconButton>
+    </header>
+  );
+}
+
+const Check = ({ on }: { on: boolean }) => <span className={`check${on ? " on" : ""}`} aria-hidden="true" />;

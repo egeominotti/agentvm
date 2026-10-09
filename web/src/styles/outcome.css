@@ -1,0 +1,24 @@
+/* A closed machine: how it ended, the commands to use its branch, and its changes. */
+.result { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 24px 40px; display: grid; gap: 16px; align-content: start; }
+.result > * { max-width: 920px; }
+.outcome { display: grid; gap: 10px; padding: 16px 18px; border-radius: var(--r-lg); border: 1px solid var(--line-2); background: var(--raised); min-width: 0; }
+.outcome h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: var(--fs-lg); font-weight: 590; letter-spacing: -0.015em; }
+.outcome h2::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--c); flex-shrink: 0; }
+.outcome p { margin: 0; color: var(--ink-2); }
+.outcome .reason { font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink-3); white-space: pre-wrap; word-break: break-word; }
+.cmd { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.cmd code { flex: 1; min-width: 0; padding: 6px 10px; border-radius: 6px; background: var(--bg); border: 1px solid var(--line); color: var(--ink-2); font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-all; }
+.cmd .btn { margin-top: 3px; }
+.diff { display: grid; gap: 10px; min-width: 0; }
+.diff-summary { margin: 0; color: var(--ink-2); }
+.diff-file { border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
+.diff-file summary { display: flex; gap: 10px; align-items: center; height: 34px; padding: 0 12px; cursor: pointer; background: var(--raised); list-style: none; font-family: var(--mono); font-size: 12px; }
+.diff-file summary::-webkit-details-marker { display: none; }
+.diff-file .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plus { color: var(--done); }
+.minus { color: var(--fail); }
+.diff-body { font: 12px/1.6 var(--mono); overflow-x: auto; background: var(--term); }
+.diff-body div { padding: 0 12px; white-space: pre; min-height: 1.6em; }
+.diff-body .a { background: rgba(76, 183, 130, .08); color: #6fcf9f; }
+.diff-body .d { background: rgba(235, 87, 87, .08); color: #f08080; }
+.diff-body .h { color: var(--ink-3); background: var(--surface); }
