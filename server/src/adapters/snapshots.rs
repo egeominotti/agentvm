@@ -1,4 +1,5 @@
-//! Snapshots on disk: `<root>/<id>/{disk.raw, efivars, meta.json}`.
+//! Snapshots on disk: `<root>/<id>/{efivars, meta.json}` and the disk, first as `disk.raw` (an
+//! instant clone), then as `disk.manifest.json` once its chunks are in the shared chunk store.
 
 use std::ffi::CString;
 use std::fs;
@@ -7,7 +8,10 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
+use crate::domain::chunks::Manifest;
 use crate::domain::snapshot::{SnapshotId, SnapshotMeta};
+
+const MANIFEST: &str = "disk.manifest.json";
 
 unsafe extern "C" {
     fn clonefile(src: *const std::ffi::c_char, dst: *const std::ffi::c_char, flags: u32) -> std::ffi::c_int;
@@ -21,6 +25,7 @@ fn clone(src: &Path, dst: &Path) -> io::Result<()> {
     if unsafe { clonefile(s.as_ptr(), d.as_ptr(), 0) } == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
 }
 
+#[derive(Clone)]
 pub struct SnapshotStore {
     root: PathBuf,
 }
@@ -93,6 +98,43 @@ impl SnapshotStore {
         all
     }
 
+    /// Its disk as chunks, once compacted (`None` while it is still a raw clone).
+    pub fn manifest(&self, id: &SnapshotId) -> Option<Manifest> {
+        serde_json::from_slice(&fs::read(self.dir(id).join(MANIFEST)).ok()?).ok()
+    }
+
+    /// Whether its disk is still the raw clone (not yet compacted).
+    pub fn has_raw_disk(&self, id: &SnapshotId) -> bool {
+        self.disk(id).is_file()
+    }
+
+    /// The disk is now in the chunk store: its manifest is saved (durably) before the raw clone
+    /// goes, so the snapshot is never without its disk.
+    pub fn compacted(&self, id: &SnapshotId, manifest: &Manifest) -> io::Result<()> {
+        let dir = self.dir(id);
+        if !dir.is_dir() {
+            return Err(io::Error::new(io::ErrorKind::NotFound, "the snapshot was deleted meanwhile"));
+        }
+        crate::atomic_file::write_json(&dir.join(MANIFEST), manifest)?;
+        fs::remove_file(dir.join("disk.raw"))?;
+        fs::File::open(&dir).and_then(|d| crate::atomic_file::sync_file(&d))
+    }
+
+    /// Every compacted snapshot's manifest: what the chunk store must keep.
+    pub fn manifests(&self) -> Vec<(SnapshotId, Manifest)> {
+        let Ok(entries) = fs::read_dir(&self.root) else { return Vec::new() };
+        entries
+            .flatten()
+            .filter_map(|e| SnapshotId::parse(&e.file_name().to_string_lossy()))
+            .filter_map(|id| self.manifest(&id).map(|m| (id, m)))
+            .collect()
+    }
+
+    /// Instant copy of its raw disk to `dest` (a snapshot not compacted yet).
+    pub fn clone_disk_to(&self, id: &SnapshotId, dest: &Path) -> io::Result<()> {
+        clone(&self.disk(id), dest)
+    }
+
     /// Folder of a snapshot, e.g. to archive it.
     pub fn folder(&self, id: &SnapshotId) -> PathBuf {
         self.dir(id)
@@ -125,9 +167,11 @@ impl SnapshotStore {
         Ok(())
     }
 
-    /// Turns an extracted folder (with `disk.raw`, `efivars`, `meta.json`) into the snapshot `meta.id`.
+    /// Turns an extracted folder (`efivars`, `meta.json` and `disk.raw` or a manifest whose chunks
+    /// are already in the store) into the snapshot `meta.id`.
     pub fn adopt(&self, dir: &Path, meta: SnapshotMeta) -> io::Result<SnapshotMeta> {
-        if !dir.join("disk.raw").is_file() || !dir.join("efivars").is_file() {
+        let disk = dir.join("disk.raw").is_file() || dir.join(MANIFEST).is_file();
+        if !disk || !dir.join("efivars").is_file() {
             return Err(io::Error::other("the archive is not an agentvm snapshot"));
         }
         crate::atomic_file::write_json(&dir.join("meta.json"), &meta)?;

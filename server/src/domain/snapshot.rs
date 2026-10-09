@@ -45,7 +45,7 @@ pub struct SnapshotMeta {
     pub model: String,
     pub claude_version: Option<String>,
     pub created_at: f64,
-    /// Size of the disk image (copy-on-write: blocks shared with the golden image count too).
+    /// What this snapshot costs: the compressed chunks only it uses (while compacting, its clone).
     pub size_mb: u64,
     /// Resources of the source VM, reused on restore (0 = use the settings).
     #[serde(default)]
@@ -55,6 +55,9 @@ pub struct SnapshotMeta {
     /// Taken by the schedule (or before a close): pruned to the newest `keep` per VM.
     #[serde(default)]
     pub auto: bool,
+    /// Still the instant clone it was taken as, being compressed into the shared chunks.
+    #[serde(default)]
+    pub compacting: bool,
 }
 
 /// Automatic snapshots of running terminals.

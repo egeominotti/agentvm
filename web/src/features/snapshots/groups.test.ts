@@ -15,6 +15,7 @@ const snap = (over: Partial<SnapshotMeta>): SnapshotMeta => ({
   cpus: 4,
   memory_mb: 4096,
   auto: false,
+  compacting: false,
   ...over,
 });
 

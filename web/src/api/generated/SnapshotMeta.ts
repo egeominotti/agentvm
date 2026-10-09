@@ -7,7 +7,7 @@ export type SnapshotMeta = { id: SnapshotId, name: string,
  */
 source_task: string, repo: string, base_sha: string, model: string, claude_version: string | null, created_at: number, 
 /**
- * Size of the disk image (copy-on-write: blocks shared with the golden image count too).
+ * What this snapshot costs: the compressed chunks only it uses (while compacting, its clone).
  */
 size_mb: number, 
 /**
@@ -17,4 +17,8 @@ cpus: number, memory_mb: number,
 /**
  * Taken by the schedule (or before a close): pruned to the newest `keep` per VM.
  */
-auto: boolean, };
+auto: boolean, 
+/**
+ * Still the instant clone it was taken as, being compressed into the shared chunks.
+ */
+compacting: boolean, };

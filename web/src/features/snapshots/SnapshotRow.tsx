@@ -47,7 +47,14 @@ export function SnapshotRow({ s, label, resume }: { s: SnapshotMeta; label: stri
         <b>{label}</b>
         <span className="snap-meta">
           {when(s.created_at)} · {s.cpus ? `${s.cpus} vCPUs, ${gb(s.memory_mb)} · ` : ""}
-          {modelLabel(s.model)}
+          {modelLabel(s.model)} ·{" "}
+          {s.compacting ? (
+            <span title="Being compressed into the chunks snapshots share">compressing…</span>
+          ) : (
+            <span title="What deleting it frees: the compressed data only this snapshot holds">
+              {s.size_mb < 1 ? "< 1 MB" : gb(s.size_mb)}
+            </span>
+          )}
         </span>
       </div>
       <Menu

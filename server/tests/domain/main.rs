@@ -2,6 +2,7 @@
 
 mod agent_event;
 mod branches;
+mod chunks;
 mod console_text;
 mod diagnosis;
 mod git_remote;

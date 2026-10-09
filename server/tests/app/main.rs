@@ -18,6 +18,7 @@ mod recovery;
 mod remote_repos;
 mod scheduler;
 mod settings;
+mod snapshot_disks;
 mod store;
 mod tailscale;
 mod telemetry;

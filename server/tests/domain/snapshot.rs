@@ -18,6 +18,7 @@ fn snap(task: &str, at: f64, auto: bool) -> SnapshotMeta {
         cpus: 0,
         memory_mb: 0,
         auto,
+        compacting: false,
     }
 }
 

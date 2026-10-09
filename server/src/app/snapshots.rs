@@ -69,6 +69,7 @@ pub async fn take_auto(ctx: &AppCtx, id: &TaskId, why: &str) -> Result<SnapshotM
             let _ = ctx.snapshots.delete(&old);
         }
     }
+    ctx.compactor.notify_one();
     Ok(meta)
 }
 
@@ -143,6 +144,7 @@ async fn take(
     .await
     .map_err(|e| SnapshotError::Io(std::io::Error::other(e.to_string())))?
     .map_err(SnapshotError::Io)
+    .inspect(|_| ctx.compactor.notify_one())
 }
 
 /// What the VM was for: the first line of its task, or its repository and start time.
@@ -170,6 +172,7 @@ fn meta_for(record: &TaskRecord, name: String, auto: bool, now: SystemTime) -> S
         cpus: record.cpus,
         memory_mb: record.memory_mb,
         auto,
+        compacting: false,
     }
 }
 
@@ -224,8 +227,18 @@ pub fn restore(ctx: &Arc<AppCtx>, snap: &SnapshotId) -> Result<TaskId, SnapshotE
     Ok(id)
 }
 
+/// Newest first, each with what it really costs: the compressed chunks only it uses (its
+/// deletion frees them). One not compacted yet shows the space its clone takes meanwhile.
 pub fn list(ctx: &AppCtx) -> Vec<SnapshotMeta> {
-    ctx.snapshots.list()
+    let (own, _) = super::snapshot_disks::sizes(ctx);
+    ctx.snapshots
+        .list()
+        .into_iter()
+        .map(|m| match own.get(&m.id) {
+            Some(mb) => SnapshotMeta { size_mb: *mb, compacting: false, ..m },
+            None => SnapshotMeta { compacting: ctx.snapshots.has_raw_disk(&m.id), ..m },
+        })
+        .collect()
 }
 
 pub fn delete(ctx: &AppCtx, snap: &SnapshotId) -> Result<(), SnapshotError> {
@@ -235,7 +248,10 @@ pub fn delete(ctx: &AppCtx, snap: &SnapshotId) -> Result<(), SnapshotError> {
     if needed_to_start(ctx).contains(snap.as_str()) {
         return Err(SnapshotError::InUse);
     }
-    Ok(ctx.snapshots.delete(snap)?)
+    ctx.snapshots.delete(snap)?;
+    // Its chunks no other snapshot uses go too.
+    ctx.compactor.notify_one();
+    Ok(())
 }
 
 /// Local wall-clock time `HH:MM` (UTC offset from the system's `date`), for default names.

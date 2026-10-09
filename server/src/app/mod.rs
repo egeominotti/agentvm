@@ -25,6 +25,8 @@ pub mod repos;
 pub mod scheduler;
 pub mod session;
 pub mod settings;
+pub mod snapshot_archive;
+pub mod snapshot_disks;
 pub mod snapshots;
 pub mod store;
 pub mod submission;

@@ -13,6 +13,8 @@ pub fn start(ctx: &Arc<AppCtx>) {
     keep_alive("automatic snapshots", move || super::snapshots::run_schedule(c.clone()));
     let c = ctx.clone();
     keep_alive("record retries", move || retry_records(c.clone()));
+    let c = ctx.clone();
+    keep_alive("snapshot compactor", move || super::snapshot_disks::run_compactor(c.clone()));
 }
 
 /// Runs `make()` for ever: when the loop it returns ends or panics, it is logged and run again.

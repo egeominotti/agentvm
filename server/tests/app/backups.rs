@@ -29,6 +29,7 @@ fn stored_snapshot_of(home: &std::path::Path, auto: bool) -> agentvm::domain::sn
         cpus: 0,
         memory_mb: 0,
         auto,
+        compacting: false,
     };
     std::fs::write(dir.join("meta.json"), serde_json::to_vec(&meta).unwrap()).unwrap();
     id

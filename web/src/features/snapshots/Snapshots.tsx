@@ -4,16 +4,28 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 import { api } from "../../api/client";
 import type { SnapshotMeta } from "../../api/generated/SnapshotMeta";
+import type { StorageUsage } from "../../api/generated/StorageUsage";
 import { Button } from "../../components/Button";
 import { Icon } from "../../components/Icon";
 import { useToast } from "../../components/Toast";
-import { plural, repoName } from "../../lib/format";
+import { gb, plural, repoName } from "../../lib/format";
 import { Backups } from "./Backups";
 import { groupSnapshots, labelOf } from "./groups";
 import { SnapshotRow } from "./SnapshotRow";
 
 export function Snapshots() {
-  const q = useQuery({ queryKey: ["snapshots"], queryFn: () => api<SnapshotMeta[]>("/api/snapshots") });
+  // Followed while a snapshot is being compressed: its real size shows when it is done.
+  const q = useQuery({
+    queryKey: ["snapshots"],
+    queryFn: () => api<SnapshotMeta[]>("/api/snapshots"),
+    refetchInterval: (query) => (query.state.data?.some((s) => s.compacting) ? 2000 : false),
+  });
+  const compacting = q.data?.some((s) => s.compacting) ?? false;
+  const storage = useQuery({
+    queryKey: ["storage", compacting],
+    queryFn: () => api<StorageUsage>("/api/storage"),
+    refetchInterval: compacting ? 2000 : false,
+  });
   const groups = groupSnapshots(q.data ?? []);
   const file = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
@@ -41,7 +53,10 @@ export function Snapshots() {
     <div className="wall-view">
       <header className="view-head">
         <h1>Snapshots</h1>
-        <span className="sub">Whole VMs saved at a moment: files, installed packages, Claude's conversation.</span>
+        <span className="sub">
+          Whole VMs saved at a moment: files, installed packages, Claude's conversation.
+          {storage.data && q.data?.length ? ` All of them take ${gb(storage.data.snapshots_mb)}, compressed.` : ""}
+        </span>
         <span className="tb-gap" />
         <Button size="sm" onClick={() => file.current?.click()}>
           <Icon name="upload" />

@@ -1,15 +1,12 @@
 //! Moving snapshots off the Mac: download/upload archives and S3 backups.
 
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
 use serde::Serialize;
 
 use super::context::AppCtx;
-use super::random::random_bytes;
-use crate::adapters::archive;
+pub use super::snapshot_archive::{export, import};
 use crate::adapters::s3::S3Client;
-use crate::adapters::snapshots::SnapshotStore;
 use crate::domain::s3::S3Config;
 use crate::domain::snapshot::{SnapshotId, SnapshotMeta};
 use crate::secret::Secret;
@@ -40,9 +37,9 @@ pub struct RemoteBackup {
     pub local: bool,
 }
 
-const ARCHIVE: &str = "tar.zst";
+pub(super) const ARCHIVE: &str = "tar.zst";
 
-async fn blocking<T: Send + 'static>(
+pub(super) async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, BackupError> + Send + 'static,
 ) -> Result<T, BackupError> {
     tokio::task::spawn_blocking(f).await.map_err(|e| BackupError::Io(std::io::Error::other(e.to_string())))?
@@ -52,51 +49,6 @@ fn temp_dir(ctx: &AppCtx) -> std::io::Result<PathBuf> {
     let dir = ctx.config.home.join("tmp");
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
-}
-
-/// Writes `<snapshot>.tar.zst` in a temporary folder and returns its path.
-pub async fn export(ctx: &AppCtx, sid: &SnapshotId) -> Result<PathBuf, BackupError> {
-    if ctx.snapshots.get(sid).is_none() {
-        return Err(BackupError::NoSnapshot);
-    }
-    let src = ctx.snapshots.folder(sid);
-    let file = temp_file(ctx, &format!("{sid}.{ARCHIVE}"))?;
-    let out = file.path().to_path_buf();
-    blocking(move || Ok(archive::pack(&src, &out)?)).await?;
-    // The caller owns the archive from here (and deletes it).
-    let path = file.path().to_path_buf();
-    std::mem::forget(file);
-    Ok(path)
-}
-
-/// Adds an archive as a local snapshot. Keeps its id unless that id already exists here.
-pub async fn import(ctx: &AppCtx, file: &Path) -> Result<SnapshotMeta, BackupError> {
-    ctx.ensure_disk_space()?;
-    let scratch = ctx.snapshots.scratch(&format!("import-{}", unique()))?;
-    let adopted = adopt(ctx, file, &scratch).await;
-    // Whatever happened, the scratch folder (possibly gigabytes) does not wait for a restart.
-    let _ = std::fs::remove_dir_all(&scratch);
-    adopted
-}
-
-async fn adopt(ctx: &AppCtx, file: &Path, scratch: &Path) -> Result<SnapshotMeta, BackupError> {
-    let (from, to) = (file.to_path_buf(), scratch.to_path_buf());
-    let meta = blocking(move || {
-        archive::unpack(&from, &to)?;
-        SnapshotStore::check_extracted(&to).map_err(|e| BackupError::Invalid(e.to_string()))?;
-        // Bounded, never through a link: a snapshot's meta.json is a few hundred bytes.
-        let bytes = crate::guestfs::read(&to.join("meta.json"), 64 << 10)
-            .ok_or_else(|| BackupError::Invalid("the archive is not an agentvm snapshot".into()))?;
-        serde_json::from_slice::<SnapshotMeta>(&bytes)
-            .map_err(|_| BackupError::Invalid("the archive is not an agentvm snapshot".into()))
-    })
-    .await?;
-    let id = match SnapshotId::parse(meta.id.as_str()) {
-        Some(id) if ctx.snapshots.get(&id).is_none() => id,
-        _ => SnapshotId::generate(SystemTime::now(), &random_bytes()),
-    };
-    // Brought back by hand: kept until deleted by hand, never pruned as an automatic snapshot.
-    Ok(ctx.snapshots.adopt(scratch, SnapshotMeta { id, auto: false, ..meta })?)
 }
 
 /// The client for the configured bucket; the secret key comes from the Keychain, read off the
@@ -253,7 +205,7 @@ pub fn temp_file(ctx: &AppCtx, suffix: &str) -> std::io::Result<TempFile> {
     Ok(TempFile(temp_dir(ctx)?.join(format!("{}-{suffix}", unique()))))
 }
 
-fn unique() -> String {
+pub(super) fn unique() -> String {
     use std::io::Read;
     let mut b = [0u8; 8];
     let _ = std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut b));

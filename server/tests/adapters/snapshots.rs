@@ -24,6 +24,7 @@ fn snapshots_are_stored_listed_and_deleted() {
         cpus: 2,
         memory_mb: 2048,
         auto: false,
+        compacting: false,
     };
     store.create(&meta, &disk, &efi).unwrap();
     let list = store.list();
@@ -61,6 +62,7 @@ fn a_snapshot_never_replaces_one_with_the_same_id() {
         cpus: 2,
         memory_mb: 2048,
         auto: false,
+        compacting: false,
     };
     store.create(&meta, &disk, &efi).unwrap();
     let again = store.create(&SnapshotMeta { name: "second".into(), ..meta }, &other, &efi);
@@ -117,6 +119,7 @@ fn a_snapshot_appears_only_once_complete() {
         cpus: 0,
         memory_mb: 0,
         auto: false,
+        compacting: false,
     };
     store.create(&meta, &disk, &efi).unwrap();
     let names: Vec<String> = std::fs::read_dir(tmp.path().join("snapshots"))

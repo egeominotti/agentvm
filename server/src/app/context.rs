@@ -30,6 +30,12 @@ pub struct AppCtx {
     pub settings: SettingsService,
     pub golden: GoldenService,
     pub snapshots: SnapshotStore,
+    /// The snapshots' disks, as compressed chunks they share.
+    pub chunks: crate::adapters::chunks::ChunkStore,
+    /// Held while chunks are added or deleted (compacting, importing, cleaning up).
+    pub chunk_lock: tokio::sync::Mutex<()>,
+    /// Wakes the snapshot compactor (a snapshot was taken or deleted).
+    pub compactor: tokio::sync::Notify,
     pub forwards: PortForwards,
     /// Requests to running VMs (save, flush, close), one at a time per VM.
     pub guest: GuestChannel,
@@ -61,6 +67,9 @@ impl AppCtx {
             keychain,
             settings,
             snapshots: SnapshotStore::new(config.home.join("snapshots")),
+            chunks: crate::adapters::chunks::ChunkStore::new(config.home.join("snapshots").join("chunks")),
+            chunk_lock: Default::default(),
+            compactor: Default::default(),
             forwards: Default::default(),
             guest: Default::default(),
             releases: Mutex::new(None),

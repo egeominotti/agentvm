@@ -1,6 +1,7 @@
 //! Pure core: types and decisions, no I/O.
 pub mod agent_event;
 pub mod branches;
+pub mod chunks;
 pub mod console_text;
 pub mod diagnosis;
 pub mod disk;

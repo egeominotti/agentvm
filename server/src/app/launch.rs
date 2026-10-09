@@ -75,10 +75,10 @@ async fn prepare(ctx: &AppCtx, id: &TaskId, record: &TaskRecord) -> Result<(JobW
     let secrets = tokio::task::spawn_blocking(move || {
         (keychain.read_token(), joins.then(|| keychain.read_tailscale_key()).flatten())
     });
-    let disk = ws
-        .write_spec(&task_spec(id, record, timeout_s))
-        .map_err(|e| format!("task.json: {e}"))
-        .and_then(|()| install_disk(ctx, record, &ws));
+    let disk = match ws.write_spec(&task_spec(id, record, timeout_s)).map_err(|e| format!("task.json: {e}")) {
+        Ok(()) => install_disk(ctx, record, &ws).await,
+        Err(e) => Err(e),
+    };
     // Every task is awaited before any error returns: none may still write into a folder that
     // is being removed.
     let repo = match repo {
@@ -122,11 +122,14 @@ fn pack_repo(
     })
 }
 
-/// The VM's disk: a clone of the snapshot it is restored from, or of the golden image.
-fn install_disk(ctx: &AppCtx, record: &TaskRecord, ws: &JobWorkspace) -> Result<(), String> {
+/// The VM's disk: the snapshot's it is restored from (written back from its chunks), or a clone
+/// of the golden image.
+async fn install_disk(ctx: &AppCtx, record: &TaskRecord, ws: &JobWorkspace) -> Result<(), String> {
     match &record.restore_from {
         Some(snap) => {
-            ws.clone_disk(&ctx.snapshots.disk(snap)).map_err(|e| format!("snapshot disk clone: {e}"))?;
+            super::snapshot_disks::restore_disk(ctx, snap, ws.disk())
+                .await
+                .map_err(|e| format!("snapshot disk: {e}"))?;
             ws.copy_efivars(&ctx.snapshots.efivars(snap)).map_err(|e| format!("snapshot EFI variables: {e}"))?;
         }
         None => ws.clone_disk(&ctx.config.golden()).map_err(|e| format!("disk clone: {e}"))?,
