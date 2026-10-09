@@ -85,8 +85,7 @@ pub async fn save(ctx: &AppCtx, id: &TaskId) -> Result<Saved, SessionError> {
     let mut branch = id.branch();
     if commits > 0 {
         // Imported from a copy only the Mac controls, not from the file the guest can swap.
-        let (from, copy) =
-            (JobWorkspace::existing(&jobs, id).out_bundle(), jobs.join(id.as_str()).join("saved.bundle"));
+        let (from, copy) = (JobWorkspace::out_bundle_of(&jobs, id), jobs.join(id.as_str()).join("saved.bundle"));
         let target = branch.clone();
         branch = tokio::task::spawn_blocking(move || {
             guestfs::copy_out(&from, &copy).map_err(|e| e.to_string())?;

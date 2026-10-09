@@ -56,6 +56,11 @@ impl JobWorkspace {
     pub fn efivars_of(jobs_root: &Path, id: &TaskId) -> PathBuf {
         jobs_root.join(id.as_str()).join("efivars")
     }
+    /// Where the guest leaves the work of a save. A path only: building a `JobWorkspace` to ask
+    /// would delete the running VM's disk when it is dropped.
+    pub fn out_bundle_of(jobs_root: &Path, id: &TaskId) -> PathBuf {
+        jobs_root.join(id.as_str()).join("share/out.bundle")
+    }
     pub fn pty_socket_of(_jobs_root: &Path, id: &TaskId) -> PathBuf {
         socket_dir().join(format!("{id}.sock"))
     }
@@ -65,7 +70,9 @@ impl JobWorkspace {
         fs::remove_dir_all(jobs_root.join(name))
     }
 
-    /// An existing job folder (e.g. after a server restart). Cleans up like `create` on drop.
+    /// An existing job folder (e.g. after a server restart). Cleans up like `create` on drop: the
+    /// VM's disk, efivars, token, bundle, pid and terminal socket are deleted. Only for the one
+    /// owner of the VM's life; for a path, use the `*_of` functions.
     pub fn existing(jobs_root: &Path, id: &TaskId) -> Self {
         JobWorkspace { dir: jobs_root.join(id.as_str()), id: id.to_string() }
     }

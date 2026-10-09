@@ -135,3 +135,37 @@ fn running_terminals_are_snapshotted_on_a_schedule_and_before_closing() {
     assert_eq!(left.len(), 1, "{left:?}");
     assert!(left[0]["name"].as_str().unwrap().contains("before close"), "{left:?}");
 }
+
+/// Saving to the repository never touches the running VM's files: its disk is still there, so a
+/// snapshot taken after a save works (a save used to delete the disk of the VM it saved).
+#[test]
+#[ignore = "needs golden"]
+fn a_save_keeps_the_running_vms_disk() {
+    let server = start_server();
+    let repo = temp_repo();
+    let created =
+        post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo.path(), "interactive": true}));
+    let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    wait_for_state(&server, &id, |s| s == "running", Duration::from_secs(60));
+    let t0 = Instant::now();
+    while get_json(&format!("{}/api/tasks/{id}", server.base))["ready"] != true {
+        assert!(t0.elapsed() < Duration::from_secs(60), "terminal not ready");
+        std::thread::sleep(Duration::from_millis(300));
+    }
+    run_in_shell(
+        &server,
+        &id,
+        "cd /root/work && echo saved > saved.txt && git add saved.txt && git -c user.name=t -c user.email=t@t commit -qm saved",
+    );
+    let saved = post_json(&format!("{}/api/tasks/{id}/save", server.base), &json!({}));
+    assert_eq!(saved["commits"].as_u64(), Some(1), "{saved}");
+
+    let job = server.home.path().join("jobs").join(&id);
+    for f in ["disk.raw", "efivars"] {
+        assert!(job.join(f).is_file(), "the save deleted the running VM's {f}");
+    }
+    let snap = post_json(&format!("{}/api/tasks/{id}/snapshot", server.base), &json!({}));
+    assert!(snap["id"].is_string(), "snapshot after a save failed: {snap}");
+    post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
+    wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(30));
+}
