@@ -8,12 +8,12 @@
   font-weight: 510; cursor: pointer; text-align: left;
 }
 .new-vm span { flex: 1; }
-.new-vm { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04); }
-.new-vm:hover { background: var(--hover); border-color: #35363c; }
+.new-vm { box-shadow: inset 0 1px 0 var(--edge); }
+.new-vm:hover { background: var(--hover); border-color: var(--line-3); }
 .alert {
   display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; margin-bottom: 4px; border-radius: 6px;
   border: 1px solid color-mix(in srgb, var(--fail) 35%, var(--line-2)); background: color-mix(in srgb, var(--fail) 8%, transparent);
-  color: #f39a9a; font-weight: 510; text-decoration: none;
+  color: var(--fail-ink); font-weight: 510; text-decoration: none;
 }
 .alert::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--fail); }
 .nav { display: grid; gap: 1px; }
@@ -23,7 +23,7 @@
 }
 .nav a .i { color: var(--ink-3); }
 .nav a:hover, .side-vm:hover { background: var(--hover); color: var(--ink); }
-.nav a[aria-current="page"], .side-vm[aria-current="page"] { background: var(--active); color: var(--ink); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035); }
+.nav a[aria-current="page"], .side-vm[aria-current="page"] { background: var(--active); color: var(--ink); box-shadow: inset 0 1px 0 var(--edge); }
 .nav a[aria-current="page"] .i { color: var(--ink); }
 .count { margin-left: auto; font-size: var(--fs-xs); color: var(--ink-3); }
 .side-label { padding: 16px 8px 4px; font-size: var(--fs-xs); font-weight: 510; color: var(--ink-3); }
@@ -43,9 +43,9 @@
   min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
   margin: 8px 8px 8px 0; border: 1px solid var(--line); border-radius: var(--r-lg);
   /* A faint light from the top edge, as on Linear's panels. */
-  background: linear-gradient(180deg, rgba(255, 255, 255, .014), transparent 180px), var(--surface);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03), 0 10px 30px rgba(0, 0, 0, .25);
+  background: linear-gradient(180deg, var(--glow), transparent 180px), var(--surface);
+  box-shadow: inset 0 1px 0 var(--edge), var(--shadow);
 }
 .connection { flex-shrink: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 9px 16px; border-bottom: 1px solid color-mix(in srgb, var(--fail) 35%, var(--line)); background: color-mix(in srgb, var(--fail) 10%, transparent); font-size: var(--fs-sm); }
-.connection b { color: #f39a9a; font-weight: 590; }
+.connection b { color: var(--fail-ink); font-weight: 590; }
 .connection span { color: var(--ink-2); }

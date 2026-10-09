@@ -1,6 +1,8 @@
 // The sidebar: new VM, the sections, the machines that are running, and this Mac's load.
+
 import { useStatus, useTasks } from "../../api/queries";
 import { Icon, type IconName } from "../../components/Icon";
+import { Logo } from "../../components/Logo";
 import { openLauncher } from "../../features/launcher/open";
 import { isEnded } from "../../lib/task";
 import type { Route } from "../router";
@@ -21,7 +23,7 @@ export function Sidebar({ route }: { route: Route }) {
   return (
     <aside className="side" aria-label="Navigation">
       <a className="brand" href="#/wall">
-        <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="" width="18" height="18" />
+        <Logo />
         <span>agentvm</span>
       </a>
       <button className="new-vm" type="button" title="New VM (⌘K)" onClick={openLauncher}>

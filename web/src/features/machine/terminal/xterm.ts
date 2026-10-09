@@ -4,30 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-
-const THEME = {
-  background: "#0b0c0e",
-  foreground: "#e4e5e9",
-  cursor: "#7480e6",
-  cursorAccent: "#0b0c0e",
-  selectionBackground: "#2c3160",
-  black: "#151821",
-  red: "#ff6b6b",
-  green: "#4fd18b",
-  yellow: "#ffb547",
-  blue: "#7aa7ff",
-  magenta: "#b9a8ff",
-  cyan: "#5fd7d7",
-  white: "#d5dae3",
-  brightBlack: "#5c6577",
-  brightRed: "#ff8a8a",
-  brightGreen: "#74e0a5",
-  brightYellow: "#ffc977",
-  brightBlue: "#9cbcff",
-  brightMagenta: "#cfc2ff",
-  brightCyan: "#86e3e3",
-  brightWhite: "#ffffff",
-};
+import { pageTheme, terminalTheme } from "./palette";
 
 /** The terminal font, loaded before any terminal opens: xterm measures its cells once, and the
  *  GPU's glyph atlas is drawn from that measure. */
@@ -48,8 +25,13 @@ export function openXterm(el: HTMLElement, { fontSize = 13, readOnly = false } =
     macOptionClickForcesSelection: true,
     scrollback: 5000,
     smoothScrollDuration: 0,
-    theme: THEME,
+    theme: terminalTheme(pageTheme()),
   });
+  // Light or dark follows the page, at once, also for the terminals already open.
+  const recolor = new MutationObserver(() => {
+    xterm.options.theme = terminalTheme(pageTheme());
+  });
+  recolor.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   const fit = new FitAddon();
   xterm.loadAddon(fit);
   xterm.open(el);
@@ -79,6 +61,7 @@ export function openXterm(el: HTMLElement, { fontSize = 13, readOnly = false } =
    *  terminal you are typing in. */
   const close = () => {
     closing = true;
+    recolor.disconnect();
     clearTimeout(retry);
     // Only canvases that already hold a WebGL context: asking another one would create it.
     for (const canvas of gpuCanvases) canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();

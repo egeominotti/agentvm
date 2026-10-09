@@ -1,12 +1,14 @@
 // No machine yet: what agentvm is, and the one thing to do next.
+
 import { Button } from "../../components/Button";
 import { Icon } from "../../components/Icon";
+import { Logo } from "../../components/Logo";
 import { openLauncher } from "../launcher/open";
 
 export function EmptyState() {
   return (
     <div className="empty">
-      <img className="empty-mark" src={`${import.meta.env.BASE_URL}logo.svg`} alt="" />
+      <Logo className="empty-mark" size={56} />
       <h1>Every terminal is a sealed machine.</h1>
       <p>
         Launch a VM and Claude Code opens inside it with root and every permission, on a fresh clone of your repository.

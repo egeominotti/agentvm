@@ -8,6 +8,7 @@ import { MachineView } from "../features/machine/MachineView";
 import { SettingsView } from "../features/settings/Settings";
 import { Snapshots } from "../features/snapshots/Snapshots";
 import { Wall } from "../features/wall/Wall";
+import { useThemeSync } from "../lib/theme";
 import { useAttention } from "./attention";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { useRoute } from "./router";
@@ -28,6 +29,7 @@ import "../styles/responsive.css";
 export function App() {
   const route = useRoute();
   useChanges();
+  useThemeSync();
   useAttention(useTasks().data ?? []);
   return (
     <ToastProvider>

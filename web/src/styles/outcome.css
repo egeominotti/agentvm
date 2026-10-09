@@ -19,8 +19,8 @@
 .minus { color: var(--fail); }
 .diff-body { font: 12px/1.6 var(--mono); overflow-x: auto; background: var(--term); }
 .diff-body div { padding: 0 12px; white-space: pre; min-height: 1.6em; }
-.diff-body .a { background: rgba(76, 183, 130, .08); color: #6fcf9f; }
-.diff-body .d { background: rgba(235, 87, 87, .08); color: #f08080; }
+.diff-body .a { background: rgba(76, 183, 130, .08); color: var(--ok-ink); }
+.diff-body .d { background: rgba(235, 87, 87, .08); color: var(--danger-ink); }
 .diff-body .h { color: var(--ink-3); background: var(--surface); }
 .outcome .reason summary { cursor: pointer; font-size: var(--fs-xs); color: var(--ink-3); }
 .outcome .reason pre { margin: 8px 0 0; max-height: 240px; overflow: auto; padding: 8px 10px; border-radius: var(--r-sm); background: var(--bg); font: 11px/1.45 var(--mono); color: var(--ink-2); white-space: pre-wrap; word-break: break-word; }

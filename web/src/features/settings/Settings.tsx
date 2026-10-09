@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useSettings } from "../../api/queries";
 import { Account } from "./Account";
 import { Agent } from "./Agent";
+import { Appearance } from "./Appearance";
 import { AutoSnapshots } from "./AutoSnapshots";
 import { Image } from "./Image";
 import { Notifications } from "./Notifications";
@@ -16,7 +17,7 @@ const SECTIONS = [
   ["resources", "Resources"],
   ["agent", "Agent"],
   ["account", "Claude account"],
-  ["notifications", "Notifications"],
+  ["browser", "This browser"],
   ["snapshots", "Automatic snapshots"],
   ["image", "VM image"],
   ["storage", "Storage"],
@@ -54,7 +55,12 @@ export function SettingsView({ section }: { section?: string }) {
     resources: <Resources s={s} set={set} limits={limits} />,
     agent: <Agent s={s} set={set} />,
     account: <Account />,
-    notifications: <Notifications />,
+    browser: (
+      <>
+        <Appearance />
+        <Notifications />
+      </>
+    ),
     snapshots: <AutoSnapshots s={s} set={set} />,
     image: <Image s={s} set={set} />,
     storage: <Storage />,

@@ -2,13 +2,23 @@
 @font-face { font-family: "Geist"; src: url("/fonts/GeistVF.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 @font-face { font-family: "Geist Mono"; src: url("/fonts/GeistMonoVF.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 
+/* Dark, the default. Terminals use Catppuccin (Mocha here, Latte in light mode): --term is their
+   background, so what sits around them matches. */
 :root {
   --bg: #08090a; --surface: #0e0f11; --raised: #16171a; --hover: #1c1d21; --active: #212226;
-  --line: #1d1e21; --line-2: #2a2b30;
+  --line: #1d1e21; --line-2: #2a2b30; --line-3: #35363c;
   --ink: #eeeef0; --ink-2: #9b9ea6; --ink-3: #63666e;
   --brand: #5e6ad2; --brand-hi: #7480e6;
   --work: #e8b93f; --wait: #f2994a; --done: #4cb782; --fail: #eb5757; --stop: #75787f; --boot: #63666e;
-  --term: #0b0c0e;
+  --fail-ink: #f39a9a; --danger-ink: #f08080; --danger-ink-hi: #ffb0b0; --ok-ink: #6fcf9f;
+  --menu: rgba(24, 25, 29, .86); --dialog: #121316; --toast: #1b1c1f; --overlay: rgba(4, 5, 6, .55);
+  /* A light top edge on raised surfaces, and the faint light at the top of the panels. */
+  --edge: rgba(255, 255, 255, .035); --edge-hi: rgba(255, 255, 255, .05); --glow: rgba(255, 255, 255, .014);
+  --kbd: rgba(255, 255, 255, .07);
+  --shadow: 0 10px 30px rgba(0, 0, 0, .25); --shadow-hover: 0 10px 30px rgba(0, 0, 0, .35);
+  --shadow-pop: 0 16px 40px rgba(0, 0, 0, .5); --shadow-modal: 0 24px 64px rgba(0, 0, 0, .55);
+  --shadow-drawer: -18px 0 40px rgba(0, 0, 0, .45);
+  --term: #1e1e2e;
   --ui: "Geist", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --r-sm: 5px; --r: 7px; --r-lg: 10px;
@@ -16,6 +26,26 @@
   --fs-2xs: 11px; --fs-xs: 11.5px; --fs-sm: 12.5px; --fs-base: 13px; --fs-md: 14px; --fs-lg: 16px; --fs-xl: 20px;
   --lh-tight: 1.2; --lh-text: 1.5;
   color-scheme: dark;
+}
+
+/* Light: the same quiet structure on white, with ink and status colors deep enough to read. */
+:root[data-theme="light"] {
+  --bg: #f4f4f6; --surface: #ffffff; --raised: #f7f7f9; --hover: #eeeef2; --active: #e7e7ec;
+  --line: #e6e6eb; --line-2: #d9d9e0; --line-3: #c6c7cf;
+  --ink: #17181c; --ink-2: #5b5e67; --ink-3: #8a8d96;
+  --brand: #5e6ad2; --brand-hi: #4c58c2;
+  --work: #b8860b; --wait: #d5700f; --done: #23935e; --fail: #d64045; --stop: #8a8d96; --boot: #8a8d96;
+  --fail-ink: #c4343a; --danger-ink: #cf3b40; --danger-ink-hi: #a91f25; --ok-ink: #1d8752;
+  --menu: rgba(255, 255, 255, .9); --dialog: #ffffff; --toast: #ffffff; --overlay: rgba(28, 30, 40, .22);
+  --edge: rgba(255, 255, 255, .7); --edge-hi: rgba(255, 255, 255, .9); --glow: rgba(255, 255, 255, 0);
+  --kbd: rgba(0, 0, 0, .06);
+  --shadow: 0 1px 2px rgba(20, 22, 35, .04), 0 6px 20px rgba(20, 22, 35, .05);
+  --shadow-hover: 0 2px 4px rgba(20, 22, 35, .05), 0 12px 30px rgba(20, 22, 35, .1);
+  --shadow-pop: 0 4px 12px rgba(20, 22, 35, .08), 0 16px 40px rgba(20, 22, 35, .14);
+  --shadow-modal: 0 8px 24px rgba(20, 22, 35, .1), 0 24px 64px rgba(20, 22, 35, .18);
+  --shadow-drawer: -12px 0 32px rgba(20, 22, 35, .12);
+  --term: #eff1f5;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }

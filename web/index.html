@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>agentvm</title>
     <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+    <script>
+      // The theme before the first paint, so light mode never flashes dark (src/lib/theme.ts).
+      (function () {
+        var p = null;
+        try { p = localStorage.getItem("agentvm.theme"); } catch (e) {}
+        var light = p === "light" || (p !== "dark" && matchMedia("(prefers-color-scheme: light)").matches);
+        document.documentElement.dataset.theme = light ? "light" : "dark";
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
