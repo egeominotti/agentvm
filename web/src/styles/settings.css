@@ -95,7 +95,7 @@
 @media (max-width: 860px) {
   .settings { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .set-nav { flex-direction: row; align-items: center; border-right: 0; border-bottom: 1px solid var(--line); padding: 10px 16px; overflow: visible; }
-  .set-nav-title, .set-search, .set-nav-group, .set-nav-empty { display: none; }
+  .set-nav-title, .set-nav .set-search, .set-nav-group, .set-nav-empty { display: none; }
   .set-nav-select { display: block; }
   .set-bar { padding: 0 16px; }
   .set-bar { position: static; height: auto; padding: 8px 16px 0; border: 0; background: none; backdrop-filter: none; }

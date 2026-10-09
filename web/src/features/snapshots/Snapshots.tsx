@@ -1,17 +1,19 @@
-// Saved copies of whole VMs, by the machine they came from. Restoring starts a new VM exactly
-// from that point, with Claude continuing its conversation.
+// Saved copies of whole VMs: what is on this Mac and what is in S3. Restoring starts a new VM
+// exactly from that point, with Claude continuing its conversation.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { api } from "../../api/client";
+import type { RemoteBackup } from "../../api/generated/RemoteBackup";
 import type { SnapshotMeta } from "../../api/generated/SnapshotMeta";
 import type { StorageUsage } from "../../api/generated/StorageUsage";
 import { Button } from "../../components/Button";
 import { Icon } from "../../components/Icon";
 import { useToast } from "../../components/Toast";
-import { gb, plural, repoName } from "../../lib/format";
-import { Backups } from "./Backups";
-import { groupSnapshots, labelOf } from "./groups";
-import { SnapshotRow } from "./SnapshotRow";
+import { gb } from "../../lib/format";
+import { LocalSnapshots } from "./LocalSnapshots";
+import { RemoteBackups } from "./RemoteBackups";
+
+type Tab = "local" | "s3";
 
 export function Snapshots() {
   // Followed while a snapshot is being compressed: its real size shows when it is done.
@@ -26,7 +28,8 @@ export function Snapshots() {
     queryFn: () => api<StorageUsage>("/api/storage"),
     refetchInterval: compacting ? 2000 : false,
   });
-  const groups = groupSnapshots(q.data ?? []);
+  const backups = useQuery({ queryKey: ["backups"], queryFn: () => api<RemoteBackup[]>("/api/backups"), retry: false });
+  const [tab, setTab] = useState<Tab>("local");
   const file = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
   const say = useToast();
@@ -49,69 +52,64 @@ export function Snapshots() {
     qc.invalidateQueries({ queryKey: ["snapshots"] });
   };
 
+  const list = q.data ?? [];
+  const machines = new Set(list.map((s) => s.source_task)).size;
+  const s3Ready = backups.isSuccess;
   return (
-    <div className="wall-view">
+    <div className="wall-view snaps-view">
       <header className="view-head">
         <h1>Snapshots</h1>
-        <span className="sub">
-          Whole VMs saved at a moment: files, installed packages, Claude's conversation.
-          {storage.data && q.data?.length ? ` All of them take ${gb(storage.data.snapshots_mb)}, compressed.` : ""}
-        </span>
+        <span className="sub">Whole VMs saved at a moment: files, installed packages, Claude's conversation.</span>
         <span className="tb-gap" />
         <Button size="sm" onClick={() => file.current?.click()}>
           <Icon name="upload" />
-          Import from file
+          Import
         </Button>
         <input ref={file} type="file" accept=".zst,.tar,.gz" hidden onChange={(e) => importFile(e.target.files?.[0])} />
       </header>
-      <div className="wall-scroll snapshots">
-        {q.error ? <p className="hint">{q.error.message}</p> : null}
-        {q.isSuccess && !groups.length ? (
-          <div className="empty-card">
-            <b>No snapshots yet</b>
-            <p className="hint">
-              Open a running machine and choose “Take a snapshot now” in its ⋯ menu, or let automatic snapshots save it
-              on a schedule (Settings › Automatic snapshots).
-            </p>
+      <div className="snaps-body">
+        <dl className="snap-stats">
+          <div>
+            <dt>Snapshots</dt>
+            <dd>{q.isSuccess ? list.length : "–"}</dd>
           </div>
-        ) : null}
-        {groups.map((g) => (
-          <section key={g.task} className="snap-group" aria-label={g.title}>
-            <header>
-              <h2 title={g.title}>{g.title}</h2>
-              <span className="sub" title={`Restores into ${g.repo}, on a branch of its own`}>
-                {repoName(g.repo)}
-              </span>
-            </header>
-            {g.interrupted.length || g.manual.length ? (
-              <ul className="snaps">
-                {g.interrupted.map((s) => (
-                  <SnapshotRow key={s.id} s={s} label="Interrupted: its disk was kept" resume />
-                ))}
-                {g.manual.map((s) => (
-                  <SnapshotRow key={s.id} s={s} label={labelOf(s, g.title)} />
-                ))}
-              </ul>
-            ) : null}
-            {g.auto.length ? (
-              <details className="auto-snaps">
-                <summary>{plural(g.auto.length, "automatic snapshot")}</summary>
-                <ul className="snaps">
-                  {g.auto.map((s) => (
-                    <SnapshotRow key={s.id} s={s} label={labelOf(s, g.title)} />
-                  ))}
-                </ul>
-              </details>
-            ) : null}
-          </section>
-        ))}
-        {groups.length ? (
-          <p className="hint">
-            Snapshots share their unchanged blocks with the VM image and with each other, so on disk they take far less
-            than their sizes add up to.
-          </p>
-        ) : null}
-        <Backups />
+          <div>
+            <dt>On disk</dt>
+            <dd>
+              {storage.data ? gb(storage.data.snapshots_mb) : "–"}
+              <small>{compacting ? "compressing…" : "compressed, shared"}</small>
+            </dd>
+          </div>
+          <div>
+            <dt>Machines</dt>
+            <dd>{q.isSuccess ? machines : "–"}</dd>
+          </div>
+          <div>
+            <dt>S3 backups</dt>
+            <dd>
+              {s3Ready ? backups.data.length : <a href="#/settings/backups">Set up</a>}
+              {s3Ready ? <small>in the bucket</small> : null}
+            </dd>
+          </div>
+        </dl>
+        <div className="snap-tabs" role="tablist" aria-label="Where">
+          {(
+            [
+              ["local", "On this Mac", list.length],
+              ["s3", "In S3", s3Ready ? backups.data.length : null],
+            ] as const
+          ).map(([id, label, count]) => (
+            <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>
+              {label}
+              {count !== null ? <span className="count">{count}</span> : null}
+            </button>
+          ))}
+        </div>
+        {tab === "local" ? (
+          <LocalSnapshots list={list} loaded={q.isSuccess} error={q.error?.message} s3Ready={s3Ready} />
+        ) : (
+          <RemoteBackups q={backups} />
+        )}
       </div>
     </div>
   );
