@@ -16,7 +16,7 @@ export function useConversation(id: string, live: boolean) {
   const [attempt, setAttempt] = useState(0);
   const cursor = useRef<{ id: string; at: Cursor | null }>({ id, at: null });
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` re-runs the read after a failure
+  // `attempt` among the dependencies re-runs the read after a failure.
   useEffect(() => {
     // Another machine starts from the beginning; the same one continues where it stopped.
     if (cursor.current.id !== id) {
@@ -28,7 +28,8 @@ export function useConversation(id: string, live: boolean) {
     let gone = false;
     let reading: Promise<void> | null = null;
     const read = async () => {
-      for (let more = true; more && !gone; ) {
+      // oxlint-disable-next-line no-unmodified-loop-condition -- the cleanup sets `gone` while the loop awaits a page
+      for (let more = true; more && !gone;) {
         const at = cursor.current.at;
         const q = at ? `?cursor=${encodeURIComponent(JSON.stringify(at))}` : "";
         let page: Conversation;

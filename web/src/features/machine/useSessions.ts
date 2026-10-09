@@ -59,7 +59,7 @@ export function useSessions(id: string) {
   const open = () => {
     const name = nextShell(extra);
     if (!name) return say("Nine shells are open: close one to open another", "err");
-    const next = [...extra, name].sort();
+    const next = [...extra, name].toSorted();
     flushSync(() => setExtra(next));
     remember(id, next);
     pick(name);

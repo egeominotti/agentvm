@@ -5,7 +5,7 @@ import { ConfirmButton } from "./ConfirmButton";
 afterEach(() => vi.useRealTimers());
 
 it("acts only on the second click, and says what it is about to do in between", () => {
-  const act1 = vi.fn();
+  const act1 = vi.fn<() => void>();
   render(
     <ConfirmButton confirm="Delete 3 with their logs?" onConfirm={act1}>
       Clear 3
@@ -19,7 +19,7 @@ it("acts only on the second click, and says what it is about to do in between", 
 
 it("forgets the first click after a few seconds", () => {
   vi.useFakeTimers();
-  const act1 = vi.fn();
+  const act1 = vi.fn<() => void>();
   render(
     <ConfirmButton confirm="Sure?" onConfirm={act1}>
       Delete

@@ -14,6 +14,7 @@ export function SessionTabs({ s }: { s: Sessions }) {
     if (next) s.pick(next);
   };
   return (
+    // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- the radios inside take the focus (one tab stop, arrows move)
     <div className="seg sessions" role="radiogroup" aria-label="Terminal" onKeyDown={keys}>
       {s.tabs.map((name) => (
         <span key={name} className={`session${isExtraShell(name) ? " extra" : ""}`}>

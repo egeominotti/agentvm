@@ -112,6 +112,7 @@ export function MachineView({ id }: { id: string }) {
             {state === "done" ? <DiffView id={id} /> : null}
           </div>
         ) : (
+          // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- the terminal area takes dropped files
           <section
             className={`screen${dropping ? " dropping" : ""}`}
             aria-label="Terminal"

@@ -39,7 +39,9 @@ export const VmTerminal = memo(function VmTerminal({ id, session, live, visible,
       view.current = v;
       // In development, the console can reach each terminal (window.__terms.claude…).
       if (import.meta.env.DEV) {
+        // oxlint-disable-next-line no-underscore-dangle -- a name no page code would ever use
         const w = window as unknown as { __terms?: Record<string, unknown> };
+        // oxlint-disable-next-line no-underscore-dangle -- the same name
         w.__terms = { ...w.__terms, [session]: { view: v, socket } };
       }
       // Opened in view (the page was loaded on this machine, or the Shell just chosen): it takes

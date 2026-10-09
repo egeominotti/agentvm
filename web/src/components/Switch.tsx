@@ -6,6 +6,7 @@ type Props = { on: boolean; onChange: (on: boolean) => void; label: ReactNode; h
 export function Switch({ on, onChange, label, hint, disabled }: Props) {
   return (
     <label className="switch-row">
+      {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label -- the <label> around it names it */}
       <button
         type="button"
         role="switch"

@@ -8,5 +8,5 @@ const RESERVED_MB = 8192;
 export function memoryChoices(hostRamMb: number, current: number): number[] {
   const top = Math.max(hostRamMb - RESERVED_MB, 1024);
   const fit = USUAL.filter((m) => m <= top);
-  return [...new Set([...fit, current])].sort((a, b) => a - b);
+  return [...new Set([...fit, current])].toSorted((a, b) => a - b);
 }

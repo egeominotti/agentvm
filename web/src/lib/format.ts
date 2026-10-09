@@ -1,6 +1,6 @@
 // Paths, counts, sizes, rates, money and durations, as the dashboard writes them.
 
-export const repoName = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
+export const repoName = (p: string) => p.split("/").findLast(Boolean) ?? p;
 export const shortPath = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 

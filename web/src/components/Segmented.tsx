@@ -14,6 +14,7 @@ export function Segmented<T extends string | number>({ label, value, options, on
   // With no option chosen yet, the first one still takes the keyboard.
   const focusable = options.some(([v]) => v === value) ? value : options[0]?.[0];
   return (
+    // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- the radios inside take the focus (one tab stop, arrows move)
     <div className={`seg${wide ? " wide" : ""}`} role="radiogroup" aria-label={label} onKeyDown={keys}>
       {options.map(([v, text]) => (
         <button

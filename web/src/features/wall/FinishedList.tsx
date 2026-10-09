@@ -5,7 +5,7 @@ import { ago, money, repoName } from "../../lib/format";
 import { age, shortId, titleOf } from "../../lib/task";
 
 export function FinishedList({ tasks }: { tasks: TaskDto[] }) {
-  const newest = [...tasks].sort((a, b) => (b.finished_at ?? 0) - (a.finished_at ?? 0));
+  const newest = tasks.toSorted((a, b) => (b.finished_at ?? 0) - (a.finished_at ?? 0));
   return (
     <ul className="finished">
       {newest.map((t) => (

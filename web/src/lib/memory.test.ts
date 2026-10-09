@@ -9,5 +9,5 @@ it("offers what the server accepts, even on a Mac with little memory", () => {
 
 it("always offers the value in use, even when it is not a usual size", () => {
   expect(memoryChoices(64 * 1024, 3000)).toContain(3000);
-  expect(memoryChoices(64 * 1024, 3000)).toEqual([...memoryChoices(64 * 1024, 3000)].sort((a, b) => a - b));
+  expect(memoryChoices(64 * 1024, 3000)).toEqual(memoryChoices(64 * 1024, 3000).toSorted((a, b) => a - b));
 });

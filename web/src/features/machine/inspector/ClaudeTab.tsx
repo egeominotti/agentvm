@@ -67,7 +67,7 @@ export const ClaudeTab = memo(function ClaudeTab({ id, live, interactive }: Prop
       <div className="conversation">
         {entries.map((e, i) => (
           // Entries only ever get appended: their place is their identity.
-          // biome-ignore lint/suspicious/noArrayIndexKey: append-only list
+          // oxlint-disable-next-line react/no-array-index-key -- append-only list
           <Entry key={i} e={e} />
         ))}
         {error ? (

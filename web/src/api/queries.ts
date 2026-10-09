@@ -29,7 +29,7 @@ export function useTasks() {
     queryFn: () => api<TaskDto[]>("/api/tasks"),
     refetchInterval: 1000,
     refetchIntervalInBackground: true,
-    select: (tasks) => [...tasks].sort(byLiveThenAge),
+    select: (tasks) => tasks.toSorted(byLiveThenAge),
   });
 }
 

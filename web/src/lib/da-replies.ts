@@ -4,7 +4,7 @@
 // which shows "1;2c" as if typed. The queries are followed in the output, in order, and the
 // answer to a secondary one gets the secondary form.
 
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ESC is what a terminal query starts with
+// oxlint-disable-next-line no-control-regex -- ESC is what a terminal query starts with
 const QUERY = /\x1b\[(>)?0?c/g;
 const PRIMARY_REPLY = "\x1b[?1;2c";
 /** VT220-like, firmware 10: what a secondary query expects in form. */

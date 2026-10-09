@@ -31,6 +31,7 @@ scripts/    build.sh (incremental), test.sh, sandbox.sh, vm-run.ts, build-golden
 | One Rust test | `cd server && cargo test --quiet --test <layer> <name>` |
 | One real-VM test | `cd server && cargo test --release --quiet --test vm <name> -- --ignored` |
 | Dashboard checks | `cd web && bun run typecheck && bun run lint && bun run test` |
+| Format and lint the dashboard (oxfmt, oxlint) | `cd web && bun run format` |
 | Format and lint Rust | `cd server && cargo fmt && cargo clippy --all-targets -- -D warnings` |
 | Regenerate API types after changing a Rust DTO | `cd server && TS_RS_LARGE_INT=number cargo test --quiet --lib` |
 | A server of your own, with real VMs | `scripts/sandbox.sh 7791` … `scripts/sandbox.sh stop` |

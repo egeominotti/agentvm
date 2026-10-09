@@ -56,12 +56,13 @@ export function Launcher() {
 
   // On every opening: the last repository, and the choices as Settings has them now (changes
   // made for one launch do not stick to the next).
+  const lastRepo = recent[0];
   useEffect(() => {
     if (!open) return;
     setError(null);
     setChoice(null);
-    setRepo((r) => r || recent[0] || "");
-  }, [open, recent[0]]);
+    setRepo((r) => r || lastRepo || "");
+  }, [open, lastRepo]);
   useEffect(() => {
     if (!open || !settings) return;
     const s = settings.settings;
@@ -128,6 +129,7 @@ export function Launcher() {
             else repoInput.current?.focus();
           }}
         >
+          {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- shortcuts for the whole form */}
           <form
             ref={form}
             onSubmit={launch}

@@ -76,6 +76,7 @@ export function GitAccess() {
         />
         <datalist id="git-hosts">
           {HOSTS.map((h) => (
+            // oxlint-disable-next-line jsx-a11y/control-has-associated-label -- a suggestion of a datalist: its value is its text
             <option key={h} value={h} />
           ))}
         </datalist>

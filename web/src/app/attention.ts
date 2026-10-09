@@ -46,11 +46,11 @@ export function useAttention(tasks: TaskDto[]) {
           icon: `${import.meta.env.BASE_URL}logo.svg`,
           tag: t.id,
         });
-        n.onclick = () => {
+        n.addEventListener("click", () => {
           window.focus();
           location.hash = `#/vm/${t.id}`;
           n.close();
-        };
+        });
       }
     }
   }, [tasks]);

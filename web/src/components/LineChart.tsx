@@ -84,11 +84,12 @@ export function LineChart({ title, times, series, format, max, reference, empty 
   return (
     <figure className="chart">
       {head}
+      {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- a chart walked with the pointer and arrow keys */}
       <div
         ref={box}
         className="plot"
         role="img"
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: the arrow keys walk through the points
+        // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the arrow keys walk through the points
         tabIndex={0}
         aria-label={`${title}: ${latest}`}
         onPointerMove={pick}

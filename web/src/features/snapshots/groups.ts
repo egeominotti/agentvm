@@ -21,7 +21,7 @@ const baseTitle = (name: string) => name.replace(INTERRUPTED, "").replace(AUTO, 
 
 export function groupSnapshots(list: SnapshotMeta[]): SnapshotGroup[] {
   const groups = new Map<string, SnapshotGroup>();
-  const newest = [...list].sort((a, b) => b.created_at - a.created_at);
+  const newest = list.toSorted((a, b) => b.created_at - a.created_at);
   for (const s of newest) {
     let g = groups.get(s.source_task);
     if (!g) {

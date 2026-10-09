@@ -33,7 +33,7 @@ sentences, English). Then:
 ```bash
 cd server && cargo fmt && cargo clippy --quiet --all-targets -- -D warnings
 TS_RS_LARGE_INT=number cargo test --quiet --lib        # only if an API type changed
-cd ../web && bunx biome check --write src && bun run typecheck && bun run lint && bun run test
+cd ../web && bun run format && bun run typecheck && bun run lint && bun run test
 cd .. && scripts/test.sh
 ```
 

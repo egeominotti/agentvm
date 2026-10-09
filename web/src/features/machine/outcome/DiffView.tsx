@@ -50,7 +50,7 @@ export const DiffView = memo(function DiffView({ id }: { id: string }) {
             {f.lines.map((l, k) => (
               <div
                 // Lines of a diff can repeat: their place is their identity.
-                // biome-ignore lint/suspicious/noArrayIndexKey: the list never reorders
+                // oxlint-disable-next-line react/no-array-index-key -- the list never reorders
                 key={k}
                 className={l.startsWith("@@") ? "h" : l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : ""}
               >

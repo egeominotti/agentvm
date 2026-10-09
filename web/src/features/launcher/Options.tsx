@@ -17,7 +17,7 @@ export function Options({ value: v, onChange }: { value: Choice; onChange: (c: C
   const releases = useReleases().data;
   const hostCpus = settings?.limits.cpus ?? v.cpus;
   const hostRam = settings?.limits.ram_mb ?? 0;
-  const cpus = [...new Set([1, 2, 4, 6, 8, 12, 16, hostCpus])].filter((n) => n <= hostCpus).sort((a, b) => a - b);
+  const cpus = [...new Set([1, 2, 4, 6, 8, 12, 16, hostCpus])].filter((n) => n <= hostCpus).toSorted((a, b) => a - b);
   const memory = memoryChoices(hostRam, v.memoryMb);
   const set = (part: Partial<Choice>) => onChange({ ...v, ...part });
   const free = status ? status.host.ram_mb - RESERVED_MB - status.ram_committed_mb : null;

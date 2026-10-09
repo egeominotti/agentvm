@@ -45,19 +45,19 @@ export class PtySocket {
     const url = `ws://${location.host}/api/tasks/${id}/pty?session=${session}&cols=${this.size.cols}&rows=${this.size.rows}${view ? "&view=true" : ""}`;
     const sock = new WebSocket(url);
     sock.binaryType = "arraybuffer";
-    sock.onopen = () => {
+    sock.addEventListener("open", () => {
       // Sizes sent while connecting are lost: the real one goes once the socket is open.
       this.sendSize();
       for (const p of this.pending) sock.send(p);
       this.pending = [];
       for (const l of this.openListeners) l();
-    };
-    sock.onmessage = (e) => this.output(new Uint8Array(e.data as ArrayBuffer));
-    sock.onclose = () => {
+    });
+    sock.addEventListener("message", (e) => this.output(new Uint8Array(e.data as ArrayBuffer)));
+    sock.addEventListener("close", () => {
       if (this.ws !== sock) return;
       this.ws = null;
       if (!this.closed && !this.paused && this.opts.live()) this.retry = setTimeout(() => this.connect(0, 0), 900);
-    };
+    });
     this.ws = sock;
   }
 

@@ -24,7 +24,7 @@ export function readableReason(reason: string): string {
   return (
     reason
       .replace(/\s*\.?\s*Its disk is kept in Snapshots as ".*"\s*$/s, "")
-      // biome-ignore lint/suspicious/noControlCharactersInRegex: control codes are what is removed
+      // oxlint-disable-next-line no-control-regex -- control codes are what is removed
       .replace(/\u001b\[[0-9;?!]*[A-Za-z]|\u001b\][^\u0007]*\u0007|[\u0000-\u0008\u000b-\u001f]/g, "")
       .replace(/\n{3,}/g, "\n\n")
       .trim()

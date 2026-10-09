@@ -58,7 +58,6 @@ export function Inspector({ task: t, tab, onTab, onClose }: Props) {
 
   return (
     <aside className="inspector" style={{ width }} aria-label="Machine details">
-      {/* biome-ignore lint/a11y/useSemanticElements: a draggable splitter has no HTML element */}
       <div
         className="inspector-edge"
         role="separator"
