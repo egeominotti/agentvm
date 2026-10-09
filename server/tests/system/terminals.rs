@@ -138,3 +138,29 @@ fn guest_services_come_back_after_dying() {
     assert!(uptime() > before, "the VM's numbers stopped at {before}");
     post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
 }
+
+/// A VM counts as ready moments after its guest says the terminal is up, not at the next
+/// once-a-second refresh: the dashboard opens the terminal as soon as it can.
+#[test]
+#[ignore = "needs golden"]
+fn a_terminal_is_ready_moments_after_the_guest_says_so() {
+    let server = start_server();
+    let repo = temp_repo();
+    let created =
+        post_json(&format!("{}/api/tasks", server.base), &json!({"repo_path": repo.path(), "interactive": true}));
+    let id = created["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    let log = server.home.path().join("jobs").join(&id).join("share/job.log");
+    let t0 = Instant::now();
+    while !std::fs::read_to_string(&log).is_ok_and(|t| t.contains("terminal ready")) {
+        assert!(t0.elapsed() < Duration::from_secs(60), "the guest never said its terminal is ready");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let said = Instant::now();
+    while get_json(&format!("{}/api/tasks/{id}", server.base))["ready"] != true {
+        assert!(said.elapsed() < Duration::from_secs(5), "never ready");
+    }
+    let lag = said.elapsed();
+    assert!(lag < Duration::from_millis(300), "ready {lag:?} after the guest said so");
+    post_json(&format!("{}/api/tasks/{id}/stop", server.base), &json!({}));
+    wait_for_state(&server, &id, |s| TERMINAL.contains(&s), Duration::from_secs(30));
+}

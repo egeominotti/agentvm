@@ -1,6 +1,7 @@
 //! Embeds the dashboard built by `bun run build` in `web/` (`web/dist`) into
-//! `$OUT_DIR/web_assets.rs` as a `FILES: &[(path, bytes)]` table sorted by path, which
-//! `http::assets` serves. Empty when the dashboard was not built, so the server still compiles
+//! `$OUT_DIR/web_assets.rs` as a `FILES: &[(path, etag, bytes)]` table sorted by path, which
+//! `http::assets` serves. The ETag is a hash of the content, so a browser revalidates an unchanged
+//! file for a 304 instead of its bytes. Empty when the dashboard was not built, so the server still compiles
 //! and its tests can say what is missing. Hidden files like `.DS_Store` are left out.
 
 use std::fmt::Write as _;
@@ -22,9 +23,11 @@ fn main() {
         println!("cargo:warning=web/dist is missing: the dashboard is empty (cd web && bun install && bun run build)");
     }
     files.sort();
-    let mut table = String::from("pub static FILES: &[(&str, &[u8])] = &[\n");
+    let mut table = String::from("pub static FILES: &[(&str, &str, &[u8])] = &[\n");
     for (path, source) in &files {
-        writeln!(table, "    ({path:?}, include_bytes!({source:?})),").expect("writing to a String");
+        let bytes = std::fs::read(source).unwrap_or_else(|e| panic!("cannot read {source}: {e}"));
+        let etag = format!("\"{:016x}\"", fnv1a(&bytes));
+        writeln!(table, "    ({path:?}, {etag:?}, include_bytes!({source:?})),").expect("writing to a String");
     }
     table.push_str("];\n");
     let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("set by Cargo")).join("web_assets.rs");
@@ -51,4 +54,9 @@ fn collect(root: &Path, dir: &Path, out: &mut Vec<(String, String)>) {
         let parts: Vec<&str> = relative.components().filter_map(|c| c.as_os_str().to_str()).collect();
         out.push((parts.join("/"), path.display().to_string()));
     }
+}
+
+/// FNV-1a, 64 bits: stable across builds and toolchains, and quick on the few MB of the dashboard.
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, &b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3))
 }

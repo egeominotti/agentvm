@@ -62,6 +62,51 @@ fn the_open_files_limit_is_raised() {
     assert!(limit >= 4096, "{limit}");
 }
 
+/// Facts about this Mac are read from the kernel (as `sysctl` prints them), not by running a
+/// process for each: the scheduler asks for free memory on every launch, telemetry often.
+#[test]
+fn host_facts_come_straight_from_the_kernel() {
+    let sysctl = |name: &str| -> u64 {
+        let out = std::process::Command::new("sysctl").args(["-n", name]).output().unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().parse().unwrap()
+    };
+    let host = agentvm::adapters::host::host_limits();
+    assert_eq!(u64::from(host.cpus), sysctl("hw.ncpu"));
+    assert_eq!(host.ram_mb, sysctl("hw.memsize") >> 20);
+    let t = std::time::Instant::now();
+    for _ in 0..100 {
+        assert!(agentvm::adapters::host::memory_free_mb().is_some());
+    }
+    assert!(t.elapsed() < std::time::Duration::from_millis(50), "100 reads took {:?}", t.elapsed());
+}
+
+/// Free disk space, checked before every launch and every file a guest writes: what `df` says,
+/// read with the same system call instead of a `df` process each time.
+#[test]
+fn free_disk_space_is_what_df_reports() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = std::process::Command::new("df").args(["-k", "-P"]).arg(tmp.path()).output().unwrap();
+    let df_mb: u64 = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .nth(1)
+        .unwrap()
+        .split_whitespace()
+        .nth(3)
+        .unwrap()
+        .parse::<u64>()
+        .unwrap()
+        >> 10;
+    let ours = agentvm::adapters::host::free_mb(tmp.path()).expect("free space");
+    // Other programs write meanwhile: the same figure within 1 GB.
+    assert!(ours.abs_diff(df_mb) < 1024, "{ours} MB vs df's {df_mb} MB");
+    assert_eq!(agentvm::adapters::host::free_mb(&tmp.path().join("missing")), None);
+    let t = std::time::Instant::now();
+    for _ in 0..100 {
+        agentvm::adapters::host::free_mb(tmp.path()).unwrap();
+    }
+    assert!(t.elapsed() < std::time::Duration::from_millis(50), "100 reads took {:?}", t.elapsed());
+}
+
 /// What the scheduler asks before starting a VM: this Mac's free memory, as macOS judges it.
 #[test]
 fn the_mac_says_how_much_memory_is_free() {

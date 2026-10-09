@@ -112,7 +112,7 @@ else
   # A new VM always starts from a clean checkout, even if the image holds an old one.
   rm -rf "$WORK"
   # Errors go to job.log: the diagnostics show why a clone failed, not only "exit 128".
-  git clone -q "$JOB/repo.bundle" "$WORK" 2>> "$JOB/job.log"
+  git -c init.defaultBranch=main clone -q "$JOB/repo.bundle" "$WORK" 2>> "$JOB/job.log"
   cd "$WORK"
   git checkout -q -b "$BRANCH" "$BASE" 2>> "$JOB/job.log"
   git config user.name agentvm

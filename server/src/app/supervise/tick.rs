@@ -70,15 +70,16 @@ impl<'a> Ticker<'a> {
         }
     }
 
-    /// Until the VM is ready, mirrors the guest job's log into the boot timeline.
-    fn refresh_boot_log(&self) {
+    /// Until the VM is ready, mirrors the guest job's log into the boot timeline; `true` once it is.
+    pub(super) fn refresh_boot_log(&self) -> bool {
         if self.ctx.store.get(self.id).is_some_and(|r| r.ready) {
-            return;
+            return true;
         }
         let lines = self.ws.job_log();
         let marker = if self.record.interactive { "terminal ready" } else { "network ready" };
         let ready = lines.iter().any(|l| l.ends_with(marker));
         self.ctx.store.set_guest_boot(self.id, lines, ready);
+        ready
     }
 
     /// Publishes what the Claude Code hooks reported last; `true` while the agent is working.

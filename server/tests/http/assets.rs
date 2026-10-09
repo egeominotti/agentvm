@@ -41,6 +41,7 @@ async fn every_dashboard_file_is_served_with_its_type() {
                     "text/css"
                 }
                 "woff2" => "font/woff2",
+                "ttf" => "font/ttf",
                 "svg" => "image/svg+xml",
                 _ => continue,
             };
@@ -58,6 +59,37 @@ async fn hashed_files_are_cached_for_good() {
         let res = fetch(&format!("/assets/{name}")).await;
         assert_eq!(res.headers()["cache-control"], "max-age=31536000, immutable", "{name}");
     }
+}
+
+/// The page and the fonts (5 MB, not named after their content) are checked on every load, and a
+/// file that did not change costs a 304 instead of its bytes; a new build shows up at once.
+#[tokio::test]
+async fn unhashed_files_are_revalidated_by_their_etag() {
+    for path in ["/", "/fonts/JetBrainsMonoNerdFontMono-Regular.ttf"] {
+        let first = fetch(path).await;
+        assert_eq!(first.status(), StatusCode::OK, "{path}");
+        assert_eq!(first.headers()["cache-control"], "no-cache", "{path}");
+        let etag = first.headers().get("etag").unwrap_or_else(|| panic!("{path} has no ETag")).clone();
+        assert!(etag.to_str().unwrap().starts_with('"'), "{path}: a strong ETag is quoted");
+
+        let again = fetch_with(path, "if-none-match", etag.to_str().unwrap()).await;
+        assert_eq!(again.status(), StatusCode::NOT_MODIFIED, "{path}");
+        assert_eq!(again.headers()["etag"], etag, "{path}");
+        let body = axum::body::to_bytes(again.into_body(), 1 << 10).await.unwrap();
+        assert!(body.is_empty(), "{path}: a 304 has no body");
+
+        let changed = fetch_with(path, "if-none-match", "\"older\"").await;
+        assert_eq!(changed.status(), StatusCode::OK, "{path}");
+    }
+}
+
+/// Two different files never share an ETag (it is the content's).
+#[tokio::test]
+async fn etags_follow_the_content() {
+    let a = fetch("/fonts/JetBrainsMonoNerdFontMono-Regular.ttf").await;
+    let b = fetch("/fonts/JetBrainsMonoNerdFontMono-Bold.ttf").await;
+    assert_ne!(a.headers()["etag"], b.headers()["etag"]);
+    assert_eq!(fetch("/").await.headers()["etag"], fetch("/").await.headers()["etag"]);
 }
 
 #[tokio::test]

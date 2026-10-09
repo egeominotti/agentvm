@@ -56,6 +56,20 @@ sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub
 sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="console=hvc0 loglevel=4"/' /etc/default/grub
 grep -q '^GRUB_TIMEOUT_STYLE' /etc/default/grub || echo 'GRUB_TIMEOUT_STYLE=hidden' >> /etc/default/grub
 update-grub
+# /boot/efi is read by the firmware and GRUB before Linux starts, never after: checking its FAT
+# and mounting it held every boot back by ~0.7 s.
+sed -i -E 's|^([^[:space:]]+[[:space:]]+/boot/efi[[:space:]]+vfat[[:space:]]+)([^[:space:]]+)([[:space:]]+)[0-9]+[[:space:]]+[0-9]+[[:space:]]*$|\1\2,noauto,nofail\3 0 0|' /etc/fstab
+grep -q '/boot/efi.*noauto' /etc/fstab
+# The only binary format registered is Python's (running .pyc files directly), never used here:
+# setting it up stalled every boot by ~0.7 s on the binfmt_misc automount. With no format left
+# the service is skipped; a developer who installs one (qemu-user) gets it back.
+# (Diverted out of the folder: systemd runs the service while the folder holds any file at all.)
+mkdir -p /usr/lib/binfmt.d.disabled
+for f in /usr/lib/binfmt.d/python3*.conf; do
+  if [ -e "$f" ]; then
+    dpkg-divert --quiet --local --rename --divert "/usr/lib/binfmt.d.disabled/${f##*/}" --add "$f"
+  fi
+done
 
 # Unique identity for each clone (distinct DHCP leases).
 # The apt indexes are kept: Claude installs packages right away, without apt-get update.

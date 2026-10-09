@@ -1,13 +1,23 @@
 //! Facts about this Mac: cores, memory, disk usage of a folder.
 
+use std::ffi::{CString, c_char, c_int, c_void};
 use std::path::Path;
-use std::process::Command;
 
 use crate::domain::settings::HostLimits;
 
+/// A number the kernel publishes (`sysctl -n <name>`), read with a system call: microseconds,
+/// where running `sysctl` took milliseconds and a process.
 fn sysctl(name: &str) -> Option<u64> {
-    let out = Command::new("sysctl").args(["-n", name]).output().ok()?;
-    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+    let name = CString::new(name).ok()?;
+    let mut value = [0u8; 8];
+    let mut len = value.len();
+    // SAFETY: `value` has `len` writable bytes, and the kernel writes no more than `len`.
+    let rc = unsafe { sysctlbyname(name.as_ptr(), value.as_mut_ptr().cast(), &mut len, std::ptr::null_mut(), 0) };
+    match (rc, len) {
+        (0, 4) => Some(u64::from(u32::from_ne_bytes([value[0], value[1], value[2], value[3]]))),
+        (0, 8) => Some(u64::from_ne_bytes(value)),
+        _ => None,
+    }
 }
 
 pub fn host_limits() -> HostLimits {
@@ -17,7 +27,6 @@ pub fn host_limits() -> HostLimits {
     }
 }
 
-/// Free space (MB) on the volume holding `path`, as `df` reports it.
 /// Memory this Mac has free for new work, as macOS judges it (`kern.memorystatus_level`, the
 /// figure `memory_pressure` prints): free and reclaimable pages, not counting what is in use.
 pub fn memory_free_mb() -> Option<u64> {
@@ -26,12 +35,17 @@ pub fn memory_free_mb() -> Option<u64> {
     (percent <= 100).then(|| total_mb * percent / 100)
 }
 
+/// Free space (MB) on the volume holding `path`, as `df` reports it (the same system call).
 pub fn free_mb(path: &Path) -> Option<u64> {
-    use crate::process::OutputWithin;
-    let out = Command::new("df").arg("-k").arg("-P").arg(path).output_within(std::time::Duration::from_secs(5)).ok()?;
-    let text = String::from_utf8_lossy(&out.stdout);
-    let available_kb: u64 = text.lines().nth(1)?.split_whitespace().nth(3)?.parse().ok()?;
-    Some(available_kb >> 10)
+    use std::os::unix::ffi::OsStrExt;
+    let path = CString::new(path.as_os_str().as_bytes()).ok()?;
+    // SAFETY: an all-zero `StatFs` is valid (integers and byte arrays only).
+    let mut fs: StatFs = unsafe { std::mem::zeroed() };
+    // SAFETY: a NUL-terminated path and a properly laid out struct, for the duration of the call.
+    if unsafe { statfs(path.as_ptr(), &mut fs) } != 0 {
+        return None;
+    }
+    Some(fs.bavail.saturating_mul(u64::from(fs.bsize)) >> 20)
 }
 
 /// Bytes actually allocated on disk (sparse VM disks count only what they use).
@@ -51,7 +65,39 @@ struct RLimit {
     max: u64,
 }
 
+/// macOS's `struct statfs` (64-bit, as on arm64).
+#[repr(C)]
+struct StatFs {
+    bsize: u32,
+    iosize: i32,
+    blocks: u64,
+    bfree: u64,
+    bavail: u64,
+    files: u64,
+    ffree: u64,
+    fsid: [i32; 2],
+    owner: u32,
+    fs_type: u32,
+    flags: u32,
+    fssubtype: u32,
+    fstypename: [c_char; 16],
+    mntonname: [c_char; 1024],
+    mntfromname: [c_char; 1024],
+    flags_ext: u32,
+    reserved: [u32; 7],
+}
+
 unsafe extern "C" {
+    // On Intel Macs the 64-bit layout above has its own symbol; on Apple silicon it is the only one.
+    #[cfg_attr(target_arch = "x86_64", link_name = "statfs$INODE64")]
+    fn statfs(path: *const c_char, buf: *mut StatFs) -> c_int;
+    fn sysctlbyname(
+        name: *const c_char,
+        old: *mut c_void,
+        old_len: *mut usize,
+        new: *mut c_void,
+        new_len: usize,
+    ) -> c_int;
     fn getrlimit(resource: std::ffi::c_int, rlp: *mut RLimit) -> std::ffi::c_int;
     fn setrlimit(resource: std::ffi::c_int, rlp: *const RLimit) -> std::ffi::c_int;
 }

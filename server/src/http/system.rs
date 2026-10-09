@@ -8,12 +8,11 @@ use super::dto::Status;
 use crate::app::queries::{StorageUsage, cleanup_finished_jobs, storage_usage};
 
 pub async fn status(State(ctx): Ctx) -> Json<Status> {
-    // `security` is a process: never on the async workers (every open tab polls this).
+    // Usually from memory; when it is not, `security` is a process: never on the async workers.
     let keychain = ctx.clone();
-    let token =
-        tokio::task::spawn_blocking(move || keychain.keychain.read_token().map(drop).map_err(|e| e.to_string()))
-            .await
-            .unwrap_or_else(|e| Err(e.to_string()));
+    let token = tokio::task::spawn_blocking(move || keychain.keychain.token_status())
+        .await
+        .unwrap_or_else(|e| Err(e.to_string()));
     Json(Status {
         golden: ctx.config.golden().is_file(),
         token_hint: token.as_ref().err().cloned(),

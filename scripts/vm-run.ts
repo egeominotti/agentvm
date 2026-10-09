@@ -21,11 +21,17 @@ let out = "";
 // VM's shell maps cat to bat and ls to eza, and the output must be the plain one.
 ws.onopen = () =>
   ws.send(new TextEncoder().encode(`unalias -a 2>/dev/null\recho ${mark}-A; ${words.join(" ")}; echo ${mark}-B $?\r`));
+// tmux redraws what it shows: lines end with "erase to end of line" before their newline, colors
+// and cursor moves are mixed in. They are taken out before looking for the markers, not after.
+const plain = (s: string) =>
+  s
+    .replace(/\x1b\[[0-9;?<>=]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Z0-9]|\x1b[=>78]/g, "")
+    .replace(/\r/g, "");
 ws.onmessage = (e) => {
   out += new TextDecoder().decode(e.data as ArrayBuffer);
-  const done = out.match(new RegExp(`\\n${mark}-A\\r?\\n([\\s\\S]*?)${mark}-B (\\d+)`));
+  const done = plain(out).match(new RegExp(`\\n${mark}-A\\n([\\s\\S]*?)${mark}-B (\\d+)`));
   if (!done) return;
-  console.log(done[1].replace(/\x1b\[[0-9;?]*[A-Za-z]|\x1b\([AB0]/g, "").replace(/\r/g, "").trimEnd());
+  console.log(done[1].trimEnd());
   process.exit(Number(done[2]));
 };
 ws.onclose = () => {

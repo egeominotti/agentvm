@@ -53,6 +53,12 @@ pub(crate) fn json_req(method: &str, path: &str, body: serde_json::Value) -> Req
         .unwrap()
 }
 
+pub(crate) async fn fetch_with(path: &str, name: &str, value: &str) -> axum::response::Response {
+    let tmp = tempfile::tempdir().unwrap();
+    let req = Request::get(path).header("host", "127.0.0.1:7777").header(name, value).body(Body::empty()).unwrap();
+    app(tmp.path()).oneshot(req).await.unwrap()
+}
+
 pub(crate) async fn fetch(path: &str) -> axum::response::Response {
     let tmp = tempfile::tempdir().unwrap();
     let req = Request::get(path).header("host", "127.0.0.1:7777").body(Body::empty()).unwrap();

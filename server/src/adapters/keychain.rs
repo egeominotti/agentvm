@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use crate::secret::Secret;
 
@@ -11,6 +13,9 @@ const KEYCHAIN_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
 const SERVICE: &str = "agentvm";
 const S3_SERVICE: &str = "agentvm-s3";
 const ENV_FALLBACK: &str = "CLAUDE_CODE_OAUTH_TOKEN";
+/// How long the answer to "is a token saved?" is trusted. Tokens saved through agentvm count at
+/// once; one added or removed with `security` by hand shows within this.
+const PRESENCE_TTL: Duration = Duration::from_secs(30);
 
 #[derive(Debug, thiserror::Error)]
 pub enum KeychainError {
@@ -31,15 +36,34 @@ pub enum KeychainError {
     InvalidGitToken,
 }
 
+/// Whether a token is saved (or why not), and when that was read.
+type Presence = Option<(Instant, Result<(), String>)>;
+
 #[derive(Clone)]
 pub struct Keychain {
     /// `None` = the user's default keychains.
     keychain: Option<PathBuf>,
+    /// Whether a token is saved, and when that was last read (shared by clones).
+    presence: Arc<Mutex<Presence>>,
 }
 
 impl Keychain {
     pub fn new(keychain: Option<PathBuf>) -> Self {
-        Keychain { keychain }
+        Keychain { keychain, presence: Arc::default() }
+    }
+
+    /// Whether a token is saved (or why not), without the token itself. Every open dashboard asks
+    /// every few seconds: answered from memory, `security` runs at most once per `PRESENCE_TTL`.
+    pub fn token_status(&self) -> Result<(), String> {
+        let mut known = self.presence.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((at, status)) = known.as_ref()
+            && at.elapsed() < PRESENCE_TTL
+        {
+            return status.clone();
+        }
+        let status = self.read_token().map(drop).map_err(|e| e.to_string());
+        *known = Some((Instant::now(), status.clone()));
+        status
     }
 
     pub fn read_token(&self) -> Result<Secret, KeychainError> {
@@ -68,7 +92,9 @@ impl Keychain {
         if !well_formed {
             return Err(KeychainError::InvalidToken);
         }
-        self.write(SERVICE, t)
+        self.write(SERVICE, t)?;
+        *self.presence.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), Ok(())));
+        Ok(())
     }
 
     /// `AGENTVM_S3_SECRET` wins over the Keychain (handy for CI and tests).

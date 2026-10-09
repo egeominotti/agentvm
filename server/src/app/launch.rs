@@ -63,34 +63,51 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
 }
 
 /// Fills the job folder with everything the VM boots from: repository, task spec, token, disk.
+/// The repository, the token and the disk do not depend on each other: they are prepared at once,
+/// the first two on blocking threads while the disk is cloned.
 async fn prepare(ctx: &AppCtx, id: &TaskId, record: &TaskRecord) -> Result<(JobWorkspace, Secret), String> {
     let timeout_s = ctx.settings.get().timeout_s;
     let ws = JobWorkspace::create(&ctx.config.jobs(), id).map_err(|e| format!("job directory: {e}"))?;
     let t = Instant::now();
-    if record.restore_from.is_none() {
-        let how = if pack_repo(ctx, record, &ws).await? { "shared" } else { "packed" };
-        ctx.store.push_boot(id, format!("host: repository {how} in {} ms", t.elapsed().as_millis()));
-    }
-    ws.write_spec(&task_spec(id, record, timeout_s)).map_err(|e| format!("task.json: {e}"))?;
+    let repo = record.restore_from.is_none().then(|| pack_repo(ctx, record, &ws));
     let keychain = ctx.keychain.clone();
-    let token = tokio::task::spawn_blocking(move || keychain.read_token())
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
+    let token = tokio::task::spawn_blocking(move || keychain.read_token());
+    let disk = ws
+        .write_spec(&task_spec(id, record, timeout_s))
+        .map_err(|e| format!("task.json: {e}"))
+        .and_then(|()| install_disk(ctx, record, &ws));
+    // Every task is awaited before any error returns: none may still write into a folder that
+    // is being removed.
+    let repo = match repo {
+        Some(task) => Some(task.await.map_err(|e| e.to_string()).and_then(|r| r)),
+        None => None,
+    };
+    let token = token.await.map_err(|e| e.to_string()).and_then(|r| r.map_err(|e| e.to_string()));
+    if let Some(repo) = repo {
+        let (shared, took) = repo?;
+        let how = if shared { "shared" } else { "packed" };
+        ctx.store.push_boot(id, format!("host: repository {how} in {} ms", took.as_millis()));
+    }
+    disk?;
+    let token = token?;
     ws.write_token(&token).map_err(|e| format!("token: {e}"))?;
-    install_disk(ctx, record, &ws)?;
     ctx.store.push_boot(id, format!("host: disk ready in {} ms", t.elapsed().as_millis()));
     Ok((ws, token))
 }
 
-/// Puts the repository bundle in the job folder; `true` when a shared bundle was reused.
-async fn pack_repo(ctx: &AppCtx, record: &TaskRecord, ws: &JobWorkspace) -> Result<bool, String> {
-    // Off the async workers: packing a large repository takes seconds.
+/// Puts the repository bundle in the job folder, on a blocking thread (packing a large repository
+/// takes seconds): `true` when a shared bundle was reused, and how long it took.
+fn pack_repo(
+    ctx: &AppCtx,
+    record: &TaskRecord,
+    ws: &JobWorkspace,
+) -> tokio::task::JoinHandle<Result<(bool, std::time::Duration), String>> {
     let (home, repo, dest) = (ctx.config.home.clone(), record.repo.as_path().to_path_buf(), ws.repo_bundle());
     let base = record.base_sha.clone();
-    tokio::task::spawn_blocking(move || bundles::prepare(&home, &repo, &dest, &base))
-        .await
-        .map_err(|e| e.to_string())?
+    tokio::task::spawn_blocking(move || {
+        let t = Instant::now();
+        bundles::prepare(&home, &repo, &dest, &base).map(|shared| (shared, t.elapsed()))
+    })
 }
 
 /// The VM's disk: a clone of the snapshot it is restored from, or of the golden image.

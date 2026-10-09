@@ -8,7 +8,7 @@ mod wait;
 use self::backstop::Backstop;
 use self::follower::Follower;
 use self::tick::Ticker;
-use self::wait::wait_for_vm;
+use self::wait::{Tick, wait_for_vm};
 use super::collect::collect;
 use super::context::AppCtx;
 use super::record::TaskRecord;
@@ -38,7 +38,14 @@ pub(super) async fn supervise(
     let mut backstop = Backstop::new(ctx, record, &ws);
     let deadline_of = || backstop.as_mut().map(Backstop::deadline);
     let started = std::time::Instant::now();
-    let end = wait_for_vm(ctx, id, &mut vm, deadline_of, on_started, || ticker.tick()).await;
+    let on_tick = |tick| match tick {
+        Tick::Second => {
+            ticker.tick();
+            true
+        }
+        Tick::Boot => ticker.refresh_boot_log(),
+    };
+    let end = wait_for_vm(ctx, id, &mut vm, deadline_of, on_started, on_tick).await;
     tracing::info!(
         task = %id,
         exit = ?end.exit,

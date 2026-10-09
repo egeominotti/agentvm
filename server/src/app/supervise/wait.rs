@@ -13,16 +13,27 @@ use crate::domain::ids::TaskId;
 const KILL_GRACE: Duration = Duration::from_secs(15);
 const KILL_RETRY: Duration = Duration::from_secs(5);
 
+/// How often the boot is followed until the VM is ready: a VM is used the moment it can be.
+const BOOT_POLL: Duration = Duration::from_millis(50);
+
+/// Which refresh is due: the full one, every second, or the boot's, every `BOOT_POLL` until the
+/// VM is ready.
+pub(super) enum Tick {
+    Second,
+    Boot,
+}
+
 /// Follows the VM from boot to shutdown. Stop and timeout also apply during boot;
-/// if the helper ignores SIGTERM for `KILL_GRACE`, it gets SIGKILL. `on_tick` runs every second,
-/// and the deadline is asked again after each tick (`None`: no deadline).
+/// if the helper ignores SIGTERM for `KILL_GRACE`, it gets SIGKILL. `on_tick(Tick::Second)` runs
+/// every second, and the deadline is asked again after it (`None`: no deadline);
+/// `on_tick(Tick::Boot)` runs every `BOOT_POLL` until it returns `true` (the VM is ready).
 pub(super) async fn wait_for_vm(
     ctx: &AppCtx,
     id: &TaskId,
     vm: &mut VmProcess,
     mut deadline_of: impl FnMut() -> Option<std::time::Instant>,
     on_started: impl Fn(),
-    mut on_tick: impl FnMut(),
+    mut on_tick: impl FnMut(Tick) -> bool,
 ) -> VmEnd {
     let (_never, fallback) = watch::channel(false);
     let mut stop = ctx.store.stop_signal(id).unwrap_or(fallback);
@@ -30,6 +41,8 @@ pub(super) async fn wait_for_vm(
     let deadline = tokio::time::sleep_until(deadline_of().map_or_else(far, Into::into));
     let kill_timer = tokio::time::sleep(Duration::MAX / 4);
     let mut ticks = tokio::time::interval(Duration::from_secs(1));
+    let mut boot_ticks = tokio::time::interval(BOOT_POLL);
+    let mut booted = false;
     tokio::pin!(deadline, kill_timer);
     let (mut stop_requested, mut timed_out) = (false, false);
     loop {
@@ -48,8 +61,9 @@ pub(super) async fn wait_for_vm(
                 // sending SIGKILL as fast as it can until the helper is gone.
                 kill_timer.as_mut().reset(Instant::now() + KILL_RETRY);
             }
+            _ = boot_ticks.tick(), if !booted => booted = on_tick(Tick::Boot),
             _ = ticks.tick() => {
-                on_tick();
+                on_tick(Tick::Second);
                 if !terminating {
                     deadline.as_mut().reset(deadline_of().map_or_else(far, Into::into));
                 }

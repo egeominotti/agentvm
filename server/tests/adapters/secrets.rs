@@ -25,6 +25,28 @@ fn keychain_reads_token_from_a_real_keychain() {
     assert_eq!(keychain.read_token().unwrap().expose(), "tok123");
 }
 
+/// Every open dashboard asks every few seconds whether a token is saved: answered from memory,
+/// not by running `security` each time (~20 ms, and a secret read for nothing). A token saved
+/// through agentvm counts at once.
+#[test]
+fn token_presence_is_answered_from_memory() {
+    let tmp = tempfile::tempdir().unwrap();
+    let kc = TempKeychain(tmp.path().join("p.keychain-db"));
+    sh(tmp.path(), &format!("security create-keychain -p x {}", kc.0.display()));
+    let keychain = Keychain::new(Some(kc.0.clone()));
+    let missing = keychain.token_status().unwrap_err();
+    assert!(missing.contains("claude setup-token"), "{missing}");
+    let t = std::time::Instant::now();
+    for _ in 0..50 {
+        assert!(keychain.token_status().is_err());
+    }
+    assert!(t.elapsed() < std::time::Duration::from_millis(100), "50 checks took {:?}", t.elapsed());
+    keychain.write_token(&Secret::new("sk-ant-oat01-saved_Token-1".into())).unwrap();
+    assert_eq!(keychain.token_status(), Ok(()));
+    // Clones share what they know (the server hands its context to every request).
+    assert_eq!(keychain.clone().token_status(), Ok(()));
+}
+
 #[test]
 fn missing_token_message_tells_how_to_fix() {
     assert!(KeychainError::Missing.to_string().contains("security add-generic-password -s agentvm -a agentvm -w"));
