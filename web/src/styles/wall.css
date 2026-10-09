@@ -1,4 +1,4 @@
-/* The wall: running machines as live cards, finished ones as a list, or the first-run screen. */
+/* Machines: running ones as live cards or a table, finished ones as a table, or the first-run screen. */
 .wall-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .view-head { flex-shrink: 0; display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 12px 0 18px; border-bottom: 1px solid var(--line); }
 .view-head h1 { margin: 0; font-size: var(--fs-md); font-weight: 590; letter-spacing: -0.012em; }
@@ -27,15 +27,12 @@
 .port-chip { font: 11px var(--mono); color: var(--ink-2); text-decoration: none; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line-2); background: none; cursor: pointer; }
 .port-chip:hover { color: var(--ink); background: var(--hover); }
 
-.finished-section header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-.finished-section h2 { margin: 0; font-size: var(--fs-sm); font-weight: 510; color: var(--ink-3); }
-.finished { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
-.finished li + li { border-top: 1px solid var(--line); }
-.finished a { display: grid; grid-template-columns: 170px minmax(0, 1fr) auto auto 64px 84px; align-items: center; gap: 14px; height: 38px; padding: 0 14px; color: var(--ink-2); text-decoration: none; font-size: var(--fs-sm); }
-.finished a:hover { background: var(--hover); color: var(--ink); }
-.f-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
-.f-id { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--ink-3); }
-.f-repo, .f-cost, .f-age { color: var(--ink-3); font-size: var(--fs-xs); text-align: right; }
+/* The tables of the Machines page (the rest is data.css). */
+.cols-machines .dt-tr { grid-template-columns: 150px minmax(0, 1fr) 56px 76px 120px 70px 64px 112px; }
+.cols-finished .dt-tr { grid-template-columns: 34px 150px minmax(0, 1fr) minmax(0, 220px) 70px 70px 90px 112px; }
+.dt-name a { display: block; min-width: 0; color: inherit; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dt-name a:hover b { text-decoration: underline; }
+.dt-tr .status-label { white-space: nowrap; }
 
 .empty { margin: auto; max-width: 460px; padding: 40px 24px; display: grid; gap: 14px; justify-items: start; }
 .empty-mark { width: 40px; height: 40px; }
@@ -44,5 +41,7 @@
 .empty ol { margin: 10px 0 0; padding: 0 0 0 18px; display: grid; gap: 8px; color: var(--ink-3); font-size: var(--fs-sm); }
 .empty li b { color: var(--ink-2); font-weight: 510; }
 .card-warn { color: var(--wait); font-weight: 510; }
-/* Inside the row: the list clips anything drawn outside it. */
-.finished a:focus-visible { outline-offset: -2px; border-radius: var(--r); }
+@media (max-width: 860px) {
+  .cols-machines .dt-tr { grid-template-columns: 120px minmax(0, 1fr) auto; }
+  .cols-finished .dt-tr { grid-template-columns: 30px 110px minmax(0, 1fr) auto; }
+}

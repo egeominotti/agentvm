@@ -1,38 +1,25 @@
-// Every machine at once: the running ones live, the finished ones in a list below.
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "../../api/client";
-import { keys, useTasks } from "../../api/queries";
+// Every machine: a summary, then the running ones (live cards or a table) and the finished ones.
+import { useState } from "react";
+import { useStatus, useTasks } from "../../api/queries";
 import { Button } from "../../components/Button";
-import { ConfirmButton } from "../../components/ConfirmButton";
 import { Icon } from "../../components/Icon";
-import { useToast } from "../../components/Toast";
-import { plural } from "../../lib/format";
-import { isEnded, isQueued, isWaiting } from "../../lib/task";
+import { gb, money, tokens } from "../../lib/format";
+import { isEnded, isQueued } from "../../lib/task";
 import { openLauncher } from "../launcher/open";
 import { EmptyState } from "./EmptyState";
-import { FinishedList } from "./FinishedList";
-import { MachineCard } from "./MachineCard";
+import { liveKind } from "./filter";
+import { FinishedTable } from "./FinishedTable";
+import { RunningView } from "./RunningView";
+
+type Tab = "running" | "finished";
 
 export function Wall() {
   const q = useTasks();
-  const qc = useQueryClient();
-  const say = useToast();
+  const host = useStatus().data;
+  const [tab, setTab] = useState<Tab>("running");
   const tasks = q.data ?? [];
   const live = tasks.filter((t) => !isEnded(t));
   const ended = tasks.filter(isEnded);
-  const waiting = live.filter(isWaiting).length;
-  const queued = live.filter(isQueued).length;
-  const running = live.length - queued;
-  const clear = useMutation({
-    // The machines as they were when you clicked: the list refreshes every second meanwhile.
-    mutationFn: async (ids: string[]) => {
-      for (const id of ids) await api(`/api/tasks/${id}`, "DELETE");
-      return ids.length;
-    },
-    onSuccess: (n) => say(`Deleted ${plural(n, "finished machine")}. Their branches stay in your repository.`),
-    onError: (e: Error) => say(e.message, "err"),
-    onSettled: () => qc.invalidateQueries({ queryKey: keys.tasks }),
-  });
 
   if (q.error && !q.data) {
     return (
@@ -44,44 +31,69 @@ export function Wall() {
   }
   if (q.isSuccess && !tasks.length) return <EmptyState />;
 
+  const queued = live.filter(isQueued).length;
+  const waiting = live.filter((t) => liveKind(t) === "waiting").length;
+  const working = live.filter((t) => liveKind(t) === "working").length;
+  const memUsed = live.reduce((a, t) => a + (t.metrics?.mem_used_mb ?? 0), 0);
+  const spend = tasks.reduce((a, t) => a + (t.usage?.cost_usd ?? 0), 0);
+  const used = tasks.reduce((a, t) => a + (t.usage ? t.usage.input_tokens + t.usage.output_tokens : 0), 0);
   return (
     <div className="wall-view">
       <header className="view-head">
         <h1>Machines</h1>
-        <span className="sub">
-          {running ? plural(running, "running machine") : "Nothing running"}
-          {queued ? `, ${queued} in the queue` : ""}
-          {waiting ? `, ${waiting} waiting for you` : ""}
-        </span>
+        <span className="sub">Each agent in a VM of its own: open one to drive it, or watch them all here.</span>
         <span className="tb-gap" />
         <Button variant="primary" onClick={openLauncher}>
           <Icon name="plus" />
           New VM <kbd>⌘K</kbd>
         </Button>
       </header>
-      <div className="wall-scroll">
-        {live.length ? (
-          <div className="cards">
-            {live.map((t) => (
-              <MachineCard key={t.id} task={t} />
-            ))}
+      <div className="page-body">
+        <dl className="stat-strip">
+          <div>
+            <dt>Running</dt>
+            <dd>
+              {live.length - queued}
+              {queued ? <small>{queued} in the queue</small> : null}
+            </dd>
           </div>
-        ) : null}
-        {ended.length ? (
-          <section className="finished-section" aria-label="Finished machines">
-            <header>
-              <h2>Finished</h2>
-              <ConfirmButton
-                disabled={clear.isPending}
-                confirm={`Delete ${ended.length} with their logs and Claude's history? Branches stay`}
-                onConfirm={() => clear.mutate(ended.map((t) => t.id))}
-              >
-                Delete {ended.length} finished
-              </ConfirmButton>
-            </header>
-            <FinishedList tasks={ended} />
-          </section>
-        ) : null}
+          <div className={waiting ? "tone-wait" : undefined}>
+            <dt>Waiting for you</dt>
+            <dd>{waiting}</dd>
+          </div>
+          <div className={working ? "tone-work" : undefined}>
+            <dt>Working</dt>
+            <dd>{working}</dd>
+          </div>
+          <div>
+            <dt>Memory in use</dt>
+            <dd>
+              {gb(memUsed)}
+              {host ? <small>of {gb(host.ram_committed_mb)} reserved</small> : null}
+            </dd>
+          </div>
+          <div>
+            <dt>Claude</dt>
+            <dd>
+              {money(spend)}
+              {used ? <small>{tokens(used)} tokens</small> : null}
+            </dd>
+          </div>
+        </dl>
+        <div className="line-tabs" role="tablist" aria-label="Machines">
+          {(
+            [
+              ["running", "Running", live.length],
+              ["finished", "Finished", ended.length],
+            ] as const
+          ).map(([id, label, count]) => (
+            <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>
+              {label}
+              <span className="count">{count}</span>
+            </button>
+          ))}
+        </div>
+        {tab === "running" ? <RunningView live={live} /> : <FinishedTable ended={ended} />}
       </div>
     </div>
   );

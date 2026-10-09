@@ -56,7 +56,7 @@ export function Snapshots() {
   const machines = new Set(list.map((s) => s.source_task)).size;
   const s3Ready = backups.isSuccess;
   return (
-    <div className="wall-view snaps-view">
+    <div className="wall-view">
       <header className="view-head">
         <h1>Snapshots</h1>
         <span className="sub">Whole VMs saved at a moment: files, installed packages, Claude's conversation.</span>
@@ -67,8 +67,8 @@ export function Snapshots() {
         </Button>
         <input ref={file} type="file" accept=".zst,.tar,.gz" hidden onChange={(e) => importFile(e.target.files?.[0])} />
       </header>
-      <div className="snaps-body">
-        <dl className="snap-stats">
+      <div className="page-body narrow">
+        <dl className="stat-strip">
           <div>
             <dt>Snapshots</dt>
             <dd>{q.isSuccess ? list.length : "–"}</dd>
@@ -92,7 +92,7 @@ export function Snapshots() {
             </dd>
           </div>
         </dl>
-        <div className="snap-tabs" role="tablist" aria-label="Where">
+        <div className="line-tabs" role="tablist" aria-label="Where">
           {(
             [
               ["local", "On this Mac", list.length],

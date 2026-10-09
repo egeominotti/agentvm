@@ -44,7 +44,7 @@ export function LocalSnapshots({ list, loaded, error, s3Ready }: Props) {
   if (error) return <p className="msg err">{error}</p>;
   if (loaded && !list.length) {
     return (
-      <div className="snap-empty">
+      <div className="empty-panel">
         <Icon name="snapshots" />
         <b>No snapshots yet</b>
         <p>
@@ -56,8 +56,8 @@ export function LocalSnapshots({ list, loaded, error, s3Ready }: Props) {
   }
   return (
     <>
-      <div className="snap-toolbar">
-        <label className="set-search snap-search">
+      <div className="data-toolbar">
+        <label className="data-search">
           <Icon name="search" />
           <input
             className="text-input"
@@ -71,7 +71,7 @@ export function LocalSnapshots({ list, loaded, error, s3Ready }: Props) {
         <Segmented label="Kind" value={kind} options={KINDS} onChange={setKind} />
       </div>
       {selected.length ? (
-        <div className="snap-bulk" role="toolbar" aria-label="Selected snapshots">
+        <div className="bulk-bar" role="toolbar" aria-label="Selected snapshots">
           <b>{plural(selected.length, "snapshot")} selected</b>
           <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>
             Clear
@@ -92,8 +92,8 @@ export function LocalSnapshots({ list, loaded, error, s3Ready }: Props) {
           </ConfirmButton>
         </div>
       ) : null}
-      <div className="snap-table" role="table" aria-label="Snapshots on this Mac">
-        <div className="snap-tr snap-th" role="row">
+      <div className="data-table cols-snapshots" role="table" aria-label="Snapshots on this Mac">
+        <div className="dt-tr dt-th" role="row">
           <span role="columnheader">
             <input
               type="checkbox"
@@ -111,8 +111,8 @@ export function LocalSnapshots({ list, loaded, error, s3Ready }: Props) {
           <span role="columnheader" aria-label="Actions" />
         </div>
         {groups.map((g) => (
-          <div key={g.task} role="rowgroup" className="snap-group">
-            <div className="snap-tr snap-machine" role="row">
+          <div key={g.task} role="rowgroup" className="dt-group">
+            <div className="dt-tr dt-group-head" role="row">
               <span role="cell" />
               <span role="cell" title={`Restores into ${g.repo}, on a branch of its own`}>
                 <b>{g.title}</b> <span className="muted">{repoName(g.repo)}</span>
@@ -134,7 +134,7 @@ export function LocalSnapshots({ list, loaded, error, s3Ready }: Props) {
             ))}
           </div>
         ))}
-        {!shown.length && list.length ? <p className="snap-none">No snapshot matches.</p> : null}
+        {!shown.length && list.length ? <p className="dt-none">No snapshot matches.</p> : null}
       </div>
     </>
   );

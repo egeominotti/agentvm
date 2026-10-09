@@ -53,7 +53,7 @@ export function SnapshotRow({ s, label, kind, selected, onSelect, s3Ready }: Pro
   const resume = kind === "interrupted";
   const taken = new Date(s.created_at * 1000);
   return (
-    <div className={`snap-tr snap-row${selected ? " selected" : ""}${resume ? " interrupted" : ""}`} role="row">
+    <div className={`dt-tr dt-row${selected ? " selected" : ""}${resume ? " interrupted" : ""}`} role="row">
       <span role="cell">
         <input
           type="checkbox"
@@ -62,7 +62,7 @@ export function SnapshotRow({ s, label, kind, selected, onSelect, s3Ready }: Pro
           onChange={(e) => onSelect(e.target.checked)}
         />
       </span>
-      <span role="cell" className="snap-name">
+      <span role="cell" className="dt-name">
         <b title={s.name}>{label}</b>
         <span className="muted">
           {modelLabel(s.model)}
@@ -78,7 +78,7 @@ export function SnapshotRow({ s, label, kind, selected, onSelect, s3Ready }: Pro
       <span role="cell" className="num" title="What deleting it frees: the compressed data only this snapshot holds">
         {s.compacting ? <span className="muted">compressing…</span> : s.size_mb < 1 ? "< 1 MB" : gb(s.size_mb)}
       </span>
-      <span role="cell" className="snap-actions">
+      <span role="cell" className="dt-actions">
         <Button
           size="sm"
           variant={resume ? "primary" : "default"}

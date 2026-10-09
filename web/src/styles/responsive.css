@@ -21,8 +21,6 @@
 
 @media (max-width: 640px) {
   .view { margin: 0; border-radius: 0; border: 0; }
-  .finished a { grid-template-columns: auto minmax(0, 1fr) auto; }
-  .f-id, .f-repo, .f-cost { display: none; }
   .view-head .sub { display: none; }
   .toolbar { gap: 6px; padding: 0 6px 0 10px; }
   .toolbar .status-label { display: none; }

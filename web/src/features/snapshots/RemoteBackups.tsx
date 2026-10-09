@@ -32,7 +32,7 @@ export function RemoteBackups({ q }: { q: UseQueryResult<RemoteBackup[], Error> 
   if (q.error) {
     const notSet = /not configured/i.test(q.error.message);
     return (
-      <div className="snap-empty">
+      <div className="empty-panel">
         <Icon name="cloud-up" />
         <b>{notSet ? "Keep copies off this Mac" : "The bucket cannot be read"}</b>
         <p>{notSet ? <a href="#/settings/backups">Set up an S3 bucket in Settings › Backups</a> : q.error.message}</p>
@@ -42,7 +42,7 @@ export function RemoteBackups({ q }: { q: UseQueryResult<RemoteBackup[], Error> 
   if (!q.data) return <p className="msg">Reading the bucket…</p>;
   if (!q.data.length) {
     return (
-      <div className="snap-empty">
+      <div className="empty-panel">
         <Icon name="cloud-up" />
         <b>No backups yet</b>
         <p>Choose “Back up to S3” in a snapshot's ⋯ menu, or select several and back them up at once.</p>
@@ -50,8 +50,8 @@ export function RemoteBackups({ q }: { q: UseQueryResult<RemoteBackup[], Error> 
     );
   }
   return (
-    <div className="snap-table remote" role="table" aria-label="Backups in S3">
-      <div className="snap-tr snap-th" role="row">
+    <div className="data-table cols-s3" role="table" aria-label="Backups in S3">
+      <div className="dt-tr dt-th" role="row">
         <span role="columnheader">Snapshot</span>
         <span role="columnheader">Repository</span>
         <span role="columnheader">Taken</span>
@@ -61,8 +61,8 @@ export function RemoteBackups({ q }: { q: UseQueryResult<RemoteBackup[], Error> 
         <span role="columnheader" aria-label="Actions" />
       </div>
       {q.data.map((b) => (
-        <div key={b.snapshot.id} className="snap-tr snap-row" role="row">
-          <span role="cell" className="snap-name">
+        <div key={b.snapshot.id} className="dt-tr dt-row" role="row">
+          <span role="cell" className="dt-name">
             <b title={b.snapshot.name}>{b.snapshot.name}</b>
             <span className="muted">Uploaded {b.uploaded_at}</span>
           </span>
@@ -75,7 +75,7 @@ export function RemoteBackups({ q }: { q: UseQueryResult<RemoteBackup[], Error> 
           <span role="cell" className="num">
             {gb(b.archive_mb)}
           </span>
-          <span role="cell" className="snap-actions">
+          <span role="cell" className="dt-actions">
             <Button size="sm" disabled={b.local || bring.isPending} onClick={() => bring.mutate(b.snapshot.id)}>
               <Icon name={b.local ? "check" : "cloud-down"} />
               {b.local ? "On this Mac" : "Bring here"}
