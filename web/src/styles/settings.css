@@ -78,5 +78,5 @@ input[type="range"] { width: 100%; accent-color: var(--brand); height: 20px; }
 .facts-grid div { padding: 10px 12px; display: grid; gap: 2px; border-right: 1px solid var(--line); margin-right: -1px; min-width: 0; }
 .facts-grid dt { font-size: var(--fs-xs); color: var(--ink-3); }
 .facts-grid dd { margin: 0; font-weight: 510; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.set-card form { display: grid; gap: 14px; }
+.set-card form:not(.inline-form) { display: grid; gap: 14px; }
 code { background: var(--raised); padding: 1px 5px; border-radius: 4px; }

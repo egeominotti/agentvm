@@ -43,3 +43,4 @@
 .empty p { margin: 0; color: var(--ink-2); }
 .empty ol { margin: 10px 0 0; padding: 0 0 0 18px; display: grid; gap: 8px; color: var(--ink-3); font-size: var(--fs-sm); }
 .empty li b { color: var(--ink-2); font-weight: 510; }
+.card-warn { color: var(--wait); font-weight: 510; }

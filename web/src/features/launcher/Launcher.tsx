@@ -121,6 +121,10 @@ export function Launcher() {
         <Dialog.Content
           className="dialog launcher"
           aria-describedby={undefined}
+          // Escape first closes the repository suggestions, and only then the dialog.
+          onEscapeKeyDown={(e) => {
+            if (document.activeElement?.getAttribute("aria-expanded") === "true") e.preventDefault();
+          }}
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             (repo.trim() || recent[0] ? taskInput : repoInput).current?.focus();

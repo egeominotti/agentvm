@@ -1,9 +1,10 @@
 // A running machine on the wall: its state, name, a live preview, and the numbers that matter.
 import type { TaskDto } from "../../api/generated/TaskDto";
+import { useStatus } from "../../api/queries";
 import { StatusMark } from "../../components/StatusMark";
 import { gb, money, tokens } from "../../lib/format";
 import { age, shortId, statusOf, titleOf } from "../../lib/task";
-import { bootSteps } from "../machine/boot";
+import { bootSteps, setupFailed } from "../machine/boot";
 import { Preview } from "./Preview";
 
 export function MachineCard({ task: t }: { task: TaskDto }) {
@@ -49,6 +50,11 @@ export function MachineCard({ task: t }: { task: TaskDto }) {
             {t.ports.length > 1 ? ` +${t.ports.length - 1}` : ""}
           </a>
         ) : null}
+        {setupFailed(t) ? (
+          <span className="card-warn" title="The repository's .agentvm/setup.sh failed">
+            setup failed
+          </span>
+        ) : null}
         <span className="card-spend">
           {u?.output_tokens ? `${money(u.cost_usd)} · ${tokens(u.input_tokens + u.output_tokens)} tokens · ` : ""}
           {age(t)}
@@ -59,7 +65,16 @@ export function MachineCard({ task: t }: { task: TaskDto }) {
 }
 
 function CardBoot({ task: t }: { task: TaskDto }) {
+  const concurrency = useStatus().data?.concurrency;
   const { steps, current } = bootSteps(t);
+  if (t.status.state === "queued") {
+    return (
+      <Note
+        title="Waiting for a free slot"
+        text={`${concurrency ?? "A few"} VMs run at a time; it starts when one closes. Settings › Resources changes it.`}
+      />
+    );
+  }
   const now = current < steps.length ? steps[current]?.label : "Opening the terminal";
   return (
     <div className="card-boot">

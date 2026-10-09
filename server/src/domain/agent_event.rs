@@ -8,13 +8,37 @@ const SUMMARY_MAX: usize = 300;
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AgentEvent {
-    Init { model: String, claude_code_version: String },
-    Text { text: String },
-    ToolUse { name: String, summary: String },
-    ToolResult { is_error: bool, summary: String },
-    Retry { attempt: u32 },
-    Result { is_error: bool, duration_ms: u64, cost_usd: f64, text: String },
-    Unparsed { raw: String },
+    Init {
+        model: String,
+        claude_code_version: String,
+    },
+    Text {
+        text: String,
+    },
+    ToolUse {
+        name: String,
+        summary: String,
+    },
+    ToolResult {
+        is_error: bool,
+        summary: String,
+    },
+    Retry {
+        attempt: u32,
+    },
+    /// The end of a run: its cost and its tokens (input counts the cached prompt too, as the
+    /// status line of an interactive session does).
+    Result {
+        is_error: bool,
+        duration_ms: u64,
+        cost_usd: f64,
+        input_tokens: u64,
+        output_tokens: u64,
+        text: String,
+    },
+    Unparsed {
+        raw: String,
+    },
 }
 
 /// A line can contain several blocks (text + tool). Unrecognized lines with no useful content
@@ -36,6 +60,11 @@ pub fn parse_line(line: &str) -> Vec<AgentEvent> {
             is_error: v["is_error"].as_bool().unwrap_or(true),
             duration_ms: v["duration_ms"].as_u64().unwrap_or(0),
             cost_usd: v["total_cost_usd"].as_f64().unwrap_or(0.0),
+            input_tokens: ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]
+                .iter()
+                .map(|k| v["usage"][k].as_u64().unwrap_or(0))
+                .sum(),
+            output_tokens: v["usage"]["output_tokens"].as_u64().unwrap_or(0),
             text: clip(&s(&v["result"])),
         }],
         _ => Vec::new(),

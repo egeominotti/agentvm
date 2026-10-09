@@ -61,17 +61,19 @@ export function Snapshots() {
         {groups.map((g) => (
           <section key={g.task} className="snap-group" aria-label={g.title}>
             <header>
-              <h2>{g.title}</h2>
+              <h2 title={g.title}>{g.title}</h2>
               <span className="sub">{repoName(g.repo)}</span>
             </header>
-            <ul className="snaps">
-              {g.interrupted.map((s) => (
-                <SnapshotRow key={s.id} s={s} label="Interrupted: its disk was kept" resume />
-              ))}
-              {g.manual.map((s) => (
-                <SnapshotRow key={s.id} s={s} label={labelOf(s, g.title)} />
-              ))}
-            </ul>
+            {g.interrupted.length || g.manual.length ? (
+              <ul className="snaps">
+                {g.interrupted.map((s) => (
+                  <SnapshotRow key={s.id} s={s} label="Interrupted: its disk was kept" resume />
+                ))}
+                {g.manual.map((s) => (
+                  <SnapshotRow key={s.id} s={s} label={labelOf(s, g.title)} />
+                ))}
+              </ul>
+            ) : null}
             {g.auto.length ? (
               <details className="auto-snaps">
                 <summary>{plural(g.auto.length, "automatic snapshot")}</summary>

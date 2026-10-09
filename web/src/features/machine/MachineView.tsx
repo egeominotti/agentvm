@@ -8,6 +8,7 @@ import { useToast } from "../../components/Toast";
 import { isEnded } from "../../lib/task";
 import { useMachineActions } from "./actions";
 import { BootMark, BootPanel } from "./BootPanel";
+import { setupFailed } from "./boot";
 import { Inspector, type InspectorTab } from "./inspector/Inspector";
 import { DiffView } from "./outcome/DiffView";
 import { Outcome } from "./outcome/Outcome";
@@ -18,7 +19,9 @@ import { type TerminalHandle, VmTerminal } from "./terminal/VmTerminal";
 
 const PANEL_KEY = "agentvm.inspector";
 
+/** In a narrow window the details cover the terminal: they start closed, and open on demand. */
 function storedPanel(): boolean {
+  if (window.innerWidth < 1100) return false;
   try {
     return localStorage.getItem(PANEL_KEY) !== "off";
   } catch {
@@ -103,6 +106,23 @@ export function MachineView({ id }: { id: string }) {
           onInspector={togglePanel}
         />
         {!ended ? <PortsBar ports={t.ports} /> : null}
+        {!ended && setupFailed(t) ? (
+          <div className="banner warn" role="alert">
+            <span>
+              The repository's setup (<code>.agentvm/setup.sh</code>) failed: this VM runs without what it installs.
+            </span>
+            <button
+              type="button"
+              className="link"
+              onClick={() => {
+                setTab("diagnostics");
+                if (!panel) togglePanel();
+              }}
+            >
+              Show the log
+            </button>
+          </div>
+        ) : null}
         {ended ? (
           <div className="result">
             <Outcome task={t} />

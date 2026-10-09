@@ -49,3 +49,6 @@ export function bootSteps(t: TaskDto): { steps: BootStep[]; current: number } {
   const current = steps.findIndex((s) => !s.done);
   return { steps, current: current < 0 ? steps.length : current };
 }
+
+/** The repository's `.agentvm/setup.sh` failed: the machine runs, but without what it sets up. */
+export const setupFailed = (t: TaskDto) => t.boot_log.some((l) => /\] setup failed/.test(l));

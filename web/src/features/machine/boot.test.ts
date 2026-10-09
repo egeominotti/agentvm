@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { task } from "../../test/task";
-import { bootSteps } from "./boot";
+import { bootSteps, setupFailed } from "./boot";
 
 it("turns the boot log into real steps with real timings", () => {
   const t = task({
@@ -37,4 +37,12 @@ it("a failing setup.sh is shown as failed", () => {
 it("an automatic task is ready once its network is", () => {
   const t = task({ interactive: false, ready: false, boot_log: ["[1.0s] job start", "[1.2s] network ready"] });
   expect(bootSteps(t).steps.at(-1)).toMatchObject({ label: "Agent started", done: true });
+});
+
+it("tells when the repository's setup failed, even once the machine is ready", () => {
+  expect(
+    setupFailed(task({ boot_log: ["[1.69s] running .agentvm/setup.sh", "[1.70s] setup failed (see setup.log)"] })),
+  ).toBe(true);
+  expect(setupFailed(task({ boot_log: ["[1.69s] running .agentvm/setup.sh", "[3.0s] setup done"] }))).toBe(false);
+  expect(setupFailed(task())).toBe(false);
 });

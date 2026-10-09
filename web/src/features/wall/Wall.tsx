@@ -5,7 +5,7 @@ import { keys, useTasks } from "../../api/queries";
 import { Button } from "../../components/Button";
 import { useToast } from "../../components/Toast";
 import { plural } from "../../lib/format";
-import { isEnded, isWaiting } from "../../lib/task";
+import { isEnded, isQueued, isWaiting } from "../../lib/task";
 import { openLauncher } from "../launcher/open";
 import { EmptyState } from "./EmptyState";
 import { FinishedList } from "./FinishedList";
@@ -19,6 +19,8 @@ export function Wall() {
   const live = tasks.filter((t) => !isEnded(t));
   const ended = tasks.filter(isEnded);
   const waiting = live.filter(isWaiting).length;
+  const queued = live.filter(isQueued).length;
+  const running = live.length - queued;
   const clear = useMutation({
     mutationFn: async () => {
       for (const t of ended) await api(`/api/tasks/${t.id}`, "DELETE");
@@ -43,7 +45,8 @@ export function Wall() {
       <header className="view-head">
         <h1>Machines</h1>
         <span className="sub">
-          {live.length ? plural(live.length, "running machine") : "Nothing running"}
+          {running ? plural(running, "running machine") : "Nothing running"}
+          {queued ? `, ${queued} in the queue` : ""}
           {waiting ? `, ${waiting} waiting for you` : ""}
         </span>
         <span className="tb-gap" />

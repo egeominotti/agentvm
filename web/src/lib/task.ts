@@ -11,6 +11,8 @@ export const isEnded = (t: TaskDto) => ENDED.has(t.status.state);
 /** Claude finished a turn and waits for the user. */
 export const isWaiting = (t: TaskDto) => t.status.state === "running" && t.activity === "waiting";
 export const isRunning = (t: TaskDto) => t.status.state === "running";
+/** Waiting for a free VM slot (Settings › Resources sets how many run at a time). */
+export const isQueued = (t: TaskDto) => t.status.state === "queued";
 
 export const age = (t: TaskDto) => duration((t.finished_at ?? Date.now() / 1000) - t.created_at);
 export const titleOf = (t: TaskDto) => (t.prompt ? (t.prompt.split("\n")[0] ?? "") : (t.label ?? repoName(t.repo)));

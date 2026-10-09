@@ -23,15 +23,15 @@ impl Follower {
         log: Arc<EventLog>,
         stream: PathBuf,
         token: Secret,
-        on_cost: impl Fn(f64) + Send + 'static,
+        on_result: impl Fn(f64, u64, u64) + Send + 'static,
     ) -> Self {
         let (stop, rx) = watch::channel(false);
         let handle = tokio::spawn(async move {
             let mut lines = std::pin::pin!(tail_lines(stream, rx));
             while let Some(line) = lines.next().await {
                 for event in parse_line(&token.redact(&line)) {
-                    if let AgentEvent::Result { cost_usd, .. } = &event {
-                        on_cost(*cost_usd);
+                    if let AgentEvent::Result { cost_usd, input_tokens, output_tokens, .. } = &event {
+                        on_result(*cost_usd, *input_tokens, *output_tokens);
                     }
                     log.push(StreamItem::Agent(event));
                 }

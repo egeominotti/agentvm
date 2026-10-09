@@ -1,9 +1,11 @@
 // The boot of a machine, until its terminal is ready: the real steps, with their timings.
 import type { TaskDto } from "../../api/generated/TaskDto";
+import { useStatus } from "../../api/queries";
 import { age } from "../../lib/task";
 import { bootSteps } from "./boot";
 
 export function BootPanel({ task: t }: { task: TaskDto }) {
+  const concurrency = useStatus().data?.concurrency;
   const { steps, current } = bootSteps(t);
   const now = current < steps.length ? `${steps[current]?.label}…` : "Opening the terminal…";
   return (
@@ -26,6 +28,12 @@ export function BootPanel({ task: t }: { task: TaskDto }) {
           </li>
         ))}
       </ol>
+      {t.status.state === "queued" ? (
+        <p className="hint">
+          {concurrency ?? "A few"} VMs run at a time: this one starts when another closes. To run more at once, raise it
+          in <a href="#/settings/resources">Settings › Resources</a>.
+        </p>
+      ) : null}
     </div>
   );
 }

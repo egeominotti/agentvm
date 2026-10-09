@@ -65,3 +65,20 @@ fn huge_texts_are_clipped() {
         other => panic!("{other:?}"),
     }
 }
+
+/// The result carries the run's tokens: an automatic task's usage counts them, not only its cost.
+#[test]
+fn the_result_carries_the_tokens_of_the_run() {
+    let line = include_str!("../fixtures/stream-hello.jsonl").lines().last().unwrap();
+    let Some(AgentEvent::Result { input_tokens, output_tokens, .. }) = parse_line(line).pop() else {
+        panic!("no result in {line}")
+    };
+    let usage: serde_json::Value = serde_json::from_str::<serde_json::Value>(line).unwrap()["usage"].clone();
+    let input = ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]
+        .iter()
+        .map(|k| usage[k].as_u64().unwrap_or(0))
+        .sum::<u64>();
+    assert!(input > 0 && output_tokens > 0, "{usage}");
+    assert_eq!(input_tokens, input);
+    assert_eq!(output_tokens, usage["output_tokens"].as_u64().unwrap());
+}

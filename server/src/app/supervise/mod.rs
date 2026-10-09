@@ -28,8 +28,8 @@ pub(super) async fn supervise(
     mut vm: VmProcess,
     token: Secret,
 ) -> Result<(), String> {
-    let on_cost = cost_recorder(ctx, id);
-    let follower = Follower::start(ctx.store.log(id).ok_or("task disappeared")?, ws.stream(), token, on_cost);
+    let on_result = usage_recorder(ctx, id);
+    let follower = Follower::start(ctx.store.log(id).ok_or("task disappeared")?, ws.stream(), token, on_result);
     let on_started = || {
         let _ = ctx.store.apply(id, TaskEvent::VmStarted);
     };
@@ -53,14 +53,16 @@ pub(super) async fn supervise(
     collect(ctx, id, record, &ws, end)
 }
 
-/// Keeps the task's cost in step with the agent's `result` events.
-fn cost_recorder(ctx: &AppCtx, id: &TaskId) -> impl Fn(f64) + Send + 'static {
+/// Keeps the task's cost and tokens in step with the agent's `result` events.
+fn usage_recorder(ctx: &AppCtx, id: &TaskId) -> impl Fn(f64, u64, u64) + Send + 'static {
     let (store, id) = (ctx.store.clone_handle(), id.clone());
     let history =
         std::sync::Mutex::new(crate::app::history::UsageRecorder::new(crate::app::history::usage_file(ctx, &id)));
-    move |cost_usd: f64| {
+    move |cost_usd: f64, input_tokens: u64, output_tokens: u64| {
         let mut usage = store.get(&id).and_then(|r| r.usage).unwrap_or_default();
         usage.cost_usd = cost_usd;
+        usage.input_tokens = input_tokens;
+        usage.output_tokens = output_tokens;
         history.lock().unwrap().record(&usage);
         store.set_usage(&id, usage);
     }

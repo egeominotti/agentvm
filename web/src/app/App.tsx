@@ -8,6 +8,7 @@ import { SettingsView } from "../features/settings/Settings";
 import { Snapshots } from "../features/snapshots/Snapshots";
 import { Wall } from "../features/wall/Wall";
 import { useAttention } from "./attention";
+import { ConnectionBanner } from "./ConnectionBanner";
 import { useRoute } from "./router";
 import { Shortcuts } from "./Shortcuts";
 import { Sidebar } from "./sidebar/Sidebar";
@@ -31,6 +32,7 @@ export function App() {
       <div className="app">
         <Sidebar route={route} />
         <main className="view">
+          <ConnectionBanner />
           {route.name === "machine" ? <MachineView key={route.id} id={route.id} /> : null}
           {route.name === "wall" ? <Wall /> : null}
           {route.name === "snapshots" ? <Snapshots /> : null}
