@@ -17,6 +17,7 @@ pub mod random;
 pub mod record;
 mod record_file;
 pub mod recover;
+pub mod repos;
 pub mod scheduler;
 pub mod session;
 pub mod settings;

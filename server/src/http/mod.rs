@@ -10,6 +10,7 @@ mod golden;
 mod guard;
 mod history;
 mod proxy;
+mod repos;
 mod router;
 mod session;
 mod settings;

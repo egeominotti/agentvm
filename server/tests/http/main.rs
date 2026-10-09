@@ -5,5 +5,6 @@ mod diagnostics;
 mod guard;
 mod helpers;
 mod history;
+mod repos;
 mod settings;
 mod telemetry;

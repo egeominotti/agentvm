@@ -3,6 +3,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./client";
 import type { Diagnostics } from "./generated/Diagnostics";
+import type { GoldenStatus } from "./generated/GoldenStatus";
+import type { Releases } from "./generated/Releases";
+import type { RepoCheck } from "./generated/RepoCheck";
 import type { Series } from "./generated/Series";
 import type { SettingsView } from "./generated/SettingsView";
 import type { Status } from "./generated/Status";
@@ -69,6 +72,32 @@ export function useClaudeUsage(id: string, live: boolean) {
     queryKey: keys.usage(id),
     queryFn: () => api<Usage>(`/api/tasks/${id}/claude/usage`),
     refetchInterval: live ? 5000 : false,
+  });
+}
+
+export function useGolden() {
+  return useQuery({ queryKey: ["golden"], queryFn: () => api<GoldenStatus>("/api/golden") });
+}
+
+/** Published Claude Code versions: fetched once a session (the server caches them too). */
+export function useReleases() {
+  return useQuery({
+    queryKey: ["releases"],
+    queryFn: () => api<Releases>("/api/claude/versions"),
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false,
+  });
+}
+
+/** Whether a VM can be launched on `path` (nothing asked for an empty path). */
+export function useRepoCheck(path: string) {
+  return useQuery({
+    queryKey: ["repo-check", path],
+    queryFn: () => api<RepoCheck>(`/api/repos/check?path=${encodeURIComponent(path)}`),
+    enabled: path.trim() !== "",
+    staleTime: 5000,
+    // An answer, good or bad, is the answer: asking again would only delay a clear "no".
+    retry: false,
   });
 }
 

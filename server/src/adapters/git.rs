@@ -33,6 +33,12 @@ impl Git {
         Ok(CommitSha::parse(&out)?)
     }
 
+    /// The branch HEAD is on; `None` when HEAD is detached.
+    pub fn current_branch(&self) -> Option<String> {
+        let name = self.run(&["symbolic-ref", "--short", "-q", "HEAD"]).ok()?;
+        Some(name.trim().to_owned()).filter(|n| !n.is_empty())
+    }
+
     /// Every ref and HEAD: equal fingerprints mean `bundle_all` would produce the same bundle.
     pub fn refs_fingerprint(&self) -> Result<String, GitError> {
         let refs = self.run(&["for-each-ref", "--format=%(objectname) %(refname)"])?;

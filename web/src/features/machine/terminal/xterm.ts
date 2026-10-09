@@ -29,7 +29,9 @@ const THEME = {
   brightWhite: "#ffffff",
 };
 
-export function openXterm(el: HTMLElement, { fontSize = 13, readOnly = false } = {}) {
+/** `webgl`: the GPU renderer, for full-size terminals; a page gets only a few GPU contexts, so
+ *  the many previews of the wall draw with the DOM renderer. */
+export function openXterm(el: HTMLElement, { fontSize = 13, readOnly = false, webgl = true } = {}) {
   const xterm = new Terminal({
     fontFamily: '"Geist Mono", "SF Mono", ui-monospace, Menlo, monospace',
     fontSize,
@@ -44,6 +46,7 @@ export function openXterm(el: HTMLElement, { fontSize = 13, readOnly = false } =
   const fit = new FitAddon();
   xterm.loadAddon(fit);
   xterm.open(el);
+  if (!webgl) return { xterm, fit };
   try {
     const gl = new WebglAddon();
     gl.onContextLoss(() => gl.dispose());

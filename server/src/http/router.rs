@@ -9,7 +9,7 @@ use axum::middleware;
 use axum::routing::{delete, get, post, put};
 
 use super::{
-    assets, backups, diagnostics, events, golden, guard, history, session, settings, snapshots, system, tasks,
+    assets, backups, diagnostics, events, golden, guard, history, repos, session, settings, snapshots, system, tasks,
     telemetry, terminal,
 };
 use crate::app::supervisor::AppCtx;
@@ -78,6 +78,7 @@ fn host_routes() -> Routes {
         .route("/api/settings/token", put(settings::put_token))
         .route("/api/settings/s3", get(backups::get_s3).put(backups::put_s3))
         .route("/api/settings/s3/test", post(backups::test_s3))
+        .route("/api/repos/check", get(repos::check))
         .route("/api/golden", get(golden::status))
         .route("/api/golden/rebuild", post(golden::rebuild))
         .route("/api/claude/versions", get(golden::claude_versions))

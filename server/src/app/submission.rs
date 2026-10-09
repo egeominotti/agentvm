@@ -1,6 +1,5 @@
 //! Task submission: validate a request, queue the task and hand it to its supervisor.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -55,7 +54,7 @@ pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError
     let settings = ctx.settings.get();
     let (cpus, memory_mb) = (req.cpus.unwrap_or(settings.cpus), req.memory_mb.unwrap_or(settings.memory_mb));
     ctx.settings.limits().check_vm(cpus, memory_mb)?;
-    let repo = RepoPath::new(expand_home(req.repo))?;
+    let repo = RepoPath::new(super::repos::expand_home(req.repo))?;
     let prompt = match Prompt::new(req.prompt) {
         Ok(p) => Some(p),
         Err(_) if req.interactive => None,
@@ -89,11 +88,4 @@ pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError
     };
     tokio::spawn(launch::run(ctx.clone(), id.clone()));
     Ok(id)
-}
-
-fn expand_home(path: &str) -> PathBuf {
-    match path.trim().strip_prefix("~/") {
-        Some(rest) => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(rest),
-        None => PathBuf::from(path.trim()),
-    }
 }
