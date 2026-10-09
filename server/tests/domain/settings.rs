@@ -1,6 +1,6 @@
 //! Settings, models, Claude Code versions and the limits of the Mac.
 
-use agentvm::domain::settings::{HostLimits, Model, Settings};
+use agentvm::domain::settings::{HostLimits, Model, Settings, SettingsError};
 
 fn limits() -> HostLimits {
     HostLimits { cpus: 18, ram_mb: 65536 }
@@ -18,9 +18,29 @@ fn default_settings_are_valid() {
         claude_version: Default::default(),
         s3: None,
         auto_snapshots: Default::default(),
+        tailscale: Default::default(),
     };
     assert!(s.validate(&limits()).is_ok());
 }
+
+/// Tags that Tailscale would refuse are refused when saving, not at the next launch.
+#[test]
+fn settings_reject_tailscale_tags_tailscale_would_refuse() {
+    let mut s: Settings = serde_json::from_str(OLD_SETTINGS).unwrap();
+    s.tailscale.tags = vec!["agentvm".into()];
+    assert!(matches!(s.validate(&limits()), Err(SettingsError::Tailscale(_))));
+}
+
+/// Settings saved before Tailscale existed read as "off, with SSH".
+#[test]
+fn settings_without_tailscale_keep_it_off() {
+    let s: Settings = serde_json::from_str(OLD_SETTINGS).unwrap();
+    assert_eq!(s.tailscale, agentvm::domain::tailscale::TailscaleSettings::default());
+    assert!(s.validate(&limits()).is_ok());
+}
+
+const OLD_SETTINGS: &str =
+    r#"{"max_vms":4,"cpus":4,"memory_mb":4096,"timeout_s":1800,"model":"default","default_repo":null}"#;
 
 #[test]
 fn settings_reject_out_of_range_values() {
@@ -34,6 +54,7 @@ fn settings_reject_out_of_range_values() {
         claude_version: Default::default(),
         s3: None,
         auto_snapshots: Default::default(),
+        tailscale: Default::default(),
     };
     for bad in [
         Settings { max_vms: 0, ..ok.clone() },

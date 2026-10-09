@@ -17,6 +17,7 @@ pub mod settings;
 pub mod settings_recovery;
 pub mod snapshot;
 pub mod spec;
+pub mod tailscale;
 pub mod task;
 pub mod telemetry;
 pub mod terminal_session;

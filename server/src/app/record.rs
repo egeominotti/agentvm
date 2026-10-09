@@ -50,6 +50,12 @@ pub struct TaskRecord {
     /// disk is not kept as "Interrupted") whatever happens to the server meanwhile.
     #[serde(default)]
     pub stop_requested: bool,
+    /// This VM joins the user's tailnet.
+    #[serde(default)]
+    pub tailscale: bool,
+    /// What its guest said of the tailnet: joined (name, addresses) or why not.
+    #[serde(skip)]
+    pub tailnet: Option<crate::domain::tailscale::Tailnet>,
     /// Boot timeline: host steps (`host: …`) then the guest job's own log lines.
     #[serde(skip)]
     pub boot_log: Vec<String>,
@@ -104,6 +110,8 @@ impl TaskRecord {
             memory_mb: 0,
             usage: None,
             stop_requested: false,
+            tailscale: false,
+            tailnet: None,
             boot_log: Vec::new(),
             ready: false,
             ports: Vec::new(),

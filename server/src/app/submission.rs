@@ -29,6 +29,8 @@ pub enum SubmitError {
     DiskFull(#[from] crate::domain::disk::DiskFull),
     #[error("{0}")]
     Shallow(&'static str),
+    #[error("to join your tailnet, save a Tailscale auth key in Settings › Tailscale first")]
+    NoTailscaleKey,
 }
 
 /// What a shallow clone needs before a VM can start on it.
@@ -51,6 +53,8 @@ pub struct NewTask<'a> {
     pub memory_mb: Option<u64>,
     /// Display name when there is no first task.
     pub label: Option<String>,
+    /// Join the user's tailnet; `None` follows the settings.
+    pub tailscale: Option<bool>,
 }
 
 /// Validates the request, queues the task and starts its supervisor.
@@ -59,6 +63,10 @@ pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError
     let settings = ctx.settings.get();
     let (cpus, memory_mb) = (req.cpus.unwrap_or(settings.cpus), req.memory_mb.unwrap_or(settings.memory_mb));
     ctx.settings.limits().check_vm(cpus, memory_mb)?;
+    let tailscale = req.tailscale.unwrap_or(settings.tailscale.enabled);
+    if tailscale && ctx.keychain.read_tailscale_key().is_none() {
+        return Err(SubmitError::NoTailscaleKey);
+    }
     let repo = RepoPath::new(super::repos::expand_home(req.repo))?;
     let prompt = match Prompt::new(req.prompt) {
         Ok(p) => Some(p),
@@ -84,6 +92,7 @@ pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError
     record.cpus = cpus;
     record.memory_mb = memory_mb;
     record.label = req.label;
+    record.tailscale = tailscale;
     // Two launches in the same second may draw the same id: draw again, never replace a task.
     let id = loop {
         let id = record.id.clone();

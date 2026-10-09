@@ -29,6 +29,9 @@ pub struct CreateTask {
     pub cpus: Option<u32>,
     #[serde(default)]
     pub memory_mb: Option<u64>,
+    /// Join the user's tailnet (`null`: as the settings say).
+    #[serde(default)]
+    pub tailscale: Option<bool>,
 }
 
 #[derive(Deserialize, Default)]
@@ -132,6 +135,10 @@ pub struct TaskDto {
     /// This machine's own interval for automatic snapshots (`null`: the settings').
     pub auto_snapshot_min: Option<u32>,
     pub ports: Vec<crate::domain::metrics::ForwardedPort>,
+    /// Asked to join the user's tailnet.
+    pub tailscale: bool,
+    /// On the tailnet: its name and addresses, or why it did not join (`null`: not yet known).
+    pub tailnet: Option<crate::domain::tailscale::Tailnet>,
     pub boot_log: Vec<String>,
     pub ready: bool,
     pub usage: Option<crate::domain::usage::AgentUsage>,
@@ -164,6 +171,8 @@ impl From<TaskRecord> for TaskDto {
             auto_snapshot_min: r.auto_snapshot_min,
             label: r.label,
             ports: r.ports,
+            tailscale: r.tailscale,
+            tailnet: r.tailnet,
             boot_log: r.boot_log,
             ready: r.ready,
             usage: r.usage,

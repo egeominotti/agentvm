@@ -22,6 +22,8 @@ finish() {
   if [ ! -s "$JOB/result.json" ] && mountpoint -q "$JOB"; then
     write_result failed -1 0 "guest_error (exit $rc)"
   fi
+  # Off the tailnet first: its node goes at once instead of lingering offline.
+  /usr/local/bin/agentvm-tailscale down
   sync
   poweroff -f
 }
@@ -47,6 +49,8 @@ mountpoint -q "$JOB" || mount -t virtiofs job "$JOB"
 # shellcheck source=agentvm-save
 source "$JOB/runtime/agentvm-save"
 
+# Scripts newer than the image's agentvm-boot (which installs the others) come from here.
+[ -f "$JOB/runtime/agentvm-tailscale" ] && install -m 755 "$JOB/runtime/agentvm-tailscale" /usr/local/bin/agentvm-tailscale
 # The terminals' shell setup ships with every launch, like these scripts: a change needs no new
 # image. ~/.zshrc only loads it, so what the user adds there is never overwritten.
 if [ -f "$JOB/runtime/zshrc" ]; then
@@ -122,6 +126,9 @@ log "repo ready on $BRANCH"
 
 for _ in $(seq 100); do getent hosts api.anthropic.com >/dev/null && break; sleep 0.1; done
 log "network ready"
+# The user's tailnet, if this launch asked for it: joined in the background, so it never delays
+# the agent or the terminal; what came of it goes to tailscale.json.
+if [ -f "$JOB/tailscale-spec.json" ]; then /usr/local/bin/agentvm-tailscale up & fi
 
 # Per-repository setup (dependencies, databases, dev servers): .agentvm/setup.sh, run as root
 # in the checkout before Claude starts. Background services it starts keep running.
@@ -180,6 +187,14 @@ if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
       save_work
       reply save.done "$(jq -nc --arg id "$REQ" --argjson c "$COMMITS" --arg e "$SAVE_ERROR" \
         '{id:$id, commits:$c} + (if $e == "" then {} else {error:$e} end)')"
+    fi
+    if REQ=$(take_request tailscale-up.request); then
+      /usr/local/bin/agentvm-tailscale up &
+      reply tailscale-up.started "$(jq -nc --arg id "$REQ" '{id:$id}')"
+    fi
+    if REQ=$(take_request tailscale-down.request); then
+      /usr/local/bin/agentvm-tailscale down
+      reply tailscale-down.done "$(jq -nc --arg id "$REQ" '{id:$id}')"
     fi
     if REQ=$(take_request close.request); then
       log "close requested"

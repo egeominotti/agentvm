@@ -17,6 +17,7 @@ mod session;
 mod settings;
 mod snapshots;
 mod system;
+mod tailscale;
 mod tasks;
 mod telemetry;
 mod terminal;

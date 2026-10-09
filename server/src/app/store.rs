@@ -1,5 +1,7 @@
 //! Task repository: sole owner of their state (in memory for the MVP).
 
+mod live;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -13,10 +15,7 @@ use super::record_file::RecordFile;
 // The record type lives in its own module; re-exported where callers have always found it.
 pub use super::record::{HISTORY, TaskRecord};
 use crate::domain::ids::TaskId;
-use crate::domain::metrics::{ForwardedPort, VmMetrics};
 use crate::domain::task::{InvalidTransition, TaskEvent, TaskState, transition};
-use crate::domain::telemetry::TelemetrySample;
-use crate::domain::usage::AgentUsage;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -178,74 +177,6 @@ impl Store {
     pub fn signal_stop(&self, id: &TaskId) {
         if let Some(e) = self.tasks.lock().unwrap().get(id) {
             e.stop.send_replace(true);
-        }
-    }
-
-    pub fn set_activity(&self, id: &TaskId, activity: Option<String>) {
-        let changed = self.tasks.lock().unwrap().get_mut(id).is_some_and(|e| {
-            let changed = e.record.activity != activity;
-            e.record.activity = activity;
-            changed
-        });
-        if changed {
-            self.changes.bump();
-        }
-    }
-
-    pub fn record_metrics(&self, id: &TaskId, m: VmMetrics) {
-        if let Some(e) = self.tasks.lock().unwrap().get_mut(id) {
-            e.record.push_metrics(m);
-        }
-    }
-
-    /// A new telemetry sample for the live charts, with the memory the VM may keep now.
-    pub fn record_sample(&self, id: &TaskId, sample: TelemetrySample, memory_limit_mb: u64) {
-        if let Some(e) = self.tasks.lock().unwrap().get_mut(id) {
-            e.record.push_live(sample, memory_limit_mb);
-        }
-    }
-
-    /// Memory reserved by the VMs that hold a slot.
-    pub fn committed_memory_mb(&self) -> u64 {
-        self.tasks.lock().unwrap().values().filter(|e| e.record.holds_vm()).map(|e| e.record.memory_mb).sum()
-    }
-
-    /// Saved to disk only when it changes.
-    pub fn set_auto_snapshot_min(&self, id: &TaskId, minutes: Option<u32>) {
-        self.update(id, |r| ((), std::mem::replace(&mut r.auto_snapshot_min, minutes) != minutes));
-    }
-
-    pub fn set_usage(&self, id: &TaskId, usage: AgentUsage) {
-        self.update(id, |r| {
-            let changed = r.usage.as_ref() != Some(&usage);
-            r.usage = Some(usage);
-            ((), changed)
-        });
-    }
-
-    pub fn push_boot(&self, id: &TaskId, line: String) {
-        if let Some(e) = self.tasks.lock().unwrap().get_mut(id) {
-            e.record.boot_log.push(line);
-        }
-    }
-
-    /// Replaces the guest part of the boot log (the host lines stay first).
-    pub fn set_guest_boot(&self, id: &TaskId, lines: Vec<String>, ready: bool) {
-        if let Some(e) = self.tasks.lock().unwrap().get_mut(id) {
-            e.record.boot_log.retain(|l| l.starts_with("host: "));
-            e.record.boot_log.extend(lines);
-            if std::mem::replace(&mut e.record.ready, ready) != ready {
-                self.changes.bump();
-            }
-        }
-    }
-
-    pub fn set_ports(&self, id: &TaskId, ports: Vec<ForwardedPort>) {
-        if let Some(e) = self.tasks.lock().unwrap().get_mut(id)
-            && e.record.ports != ports
-        {
-            e.record.ports = ports;
-            self.changes.bump();
         }
     }
 

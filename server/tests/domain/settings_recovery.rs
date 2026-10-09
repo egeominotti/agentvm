@@ -16,6 +16,7 @@ fn defaults() -> Settings {
         claude_version: Default::default(),
         s3: None,
         auto_snapshots: Default::default(),
+        tailscale: Default::default(),
     }
 }
 

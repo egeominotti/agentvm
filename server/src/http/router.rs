@@ -10,7 +10,7 @@ use axum::routing::{delete, get, post, put};
 
 use super::{
     assets, backups, diagnostics, events, git_access, golden, guard, history, repos, session, settings, snapshots,
-    system, tasks, telemetry, terminal,
+    system, tailscale, tasks, telemetry, terminal,
 };
 use crate::app::supervisor::AppCtx;
 
@@ -54,6 +54,7 @@ fn task_routes() -> Routes {
         .route("/api/tasks/{id}/upload", post(session::upload).layer(DefaultBodyLimit::disable()))
         .route("/api/tasks/{id}/snapshot", post(snapshots::take))
         .route("/api/tasks/{id}/auto-snapshots", put(snapshots::set_auto))
+        .route("/api/tasks/{id}/tailscale", post(tailscale::join).delete(tailscale::leave))
 }
 
 fn snapshot_routes() -> Routes {
@@ -80,6 +81,7 @@ fn host_routes() -> Routes {
         .route("/api/settings/git/{host}", put(git_access::put).delete(git_access::delete))
         .route("/api/settings/s3", get(backups::get_s3).put(backups::put_s3))
         .route("/api/settings/s3/test", post(backups::test_s3))
+        .route("/api/settings/tailscale", get(tailscale::get_key).put(tailscale::put_key).delete(tailscale::delete_key))
         .route("/api/repos/check", get(repos::check))
         .route("/api/golden", get(golden::status))
         .route("/api/golden/rebuild", post(golden::rebuild))

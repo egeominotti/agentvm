@@ -17,6 +17,8 @@ export function task(over: Partial<TaskDto> = {}): TaskDto {
     label: null,
     auto_snapshot_min: null,
     ports: [],
+    tailscale: false,
+    tailnet: null,
     boot_log: [],
     ready: true,
     usage: null,

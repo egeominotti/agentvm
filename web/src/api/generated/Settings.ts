@@ -3,6 +3,7 @@ import type { AutoSnapshots } from "./AutoSnapshots";
 import type { ClaudeVersion } from "./ClaudeVersion";
 import type { Model } from "./Model";
 import type { S3Config } from "./S3Config";
+import type { TailscaleSettings } from "./TailscaleSettings";
 
 export type Settings = { 
 /**
@@ -40,4 +41,8 @@ s3: S3Config | null,
 /**
  * Snapshots of running terminals on a schedule (and before closing).
  */
-auto_snapshots: AutoSnapshots, };
+auto_snapshots: AutoSnapshots, 
+/**
+ * New VMs join the user's tailnet; the auth key is in the Keychain.
+ */
+tailscale: TailscaleSettings, };

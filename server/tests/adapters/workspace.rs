@@ -42,6 +42,61 @@ fn workspace_token_is_private_and_secret_is_redacted() {
     assert!(!token.exists());
 }
 
+/// The Tailscale key reaches the guest like the Claude token: a private file it reads once. One
+/// left unread goes with the job folder's other secrets.
+#[test]
+fn workspace_tailscale_key_is_private_and_removed_on_drop() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = JobWorkspace::create(tmp.path(), &task_id()).unwrap();
+    let spec = agentvm::domain::tailscale::TailscaleSpec { hostname: "agentvm-x-4f94".into(), ssh: true, tags: vec![] };
+    let key = Secret::new("tskey-auth-kTest-0123456789".into());
+    JobWorkspace::offer_tailnet(&ws.share(), &spec, Some(&key)).unwrap();
+    assert!(ws.share().join("tailscale-spec.json").is_file());
+    let key = ws.share().join(".tailscale-key");
+    assert_eq!(std::fs::metadata(&key).unwrap().permissions().mode() & 0o777, 0o600);
+    assert_eq!(std::fs::read_to_string(&key).unwrap(), "tskey-auth-kTest-0123456789");
+    drop(ws);
+    assert!(!key.exists());
+}
+
+/// A VM that left the tailnet does not join again at its next boot, nor shows its old report.
+#[test]
+fn a_vm_that_left_the_tailnet_forgets_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = JobWorkspace::create(tmp.path(), &task_id()).unwrap();
+    let spec = agentvm::domain::tailscale::TailscaleSpec { hostname: "agentvm-x-4f94".into(), ssh: true, tags: vec![] };
+    JobWorkspace::offer_tailnet(&ws.share(), &spec, None).unwrap();
+    std::fs::write(ws.share().join("tailscale.json"), r#"{"name":"x"}"#).unwrap();
+    JobWorkspace::forget_tailnet(&ws.share());
+    assert!(!ws.share().join("tailscale-spec.json").exists());
+    assert_eq!(ws.read_tailnet(), None);
+}
+
+/// What the guest says of the tailnet: joined (its name and addresses) or why not. Anything else
+/// (no file yet, a torn write) is nothing to show.
+#[test]
+fn workspace_reads_the_tailnet_the_guest_joined() {
+    use agentvm::domain::tailscale::Tailnet;
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = JobWorkspace::create(tmp.path(), &task_id()).unwrap();
+    let file = ws.share().join("tailscale.json");
+    assert_eq!(ws.read_tailnet(), None);
+    std::fs::write(&file, r#"{"name":"agentvm-demo-4f94.tail1234.ts.net","ips":["100.64.0.5","fd7a:115c::5"]}"#)
+        .unwrap();
+    assert_eq!(
+        ws.read_tailnet(),
+        Some(Tailnet {
+            name: Some("agentvm-demo-4f94.tail1234.ts.net".into()),
+            ips: vec!["100.64.0.5".into(), "fd7a:115c::5".into()],
+            error: None
+        })
+    );
+    std::fs::write(&file, r#"{"error":"invalid key: unable to validate"}"#).unwrap();
+    assert_eq!(ws.read_tailnet().and_then(|t| t.error).as_deref(), Some("invalid key: unable to validate"));
+    std::fs::write(&file, "{torn").unwrap();
+    assert_eq!(ws.read_tailnet(), None);
+}
+
 #[test]
 fn workspace_reads_guest_result() {
     let tmp = tempfile::tempdir().unwrap();

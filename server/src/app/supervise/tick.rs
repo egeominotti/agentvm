@@ -51,6 +51,9 @@ impl<'a> Ticker<'a> {
             }
             self.ctx.store.record_metrics(self.id, m);
         }
+        if self.record.tailscale {
+            self.ctx.store.set_tailnet(self.id, self.ws.read_tailnet());
+        }
         if let Some(u) = self.ws.read_usage() {
             self.usage.lock().unwrap().record(&u);
             self.ctx.store.set_usage(self.id, u);

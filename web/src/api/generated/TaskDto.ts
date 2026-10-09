@@ -2,6 +2,7 @@
 import type { AgentUsage } from "./AgentUsage";
 import type { ForwardedPort } from "./ForwardedPort";
 import type { Model } from "./Model";
+import type { Tailnet } from "./Tailnet";
 import type { TaskState } from "./TaskState";
 import type { VmMetrics } from "./VmMetrics";
 
@@ -9,7 +10,15 @@ export type TaskDto = { id: string, repo: string, prompt: string, base_sha: stri
 /**
  * This machine's own interval for automatic snapshots (`null`: the settings').
  */
-auto_snapshot_min: number | null, ports: Array<ForwardedPort>, boot_log: Array<string>, ready: boolean, usage: AgentUsage | null, metrics: VmMetrics | null, cpu_history: Array<number>, mem_history: Array<number>, 
+auto_snapshot_min: number | null, ports: Array<ForwardedPort>, 
+/**
+ * Asked to join the user's tailnet.
+ */
+tailscale: boolean, 
+/**
+ * On the tailnet: its name and addresses, or why it did not join (`null`: not yet known).
+ */
+tailnet: Tailnet | null, boot_log: Array<string>, ready: boolean, usage: AgentUsage | null, metrics: VmMetrics | null, cpu_history: Array<number>, mem_history: Array<number>, 
 /**
  * Seconds since the last new sample (`null`: none yet); over a few seconds, the numbers are stale.
  */

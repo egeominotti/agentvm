@@ -62,6 +62,7 @@ pub async fn create(State(ctx): Ctx, Json(req): Json<CreateTask>) -> Result<(Sta
             cpus: req.cpus,
             memory_mb: req.memory_mb,
             label: None,
+            tailscale: req.tailscale,
         };
         submit(&ctx, new)
     })

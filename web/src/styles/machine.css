@@ -97,6 +97,13 @@
 .port-link b { font-weight: 510; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 .port-link .addr { font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink-2); }
 .port-link .moved { font-size: var(--fs-2xs); color: var(--ink-3); }
+.tailnet-bar { flex-shrink: 0; display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 14px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.tailnet-bar .ports-label { display: inline-flex; align-items: center; gap: 6px; }
+.tailnet-bar > .live { width: 6px; height: 6px; border-radius: 50%; background: var(--done); box-shadow: 0 0 0 3px color-mix(in srgb, var(--done) 18%, transparent); }
+.tailnet-bar .hint { white-space: nowrap; }
+.tailnet-bar .ts-key { flex: 1; align-items: center; }
+.tailnet-bar .ts-key .text-input { max-width: 340px; }
+.tailnet-bar .err-text { color: var(--fail); font-size: var(--fs-xs); max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .banner { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); }
 .banner.warn { background: color-mix(in srgb, var(--wait) 9%, transparent); color: var(--ink); }
 .banner span { flex: 1; min-width: 0; }

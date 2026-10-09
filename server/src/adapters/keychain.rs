@@ -12,6 +12,7 @@ const KEYCHAIN_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
 
 const SERVICE: &str = "agentvm";
 const S3_SERVICE: &str = "agentvm-s3";
+const TAILSCALE_SERVICE: &str = "agentvm-tailscale";
 const ENV_FALLBACK: &str = "CLAUDE_CODE_OAUTH_TOKEN";
 /// How long the answer to "is a token saved?" is trusted. Tokens saved through agentvm count at
 /// once; one added or removed with `security` by hand shows within this.
@@ -34,6 +35,8 @@ pub enum KeychainError {
     InvalidS3Secret,
     #[error("that is not a git token for a host (one line, no quotes or spaces)")]
     InvalidGitToken,
+    #[error("that is not a Tailscale auth key (expected tskey-auth-… or tskey-client-…)")]
+    InvalidTailscaleKey,
 }
 
 /// Whether a token is saved (or why not), and when that was read.
@@ -135,14 +138,25 @@ impl Keychain {
         if !valid_host(host) {
             return Err(KeychainError::InvalidGitToken);
         }
-        let mut cmd = Command::new("security");
-        cmd.args(["delete-generic-password", "-s", &git_service(host)]);
-        if let Some(kc) = &self.keychain {
-            cmd.arg(kc);
+        self.delete(&git_service(host))
+    }
+
+    /// The key VMs join the user's tailnet with, if one was saved.
+    pub fn read_tailscale_key(&self) -> Option<Secret> {
+        self.read(TAILSCALE_SERVICE)
+    }
+
+    /// Saves (or replaces) the Tailscale auth key; on stdin to `security`, never on a command line.
+    pub fn write_tailscale_key(&self, key: &Secret) -> Result<(), KeychainError> {
+        let k = key.expose().trim();
+        if !crate::domain::tailscale::valid_auth_key(k) {
+            return Err(KeychainError::InvalidTailscaleKey);
         }
-        // Already absent is fine: the token is gone either way.
-        crate::process::output(&mut cmd, KEYCHAIN_LIMIT).map_err(|e| KeychainError::WriteFailed(e.to_string()))?;
-        Ok(())
+        self.write(TAILSCALE_SERVICE, &format!("\"{k}\""))
+    }
+
+    pub fn delete_tailscale_key(&self) -> Result<(), KeychainError> {
+        self.delete(TAILSCALE_SERVICE)
     }
 
     /// Which of `hosts` have a token saved (the tokens themselves are never listed).
@@ -159,6 +173,17 @@ impl Keychain {
         let out = crate::process::output(&mut cmd, KEYCHAIN_LIMIT).ok()?;
         let value = String::from_utf8_lossy(&out.stdout).trim().to_owned();
         (out.status.success() && !value.is_empty()).then(|| Secret::new(value))
+    }
+
+    /// Already absent is fine: the secret is gone either way.
+    fn delete(&self, service: &str) -> Result<(), KeychainError> {
+        let mut cmd = Command::new("security");
+        cmd.args(["delete-generic-password", "-s", service]);
+        if let Some(kc) = &self.keychain {
+            cmd.arg(kc);
+        }
+        crate::process::output(&mut cmd, KEYCHAIN_LIMIT).map_err(|e| KeychainError::WriteFailed(e.to_string()))?;
+        Ok(())
     }
 
     /// `value` is already quoted when needed; it reaches `security` on stdin.

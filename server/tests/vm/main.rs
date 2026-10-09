@@ -6,5 +6,6 @@ mod lifecycle;
 mod resources;
 mod saves;
 mod shells;
+mod tailscale;
 mod terminal;
 mod terminals_at_once;

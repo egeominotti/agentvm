@@ -19,4 +19,5 @@ mod remote_repos;
 mod scheduler;
 mod settings;
 mod store;
+mod tailscale;
 mod telemetry;

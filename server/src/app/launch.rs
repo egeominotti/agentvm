@@ -71,7 +71,10 @@ async fn prepare(ctx: &AppCtx, id: &TaskId, record: &TaskRecord) -> Result<(JobW
     let t = Instant::now();
     let repo = record.restore_from.is_none().then(|| pack_repo(ctx, record, &ws));
     let keychain = ctx.keychain.clone();
-    let token = tokio::task::spawn_blocking(move || keychain.read_token());
+    let joins = record.tailscale;
+    let secrets = tokio::task::spawn_blocking(move || {
+        (keychain.read_token(), joins.then(|| keychain.read_tailscale_key()).flatten())
+    });
     let disk = ws
         .write_spec(&task_spec(id, record, timeout_s))
         .map_err(|e| format!("task.json: {e}"))
@@ -82,7 +85,10 @@ async fn prepare(ctx: &AppCtx, id: &TaskId, record: &TaskRecord) -> Result<(JobW
         Some(task) => Some(task.await.map_err(|e| e.to_string()).and_then(|r| r)),
         None => None,
     };
-    let token = token.await.map_err(|e| e.to_string()).and_then(|r| r.map_err(|e| e.to_string()));
+    let (token, tailscale_key) = match secrets.await {
+        Ok((token, key)) => (token.map_err(|e| e.to_string()), key),
+        Err(e) => (Err(e.to_string()), None),
+    };
     if let Some(repo) = repo {
         let (shared, took) = repo?;
         let how = if shared { "shared" } else { "packed" };
@@ -91,6 +97,12 @@ async fn prepare(ctx: &AppCtx, id: &TaskId, record: &TaskRecord) -> Result<(JobW
     disk?;
     let token = token?;
     ws.write_token(&token).map_err(|e| format!("token: {e}"))?;
+    if record.tailscale {
+        let spec = crate::domain::tailscale::spec_for(&super::proxy::vm_name(record), &ctx.settings.get().tailscale);
+        // A key removed since the launch was asked: the VM boots, and says it could not join.
+        JobWorkspace::offer_tailnet(&ws.share(), &spec, tailscale_key.as_ref())
+            .map_err(|e| format!("Tailscale: {e}"))?;
+    }
     ctx.store.push_boot(id, format!("host: disk ready in {} ms", t.elapsed().as_millis()));
     Ok((ws, token))
 }

@@ -218,6 +218,7 @@ pub fn restore(ctx: &Arc<AppCtx>, snap: &SnapshotId) -> Result<TaskId, SnapshotE
             cpus: (meta.cpus > 0).then_some(meta.cpus),
             memory_mb: (meta.memory_mb > 0).then_some(meta.memory_mb),
             label: Some(crate::domain::snapshot::restored_label(&meta.name)),
+            tailscale: None,
         },
     )?;
     Ok(id)

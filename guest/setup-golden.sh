@@ -16,6 +16,14 @@ install -m 644 "$SRC/config/zshrc.stub" /root/.zshrc
 apt-get install -y -qq --no-install-recommends chromium nodejs npm fonts-liberation fonts-noto-color-emoji >/dev/null
 npm install -g --no-fund --no-audit --loglevel=error @playwright/mcp@latest
 playwright-mcp --help >/dev/null
+# Tailscale, from its signed apt repository: a VM can join the user's tailnet and be reached and
+# managed from it. tailscaled starts only for a VM that joins (no cost to every boot).
+curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg -o /usr/share/keyrings/tailscale-archive-keyring.gpg
+curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.tailscale-keyring.list -o /etc/apt/sources.list.d/tailscale.list
+apt-get update -qq
+apt-get install -y -qq tailscale >/dev/null
+systemctl disable tailscaled.service
+tailscale version | head -1
 # Claude Code for root: inside the VM the agent has full permissions (the VM is the sandbox).
 VERSION=$(cat "$SRC/claude-version" 2>/dev/null || echo latest)
 HOME=/root bash -c "curl -fsSL https://claude.ai/install.sh | bash -s '$VERSION'"

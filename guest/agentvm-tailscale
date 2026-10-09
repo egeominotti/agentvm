@@ -1,0 +1,66 @@
+#!/bin/bash
+# Joins this VM to the user's tailnet when the host offers it (tailscale-spec.json, at launch or
+# from the VM's page), so it can be reached and managed from there. What came of it goes to
+# /mnt/job/tailscale.json for the dashboard: {"name","ips"} once joined, {"error"} if not.
+#
+#   agentvm-tailscale up     join (in the background of the job: never delays the terminal)
+#   agentvm-tailscale down   leave (the VM shuts down: its node goes from the tailnet at once)
+#
+# Never `set -x`: the auth key passes through this script. It arrives once in the job folder, is
+# moved to a root-only file in /run and deleted after use; tailscale reads it from that file, so it
+# never appears on a command line, in the environment or in a log.
+set -uo pipefail
+JOB=/mnt/job
+KEY=/run/agentvm/tailscale-key
+OUT="$JOB/tailscale.json"
+
+publish() { # <json>
+  printf '%s\n' "$1" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
+}
+
+fail() { # <message>: whatever tailscale said, with any key in it blanked out
+  local said
+  said=$(printf '%s' "$1" | sed -E 's/tskey-[A-Za-z0-9_?=&-]*/tskey-…/g' | tail -c 600)
+  publish "$(jq -cn --arg e "$said" '{error: $e}')"
+  echo "tailscale: $said" >> "$JOB/job.log"
+  rm -f "$KEY"
+  exit 1
+}
+
+case "${1:-}" in
+  up)
+    SPEC="$JOB/tailscale-spec.json"
+    [ -f "$SPEC" ] || exit 0
+    rm -f "$OUT"
+    [ -f "$JOB/.tailscale-key" ] || fail "no auth key reached the VM (save one in Settings › Tailscale)"
+    install -d -m 700 /run/agentvm
+    (umask 077; cat "$JOB/.tailscale-key" > "$KEY")
+    rm -f "$JOB/.tailscale-key"
+    NAME=$(jq -r '.hostname' "$SPEC")
+    args=(--auth-key="file:$KEY" --hostname="$NAME" --accept-dns=false)
+    [ "$(jq -r '.ssh' "$SPEC")" = true ] && args+=(--ssh)
+    TAGS=$(jq -r '.tags | join(",")' "$SPEC")
+    [ -n "$TAGS" ] && args+=(--advertise-tags="$TAGS")
+    # A new node at every join: a VM restored from a snapshot must not take its original's place.
+    systemctl stop tailscaled 2>/dev/null
+    rm -rf /var/lib/tailscale
+    # No connectivity logs to Tailscale (Tailscale's own guide: "Disable logging").
+    grep -qs '^TS_NO_LOGS_NO_SUPPORT=true' /etc/default/tailscaled || echo 'TS_NO_LOGS_NO_SUPPORT=true' >> /etc/default/tailscaled
+    modprobe tun 2>/dev/null
+    systemctl start tailscaled || fail "tailscaled did not start"
+    said=$(timeout 90 tailscale up "${args[@]}" 2>&1) || fail "${said:-tailscale up timed out}"
+    rm -f "$KEY"
+    status=$(tailscale status --json 2>/dev/null) || fail "joined, but tailscale status failed"
+    publish "$(printf '%s' "$status" | jq -c '{name: (.Self.DNSName | rtrimstr(".")), ips: .Self.TailscaleIPs}')"
+    echo "[$(cut -d' ' -f1 /proc/uptime)s] tailscale joined as $NAME" >> "$JOB/job.log"
+    ;;
+  down)
+    if systemctl is-active --quiet tailscaled; then timeout 10 tailscale logout >/dev/null 2>&1; fi
+    systemctl stop tailscaled 2>/dev/null
+    rm -f "$KEY"
+    ;;
+  *)
+    echo "usage: agentvm-tailscale up|down" >&2
+    exit 2
+    ;;
+esac

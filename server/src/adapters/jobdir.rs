@@ -26,6 +26,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("agentvm-metrics", include_str!("../../../guest/agentvm-metrics")),
     ("agentvm-statusline", include_str!("../../../guest/agentvm-statusline")),
     ("agentvm-claude", include_str!("../../../guest/agentvm-claude")),
+    ("agentvm-tailscale", include_str!("../../../guest/agentvm-tailscale")),
     ("tmux.conf", include_str!("../../../guest/config/tmux.conf")),
     ("zshrc", include_str!("../../../guest/config/zshrc")),
     ("zshrc.stub", include_str!("../../../guest/config/zshrc.stub")),
@@ -170,13 +171,36 @@ impl JobWorkspace {
     }
 
     pub fn write_token(&self, token: &Secret) -> io::Result<()> {
-        let mut f = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(self.share().join(".token"))?;
-        f.write_all(token.expose().as_bytes())
+        write_private(&self.share().join(".token"), token)
+    }
+
+    /// How the VM joins the tailnet (its name, SSH, tags) and the auth key, read and deleted by
+    /// the guest. The guest joins when the spec is there: at boot, or when asked.
+    pub fn offer_tailnet(
+        share: &Path,
+        spec: &crate::domain::tailscale::TailscaleSpec,
+        key: Option<&Secret>,
+    ) -> io::Result<()> {
+        // A report from an earlier attempt is not this one's.
+        let _ = fs::remove_file(share.join("tailscale.json"));
+        fs::write(share.join("tailscale-spec.json"), serde_json::to_vec(spec).map_err(io::Error::other)?)?;
+        match key {
+            Some(key) => write_private(&share.join(".tailscale-key"), key),
+            None => Ok(()),
+        }
+    }
+
+    /// The VM left the tailnet: it does not join again, and its old report goes.
+    pub fn forget_tailnet(share: &Path) {
+        for f in ["tailscale-spec.json", ".tailscale-key", "tailscale.json"] {
+            let _ = fs::remove_file(share.join(f));
+        }
+    }
+
+    /// The guest's report on the tailnet (`agentvm-tailscale`): joined, or why not.
+    pub fn read_tailnet(&self) -> Option<crate::domain::tailscale::Tailnet> {
+        let b = guestfs::read(&self.share().join("tailscale.json"), 4096)?;
+        serde_json::from_slice(&b).ok()
     }
 
     /// The disk is a file of this VM's own, not a link: booted through a link the VM would write
@@ -238,6 +262,7 @@ impl Drop for JobWorkspace {
             self.disk(),
             self.efivars(),
             self.share().join(".token"),
+            self.share().join(".tailscale-key"),
             self.repo_bundle(),
             self.pid_path(),
             self.pty_socket(),
@@ -245,6 +270,12 @@ impl Drop for JobWorkspace {
             let _ = fs::remove_file(p);
         }
     }
+}
+
+/// Only the owner can read it (the guest runs as root and reads it once).
+fn write_private(path: &Path, secret: &Secret) -> io::Result<()> {
+    let mut f = fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path)?;
+    f.write_all(secret.expose().as_bytes())
 }
 
 fn socket_dir() -> PathBuf {

@@ -20,6 +20,7 @@ fn new_task(repo: &str) -> NewTask<'_> {
         cpus: Some(1),
         memory_mb: Some(1024),
         label: None,
+        tailscale: None,
     }
 }
 

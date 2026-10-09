@@ -10,4 +10,5 @@ mod history;
 mod repos;
 mod settings;
 mod shells;
+mod tailscale;
 mod telemetry;

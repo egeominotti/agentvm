@@ -17,6 +17,7 @@ fn settings_file_roundtrips_and_is_absent_at_first() {
         claude_version: agentvm::domain::settings::ClaudeVersion::parse("2.1.290").unwrap(),
         s3: None,
         auto_snapshots: Default::default(),
+        tailscale: Default::default(),
     };
     settings_file::save(&path, &s).unwrap();
     assert_eq!(settings_file::load(&path), settings_file::Saved::Json(serde_json::to_value(&s).unwrap()));

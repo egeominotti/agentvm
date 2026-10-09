@@ -17,6 +17,7 @@ mod settings;
 mod settings_recovery;
 mod snapshot;
 mod spec;
+mod tailscale;
 mod task;
 mod telemetry;
 mod terminal_session;

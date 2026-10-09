@@ -12,6 +12,7 @@ import { Inspector, type InspectorTab } from "./inspector/Inspector";
 import { DiffView } from "./outcome/DiffView";
 import { Outcome } from "./outcome/Outcome";
 import { PortsBar } from "./PortsBar";
+import { TailnetBar } from "./TailnetBar";
 import { Toolbar } from "./Toolbar";
 import { typed, uploadFiles } from "./terminal/files";
 import { VmTerminal } from "./terminal/VmTerminal";
@@ -89,6 +90,7 @@ export function MachineView({ id }: { id: string }) {
       <section className="stage">
         <Toolbar task={t} sessions={sessions} actions={actions} inspector={showPanel} onInspector={togglePanel} />
         {!ended ? <PortsBar ports={t.ports} /> : null}
+        {!ended && t.interactive && state === "running" ? <TailnetBar task={t} /> : null}
         {!ended && setupFailed(t) ? (
           <div className="banner warn" role="alert">
             <span>

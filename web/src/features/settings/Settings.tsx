@@ -12,6 +12,7 @@ import { Notifications } from "./Notifications";
 import { Resources } from "./Resources";
 import { S3 } from "./S3";
 import { Storage } from "./Storage";
+import { Tailscale } from "./Tailscale";
 import { type SaveState, useDraft } from "./useDraft";
 
 const SECTIONS = [
@@ -20,6 +21,7 @@ const SECTIONS = [
   ["account", "Claude account"],
   ["browser", "This browser"],
   ["git", "Git access"],
+  ["tailscale", "Tailscale"],
   ["snapshots", "Automatic snapshots"],
   ["image", "VM image"],
   ["storage", "Storage"],
@@ -64,6 +66,7 @@ export function SettingsView({ section }: { section?: string }) {
       </>
     ),
     git: <GitAccess />,
+    tailscale: <Tailscale s={s} set={set} />,
     snapshots: <AutoSnapshots s={s} set={set} />,
     image: <Image s={s} set={set} />,
     storage: <Storage />,

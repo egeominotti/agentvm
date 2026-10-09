@@ -133,6 +133,9 @@ pub struct Settings {
     /// Snapshots of running terminals on a schedule (and before closing).
     #[serde(default)]
     pub auto_snapshots: super::snapshot::AutoSnapshots,
+    /// New VMs join the user's tailnet; the auth key is in the Keychain.
+    #[serde(default)]
+    pub tailscale: super::tailscale::TailscaleSettings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -182,6 +185,8 @@ pub enum SettingsError {
     S3(String),
     #[error(transparent)]
     AutoSnapshots(#[from] super::snapshot::AutoSnapshotsError),
+    #[error("Tailscale: {0}")]
+    Tailscale(#[from] super::tailscale::TailscaleSettingsError),
 }
 
 impl Settings {
@@ -207,6 +212,7 @@ impl Settings {
             s3.validate().map_err(|e| SettingsError::S3(e.to_string()))?;
         }
         self.auto_snapshots.validate()?;
+        self.tailscale.validate()?;
         Ok(())
     }
 }

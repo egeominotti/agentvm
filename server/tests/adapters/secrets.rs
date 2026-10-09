@@ -47,6 +47,25 @@ fn token_presence_is_answered_from_memory() {
     assert_eq!(keychain.clone().token_status(), Ok(()));
 }
 
+/// The Tailscale auth key: one per Mac, in the Keychain like the other secrets.
+#[test]
+fn tailscale_key_is_kept_in_the_keychain() {
+    let tmp = tempfile::tempdir().unwrap();
+    let kc = TempKeychain(tmp.path().join("ts.keychain-db"));
+    sh(tmp.path(), &format!("security create-keychain -p x {}", kc.0.display()));
+    let keychain = Keychain::new(Some(kc.0.clone()));
+    assert!(keychain.read_tailscale_key().is_none());
+    keychain.write_tailscale_key(&Secret::new("tskey-auth-kAbC123CNTRL-0123456789abcdef".into())).unwrap();
+    assert_eq!(keychain.read_tailscale_key().unwrap().expose(), "tskey-auth-kAbC123CNTRL-0123456789abcdef");
+    keychain.write_tailscale_key(&Secret::new("tskey-client-kX-1?ephemeral=true&preauthorized=true".into())).unwrap();
+    assert_eq!(keychain.read_tailscale_key().unwrap().expose(), "tskey-client-kX-1?ephemeral=true&preauthorized=true");
+    keychain.delete_tailscale_key().unwrap();
+    assert!(keychain.read_tailscale_key().is_none());
+    keychain.delete_tailscale_key().unwrap();
+    // It goes into a `security` command: nothing that could end the value early.
+    assert!(keychain.write_tailscale_key(&Secret::new("tskey-auth-x\" -s evil".into())).is_err());
+}
+
 #[test]
 fn missing_token_message_tells_how_to_fix() {
     assert!(KeychainError::Missing.to_string().contains("security add-generic-password -s agentvm -a agentvm -w"));

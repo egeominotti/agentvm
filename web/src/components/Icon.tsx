@@ -155,6 +155,15 @@ const paths: Record<string, ReactNode> = {
       <path d="M2.5 8h11M8 2.5c1.5 1.6 2.3 3.4 2.3 5.5S9.5 11.9 8 13.5C6.5 11.9 5.7 10.1 5.7 8S6.5 4.1 8 2.5Z" />
     </>
   ),
+  // Three machines joined to each other: a private network (the user's tailnet).
+  tailnet: (
+    <>
+      <circle cx="4" cy="4" r="1.5" />
+      <circle cx="12" cy="4" r="1.5" />
+      <circle cx="8" cy="12" r="1.5" />
+      <path d="M5.5 4h5M4.75 5.3 7.25 10.7M11.25 5.3 8.75 10.7" />
+    </>
+  ),
   key: (
     <>
       <circle cx="5.5" cy="10.5" r="2.75" />
