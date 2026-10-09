@@ -90,7 +90,7 @@ run Build "VM helper, dashboard and server, only what changed" scripts/build.sh
 if [ -f "$HOME_DIR/golden/disk.raw" ]; then
   run "VM image" "Debian 13 with Claude Code, ready" true
 else
-  note "first time only: the VM image is built once, about 2 minutes"
+  note "first time only: the VM image is built once, about 3 minutes"
   run "VM image" "Debian 13 with Claude Code" scripts/build-golden.sh
 fi
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Creates ~/AgentVMs/golden/disk.raw: Debian 13 arm64 + Claude Code + job runner. One-off (~2 min).
+# Creates ~/AgentVMs/golden/disk.raw: Debian 13 arm64 + Claude Code + job runner. One-off (~3 min).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD

@@ -29,6 +29,12 @@ All notable changes to this project are documented here. The format follows
 - Copy/paste in terminals and drag-and-drop of files into VMs.
 - Idle VMs give memory back to the Mac; cheap guest disk flushes; shared repository bundles.
 
+### Changed
+- New VMs boot straight into the kernel kept beside the golden image, skipping the EFI firmware and
+  GRUB: ready in ~1.5 s instead of ~2.5 s. Restored snapshots still boot through EFI.
+- A terminal connects as soon as its GPU renderer is up: opening a machine draws its terminal in
+  ~25 ms instead of ~75 ms.
+
 ### Security
 - The host never follows symlinks or blocks on FIFOs planted by a guest in its shared folder.
 - Saves never power a VM off on a git error; imports never overwrite commits made by hand.

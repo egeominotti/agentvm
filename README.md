@@ -29,7 +29,7 @@ touching your files or your checkout. You watch and drive every VM from a dashbo
 git clone https://github.com/egeominotti/agentvm.git && cd agentvm && ./quickstart
 ```
 
-One command builds everything, makes the VM image the first time (about 2 minutes, once) and
+One command builds everything, makes the VM image the first time (about 3 minutes, once) and
 opens the dashboard. Then paste a Claude token (`claude setup-token`) in **Settings › Claude
 account** and press **New VM**. Needs a Mac with Apple silicon, Xcode Command Line Tools,
 [Rust](https://rustup.rs) and [Bun](https://bun.sh); details in [Quickstart](#quickstart).
@@ -86,7 +86,7 @@ cd agentvm
 ```
 
 `./quickstart` checks the tools, builds only what changed, builds the VM image the first time
-(about 2 minutes, once), starts the server and opens the dashboard. Run it again after every
+(about 3 minutes, once), starts the server and opens the dashboard. Run it again after every
 `git pull`: when nothing changed it takes about a second, and running VMs re-attach to the new
 server.
 
@@ -108,7 +108,7 @@ Then save your Claude token once: create it with `claude setup-token` and paste 
 
 ```bash
 scripts/build.sh           # bin/agentvm-vm (Swift, signed) + bin/agentvm-server (Rust), incremental
-scripts/build-golden.sh    # once, ~2 min: the Debian 13 image with Claude Code
+scripts/build-golden.sh    # once, ~3 min: the Debian 13 image with Claude Code
 
 claude setup-token         # once: a long-lived token for your Claude subscription
 security add-generic-password -U -s agentvm -a agentvm -w    # paste it (or use Settings later)
@@ -281,9 +281,9 @@ Measured on an M5 Max (18 cores, 64 GB):
 
 | | |
 |---|---|
-| New VM → terminal ready | 1.6 s |
+| New VM → terminal ready | 1.55 s |
 | Debian boot inside it | 1.05 s |
-| Keystroke → echo, through the server and the VM | ~2 ms in zsh, 0.8 ms with `cat` |
+| Keystroke → echo in the VM's zsh, from the Mac over vsock | 0.8 ms median, 2.5 ms p95 |
 | 20 MB colored log in the terminal (Chrome) | 105 ms with restty, 226 ms with xterm.js |
 | Six real snapshots on disk | 1.19 GB as shared chunks, ~20 GB as clones |
 | Disk data compressed with zstd 19 | 3.35 GB → 0.91 GB (4.1x) |
@@ -365,8 +365,8 @@ The dashboard bundles [restty](https://github.com/wiedymi/restty) with
 [libghostty-vt](https://ghostty.org), [xterm.js](https://xtermjs.org), [React](https://react.dev),
 [TanStack Query](https://tanstack.com/query) and [Radix UI](https://www.radix-ui.com) (all MIT),
 and the [JetBrains Mono Nerd Font](https://www.nerdfonts.com), [Noto Sans
-Symbols](https://github.com/notofonts/symbols) and [Geist](https://vercel.com/font) fonts (SIL
-OFL 1.1); it loads nothing from the internet. Terminal colors are
+Symbols](https://github.com/notofonts/symbols), [Noto Sans Math](https://github.com/notofonts/math)
+and [Geist](https://vercel.com/font) fonts (SIL OFL 1.1); it loads nothing from the internet. Terminal colors are
 [Catppuccin](https://catppuccin.com). Local S3 testing uses
 [RustFS](https://github.com/rustfs/rustfs).
 
