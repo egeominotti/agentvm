@@ -14,5 +14,11 @@ if [ -s /run/agentvm/prompt ]; then
   [[ "$prompt" == -* ]] && prompt=" $prompt"
   args+=("$prompt")
 fi
+# Claude's colors follow the terminal's (Catppuccin Latte or Mocha, as the dashboard's theme): the
+# image's old default "dark" becomes "auto", once per machine, so a theme chosen later with /theme
+# stays, snapshots included.
+if [ ! -e /root/.agentvm-theme-auto ] && [ -f /root/.claude.json ]; then
+  sed -i 's/"theme": *"dark"/"theme": "auto"/' /root/.claude.json && touch /root/.agentvm-theme-auto
+fi
 exec 3< /run/agentvm/token
 IS_SANDBOX=1 CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3 exec /root/.local/bin/claude "${args[@]}"

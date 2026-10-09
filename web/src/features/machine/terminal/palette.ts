@@ -55,5 +55,10 @@ const LATTE: ITheme = {
 
 export const terminalTheme = (theme: Theme): ITheme => (theme === "light" ? LATTE : MOCHA);
 
+/** Light mode: programs that draw for a dark background (Claude Code's own theme is dark, and its
+ *  code is colored in RGB) would paint pale text on Latte. Every color under 4.5:1 against its
+ *  cell (WCAG's bar for text) is darkened just enough to read. Off in dark mode: colors as drawn. */
+export const minimumContrast = (theme: Theme): number => (theme === "light" ? 4.5 : 1);
+
 /** The page's theme right now, as index.html and lib/theme set it. */
 export const pageTheme = (): Theme => (document.documentElement.dataset.theme === "light" ? "light" : "dark");

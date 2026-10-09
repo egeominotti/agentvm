@@ -1,6 +1,6 @@
 {
   "hasCompletedOnboarding": true,
-  "theme": "dark",
+  "theme": "auto",
   "bypassPermissionsModeAccepted": true,
   "projects": {
     "/root/work": {

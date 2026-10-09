@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { pageTheme, terminalTheme } from "./palette";
+import { minimumContrast, pageTheme, terminalTheme } from "./palette";
 
 /** The terminal font, loaded before any terminal opens: xterm measures its cells once, and the
  *  GPU's glyph atlas is drawn from that measure. */
@@ -26,10 +26,12 @@ export function openXterm(el: HTMLElement, { fontSize = 13, readOnly = false } =
     scrollback: 5000,
     smoothScrollDuration: 0,
     theme: terminalTheme(pageTheme()),
+    minimumContrastRatio: minimumContrast(pageTheme()),
   });
   // Light or dark follows the page, at once, also for the terminals already open.
   const recolor = new MutationObserver(() => {
     xterm.options.theme = terminalTheme(pageTheme());
+    xterm.options.minimumContrastRatio = minimumContrast(pageTheme());
   });
   recolor.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   const fit = new FitAddon();
