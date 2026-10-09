@@ -141,3 +141,22 @@ fn a_snapshot_a_queued_machine_starts_from_cannot_be_deleted() {
     assert!(err.to_string().contains("waiting"), "{err}");
     assert!(ctx.snapshots.get(&sid).is_some());
 }
+
+/// A backup from elsewhere names a repository: it restores only into one on this Mac that already
+/// has its exact commit (a clone of the same project), never into an unrelated folder or repo.
+#[test]
+fn a_backup_restores_only_into_a_clone_of_its_own_project() {
+    let (home, other) = (tempfile::tempdir().unwrap(), crate::helpers::git_repo());
+    let ctx = ctx(home.path());
+    let sid = stored_snapshot(home.path());
+    let err = agentvm::app::snapshots::restore(&ctx, &sid).unwrap_err().to_string();
+    assert!(err.contains("/r"), "a missing repository was accepted: {err}");
+    // A real repository, but not the snapshot's project: its commit is not there.
+    let meta_file = home.path().join("snapshots").join(sid.as_str()).join("meta.json");
+    let mut meta: serde_json::Value = serde_json::from_slice(&std::fs::read(&meta_file).unwrap()).unwrap();
+    meta["repo"] = other.path().to_string_lossy().into();
+    std::fs::write(&meta_file, meta.to_string()).unwrap();
+    let err = agentvm::app::snapshots::restore(&ctx, &sid).unwrap_err().to_string();
+    assert!(err.contains("aaaaaaa"), "restored into a repository without its commit: {err}");
+    assert!(ctx.store.list().is_empty(), "a machine was started");
+}

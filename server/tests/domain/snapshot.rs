@@ -43,9 +43,19 @@ fn pruning_keeps_the_newest_automatic_snapshots_and_never_manual_ones() {
         snap("t1", 400.0, true),
         snap("t2", 50.0, true),
     ];
-    let gone = p.to_prune(&all, "t1");
+    let gone = p.to_prune(&all, "t1", &all[3].id);
     assert_eq!(gone, vec![all[0].id.clone()]);
-    assert!(AutoSnapshots { keep: 5, ..p }.to_prune(&all, "t1").is_empty());
+    assert!(AutoSnapshots { keep: 5, ..p }.to_prune(&all, "t1", &all[3].id).is_empty());
+}
+
+/// The Mac's clock set back: the snapshot just taken has the oldest time. It is the newest state
+/// of the machine, so it is kept and the oldest of the others goes.
+#[test]
+fn pruning_never_deletes_the_snapshot_just_taken() {
+    let p = AutoSnapshots { every_min: 30, keep: 2, before_close: true };
+    let all = vec![snap("t1", 5_000.0, true), snap("t1", 6_000.0, true), snap("t1", 10.0, true)];
+    let gone = p.to_prune(&all, "t1", &all[2].id);
+    assert_eq!(gone, vec![all[0].id.clone()]);
 }
 
 #[test]

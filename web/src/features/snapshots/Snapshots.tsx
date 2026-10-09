@@ -62,7 +62,9 @@ export function Snapshots() {
           <section key={g.task} className="snap-group" aria-label={g.title}>
             <header>
               <h2 title={g.title}>{g.title}</h2>
-              <span className="sub">{repoName(g.repo)}</span>
+              <span className="sub" title={`Restores into ${g.repo}, on a branch of its own`}>
+                {repoName(g.repo)}
+              </span>
             </header>
             {g.interrupted.length || g.manual.length ? (
               <ul className="snaps">

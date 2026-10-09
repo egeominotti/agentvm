@@ -29,3 +29,12 @@ pub async fn events(
     });
     Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
+
+/// `/api/changes`: "changed" at once (a reconnecting dashboard re-reads what it may have missed),
+/// then each time the task list changes, a burst of changes sent as one.
+pub async fn changes(State(ctx): Ctx) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let changes = tokio_stream::wrappers::WatchStream::new(ctx.store.subscribe_changes());
+    // The counter as data: a browser drops an event that has none.
+    Sse::new(changes.map(|n| Ok(Event::default().event("changed").data(n.to_string()))))
+        .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+}

@@ -7,6 +7,7 @@ use std::time::SystemTime;
 
 use tokio::sync::watch;
 
+use super::changes::Changes;
 use super::events::{EventLog, StreamItem};
 use super::record_file::RecordFile;
 // The record type lives in its own module; re-exported where callers have always found it.
@@ -43,6 +44,7 @@ pub struct Store {
     tasks: Arc<Mutex<HashMap<TaskId, Entry>>>,
     /// When set, every task is mirrored to `<dir>/<id>/record.json` to survive restarts.
     dir: Option<PathBuf>,
+    changes: Changes,
 }
 
 impl Store {
@@ -51,7 +53,7 @@ impl Store {
     }
 
     pub fn persistent(dir: PathBuf) -> Self {
-        Store { tasks: Arc::default(), dir: Some(dir) }
+        Store { dir: Some(dir), ..Self::default() }
     }
 
     /// Another handle on the same tasks (for callbacks that outlive a borrow).
@@ -59,7 +61,6 @@ impl Store {
         self.clone()
     }
 
-    /// Tasks saved by a previous run.
     /// Every task saved in `dir`, and the job folders whose record exists but cannot be read
     /// (their VMs must be left alone, not treated as orphans).
     pub fn load_all(dir: &Path) -> (Vec<TaskRecord>, Vec<String>) {
@@ -94,6 +95,7 @@ impl Store {
             (out, pending)
         };
         if let Some((record, version, file)) = pending {
+            self.changes.bump();
             file.write(&record, version);
         }
         Some(out)
@@ -104,6 +106,7 @@ impl Store {
         let entry = self.entry(record);
         let first = (entry.record.clone(), entry.file.clone());
         self.tasks.lock().unwrap().insert(entry.record.id.clone(), entry);
+        self.changes.bump();
         first.1.write(&first.0, 1);
     }
 
@@ -117,6 +120,7 @@ impl Store {
         let first = (entry.record.clone(), entry.file.clone());
         tasks.insert(entry.record.id.clone(), entry);
         drop(tasks);
+        self.changes.bump();
         // Written once the store is free again: disk I/O never blocks the store.
         first.1.write(&first.0, 1);
         Ok(())
@@ -178,8 +182,13 @@ impl Store {
     }
 
     pub fn set_activity(&self, id: &TaskId, activity: Option<String>) {
-        if let Some(e) = self.tasks.lock().unwrap().get_mut(id) {
+        let changed = self.tasks.lock().unwrap().get_mut(id).is_some_and(|e| {
+            let changed = e.record.activity != activity;
             e.record.activity = activity;
+            changed
+        });
+        if changed {
+            self.changes.bump();
         }
     }
 
@@ -225,19 +234,25 @@ impl Store {
         if let Some(e) = self.tasks.lock().unwrap().get_mut(id) {
             e.record.boot_log.retain(|l| l.starts_with("host: "));
             e.record.boot_log.extend(lines);
-            e.record.ready = ready;
+            if std::mem::replace(&mut e.record.ready, ready) != ready {
+                self.changes.bump();
+            }
         }
     }
 
     pub fn set_ports(&self, id: &TaskId, ports: Vec<ForwardedPort>) {
-        if let Some(e) = self.tasks.lock().unwrap().get_mut(id) {
+        if let Some(e) = self.tasks.lock().unwrap().get_mut(id)
+            && e.record.ports != ports
+        {
             e.record.ports = ports;
+            self.changes.bump();
         }
     }
 
     /// Forgets a task (the caller deletes its files).
     pub fn remove(&self, id: &TaskId) -> Option<TaskRecord> {
         let entry = self.tasks.lock().unwrap().remove(id)?;
+        self.changes.bump();
         entry.file.forget();
         Some(entry.record)
     }
@@ -262,16 +277,21 @@ impl Store {
         self.tasks.lock().unwrap().get(id).map(|e| e.record.clone())
     }
 
-    /// Most recent first.
     /// The first task matching `pred`, without cloning the others (proxy lookups run per request).
     pub fn find_id(&self, pred: impl Fn(&TaskRecord) -> bool) -> Option<TaskId> {
         self.tasks.lock().unwrap().values().find(|e| pred(&e.record)).map(|e| e.record.id.clone())
     }
 
+    /// Most recent first.
     pub fn list(&self) -> Vec<TaskRecord> {
         let mut all: Vec<_> = self.tasks.lock().unwrap().values().map(|e| e.record.clone()).collect();
         all.sort_by_key(|r| std::cmp::Reverse(r.created_at));
         all
+    }
+
+    /// Wakes on each change the dashboard shows (see [`Changes`]).
+    pub fn subscribe_changes(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.changes.subscribe()
     }
 
     pub fn log(&self, id: &TaskId) -> Option<Arc<EventLog>> {

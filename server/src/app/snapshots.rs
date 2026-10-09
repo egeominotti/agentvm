@@ -64,7 +64,7 @@ pub async fn take_auto(ctx: &AppCtx, id: &TaskId, why: &str) -> Result<SnapshotM
     let meta = take(ctx, id, None, Some(why)).await?;
     let policy = ctx.settings.get().auto_snapshots;
     let needed = needed_to_start(ctx);
-    for old in policy.to_prune(&ctx.snapshots.list(), id.as_str()) {
+    for old in policy.to_prune(&ctx.snapshots.list(), id.as_str(), &meta.id) {
         if !needed.contains(old.as_str()) {
             let _ = ctx.snapshots.delete(&old);
         }

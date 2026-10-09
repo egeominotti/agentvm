@@ -39,6 +39,7 @@ fn task_routes() -> Routes {
         .route("/api/tasks", get(tasks::list).post(tasks::create))
         .route("/api/tasks/{id}", get(tasks::detail).delete(tasks::remove))
         .route("/api/tasks/{id}/events", get(events::events))
+        .route("/api/changes", get(events::changes))
         .route("/api/tasks/{id}/diff", get(tasks::diff))
         .route("/api/tasks/{id}/diagnostics", get(diagnostics::diagnostics))
         .route("/api/tasks/{id}/telemetry", get(telemetry::telemetry))

@@ -3,6 +3,7 @@ pub mod background;
 pub mod backups;
 pub mod balloon;
 pub mod bundles;
+pub mod changes;
 mod collect;
 pub mod context;
 pub mod diagnostics;

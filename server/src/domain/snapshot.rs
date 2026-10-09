@@ -104,11 +104,14 @@ impl AutoSnapshots {
         self.every_min > 0 && (since >= f64::from(self.every_min) * 60.0 || since < -60.0)
     }
 
-    /// The automatic snapshots of `task` beyond the newest `keep`.
-    pub fn to_prune(&self, all: &[SnapshotMeta], task: &str) -> Vec<SnapshotId> {
-        let mut autos: Vec<&SnapshotMeta> = all.iter().filter(|s| s.auto && s.source_task == task).collect();
+    /// The automatic snapshots of `task` beyond the newest `keep`. `taken`, the one just made, is
+    /// always kept: it is the machine's newest state even if the clock was set back since the others.
+    pub fn to_prune(&self, all: &[SnapshotMeta], task: &str, taken: &SnapshotId) -> Vec<SnapshotId> {
+        let mut autos: Vec<&SnapshotMeta> =
+            all.iter().filter(|s| s.auto && s.source_task == task && &s.id != taken).collect();
         autos.sort_by(|a, b| b.created_at.total_cmp(&a.created_at));
-        autos.into_iter().skip(self.keep as usize).map(|s| s.id.clone()).collect()
+        let others = (self.keep as usize).saturating_sub(1);
+        autos.into_iter().skip(others).map(|s| s.id.clone()).collect()
     }
 }
 

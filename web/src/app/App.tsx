@@ -1,5 +1,6 @@
 // The dashboard's frame: the sidebar, and the screen the address asks for.
 
+import { useChanges } from "../api/changes";
 import { useTasks } from "../api/queries";
 import { ToastProvider } from "../components/Toast";
 import { Launcher } from "../features/launcher/Launcher";
@@ -26,6 +27,7 @@ import "../styles/responsive.css";
 
 export function App() {
   const route = useRoute();
+  useChanges();
   useAttention(useTasks().data ?? []);
   return (
     <ToastProvider>
