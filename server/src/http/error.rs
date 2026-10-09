@@ -99,7 +99,9 @@ impl From<SessionError> for ApiError {
             SessionError::NotRunning | SessionError::NotInteractive => StatusCode::CONFLICT,
             SessionError::Unreachable(_) => StatusCode::BAD_GATEWAY,
             SessionError::SaveFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            SessionError::CloseFailed(_) | SessionError::SnapshotFailed(_) => StatusCode::CONFLICT,
+            SessionError::CloseFailed(_) | SessionError::SnapshotFailed(_) | SessionError::Unresponsive(_) => {
+                StatusCode::CONFLICT
+            }
         };
         ApiError::new(code, e)
     }

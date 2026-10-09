@@ -1,6 +1,7 @@
 //! Tasks (`/api/tasks`): launch, list, inspect, stop, forget, and the diff of their work.
 
 use crate::app::remote_repos;
+use crate::domain::branches::start_ref;
 use crate::domain::git_remote::GitRemote;
 use axum::Json;
 use axum::extract::{Path, State};
@@ -34,7 +35,12 @@ pub async fn create(State(ctx): Ctx, Json(req): Json<CreateTask>) -> Result<(Sta
         None => None,
     };
     // A link: cloned (or fetched) first, then launched from that clone like any repository.
-    let repo = if GitRemote::looks_like_link(&req.repo_path) {
+    let from_link = GitRemote::looks_like_link(&req.repo_path);
+    let base_ref = match start_ref(req.branch.as_deref(), from_link).map_err(ApiError::bad_request)? {
+        Some(r) => Some(r),
+        None => req.base_ref.clone(),
+    };
+    let repo = if from_link {
         let (ctx, link) = (ctx.clone(), req.repo_path.clone());
         let opened = tokio::task::spawn_blocking(move || remote_repos::open(&ctx, &link))
             .await
@@ -48,7 +54,7 @@ pub async fn create(State(ctx): Ctx, Json(req): Json<CreateTask>) -> Result<(Sta
         let new = NewTask {
             repo: &repo,
             prompt: req.prompt,
-            base_ref: req.base_ref.as_deref(),
+            base_ref: base_ref.as_deref(),
             interactive: req.interactive,
             model: req.model,
             claude_version,

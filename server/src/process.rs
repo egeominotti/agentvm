@@ -27,6 +27,8 @@ pub fn wait_output(mut child: Child, limit: Duration, name: &str) -> io::Result<
     let stdout = drain(child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
     let stderr = drain(child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
     let t0 = Instant::now();
+    // Checked often at first (most commands end in a few ms), then every 20 ms at most.
+    let mut pause = Duration::from_millis(1);
     let status = loop {
         if let Some(status) = child.try_wait()? {
             break status;
@@ -38,7 +40,8 @@ pub fn wait_output(mut child: Child, limit: Duration, name: &str) -> io::Result<
             tracing::warn!(command = name, secs, "an external command did not finish in time: killed");
             return Err(io::Error::new(io::ErrorKind::TimedOut, format!("{name} did not finish in {secs:.0} s")));
         }
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::sleep(pause);
+        pause = (pause * 2).min(Duration::from_millis(20));
     };
     Ok(Output { status, stdout: stdout.join().unwrap_or_default(), stderr: stderr.join().unwrap_or_default() })
 }

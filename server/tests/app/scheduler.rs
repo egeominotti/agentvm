@@ -79,3 +79,21 @@ async fn running_vms_found_after_a_restart_all_count_in_memory() {
     let _b = s.reattach(4096);
     assert_eq!(s.reserved_mb(), 8192);
 }
+
+/// Memory this Mac really has free counts too: another agentvm, tests or apps may be using it.
+/// A VM that does not fit waits, and starts once the memory is back (checked every 2 s).
+#[tokio::test]
+async fn a_vm_waits_for_memory_the_mac_really_has_free() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    let s = agentvm::app::scheduler::Scheduler::new(4);
+    let free = Arc::new(AtomicU64::new(1_000));
+    let seen = free.clone();
+    let host = move || Some(seen.load(Ordering::Relaxed));
+    let waiting =
+        tokio::time::timeout(std::time::Duration::from_millis(500), s.acquire_with(4_096, 60_000, &host)).await;
+    assert!(waiting.is_err(), "started without the memory");
+    free.store(8_000, Ordering::Relaxed);
+    let started = tokio::time::timeout(std::time::Duration::from_secs(5), s.acquire_with(4_096, 60_000, &host)).await;
+    assert!(started.is_ok(), "never started once the memory was free");
+}

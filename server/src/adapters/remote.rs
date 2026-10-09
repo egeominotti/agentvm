@@ -37,31 +37,39 @@ pub struct Auth {
     pub token: crate::secret::Secret,
 }
 
-/// Who can read a repository.
+/// Who can read a repository; with access, its HEAD and branches as `ls-remote` lists them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Visibility {
     /// Anyone, without credentials.
-    Public,
+    Public(String),
     /// Not anonymously, but with this Mac's access or the token.
-    Private,
+    Private(String),
     /// Private (or missing), and no access works: git's words.
     NoAccess(String),
 }
 
 /// Public, private with access, or out of reach. `public_url`: the https form, tried with no
-/// credentials at all; `url`: the link itself, tried with the Mac's access or `auth`.
+/// credentials at all; `url`: the link itself, tried with the Mac's access or `auth`. Both tries
+/// run at once: a private repository costs one round trip, not two.
 pub fn visibility(public_url: &str, url: &str, protocols: &[&str], auth: Option<&Auth>) -> Visibility {
-    let mut anonymous = git(None, protocols, None);
-    // No credential helper at all (macOS sets one system-wide): only what anyone can read.
-    anonymous.args(["-c", "credential.helper=", "ls-remote", "--heads", "--"]).arg(public_url);
-    if run_limited(&mut anonymous, "ls-remote", PROBE_LIMIT).is_ok() {
-        return Visibility::Public;
-    }
-    let mut known = git(None, protocols, auth);
-    known.args(["ls-remote", "--heads", "--"]).arg(url);
-    match run_limited(&mut known, "ls-remote", PROBE_LIMIT) {
-        Ok(_) => Visibility::Private,
-        Err(e) => Visibility::NoAccess(e.to_string()),
+    let heads = |cmd: &mut Command, link: &str| {
+        cmd.args(["ls-remote", "--symref", "--", link, "HEAD", "refs/heads/*"]);
+        run_limited(cmd, "ls-remote", PROBE_LIMIT)
+    };
+    let (anonymous, known) = std::thread::scope(|s| {
+        let anonymous = s.spawn(|| {
+            let mut cmd = git(None, protocols, None);
+            // No credential helper at all (macOS sets one system-wide): only what anyone can read.
+            cmd.args(["-c", "credential.helper="]);
+            heads(&mut cmd, public_url)
+        });
+        let known = heads(&mut git(None, protocols, auth), url);
+        (anonymous.join().unwrap_or_else(|_| Err(RemoteError::Failed("ls-remote panicked".into()))), known)
+    });
+    match (anonymous, known) {
+        (Ok(out), _) => Visibility::Public(out),
+        (Err(_), Ok(out)) => Visibility::Private(out),
+        (Err(_), Err(e)) => Visibility::NoAccess(e.to_string()),
     }
 }
 

@@ -37,7 +37,10 @@ export function Outcome({ task: t, actions }: { task: TaskDto; actions: MachineA
       ) : s.state === "stopped" ? (
         <>
           <h2>Force stopped</h2>
-          <p>Anything saved before is still on {t.branch}.</p>
+          <p>
+            Powered off at once. What was saved is on {t.branch}; everything else is still on its disk, kept in
+            Snapshots.
+          </p>
         </>
       ) : s.state === "failed" ? (
         <>

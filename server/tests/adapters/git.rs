@@ -160,3 +160,18 @@ fn a_shallow_clone_is_recognised() {
     assert!(Git::new(RepoPath::new(tmp.path().join("shallow")).unwrap()).is_shallow());
     assert!(!Git::new(RepoPath::new(origin).unwrap()).is_shallow());
 }
+
+#[test]
+fn branches_are_listed_most_recent_first() {
+    let tmp = tempfile::tempdir().unwrap();
+    new_repo(tmp.path());
+    sh(
+        tmp.path(),
+        "git checkout -qb old && git checkout -q main && GIT_COMMITTER_DATE='2030-01-01T00:00:00' git commit -q --allow-empty -m later && git branch feature",
+    );
+    let git = Git::new(RepoPath::new(tmp.path().to_path_buf()).unwrap());
+    let branches = git.branches();
+    assert_eq!(branches.last().map(String::as_str), Some("old"), "{branches:?}");
+    assert!(branches.contains(&"main".into()) && branches.contains(&"feature".into()), "{branches:?}");
+    assert!(git.remote_branches().is_empty());
+}

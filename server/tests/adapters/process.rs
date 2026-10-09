@@ -41,3 +41,15 @@ fn a_pid_is_recognised_as_a_vm_helper_without_spawning_anything() {
     assert_eq!(helper_pid(999_999), HelperPid::Gone);
     assert!(t0.elapsed() < std::time::Duration::from_millis(50), "{:?}", t0.elapsed());
 }
+
+/// A quick command costs what it takes, not a polling interval: the repository check runs
+/// several git commands while the user types.
+#[test]
+fn a_quick_command_returns_at_once() {
+    let t0 = Instant::now();
+    for _ in 0..20 {
+        output(&mut Command::new("true"), Duration::from_secs(5)).unwrap();
+    }
+    let each = t0.elapsed() / 20;
+    assert!(each < Duration::from_millis(10), "each run took {each:?}");
+}

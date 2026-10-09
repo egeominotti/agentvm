@@ -36,4 +36,12 @@ visibility: string | null,
 /**
  * Worth knowing, without stopping a launch (the remote out of reach, the copy here is used).
  */
-warning: string | null, };
+warning: string | null, 
+/**
+ * What a VM can start from, the default first.
+ */
+branches: Array<string>, 
+/**
+ * The branch a launch starts from unless another is chosen.
+ */
+default_branch: string | null, };

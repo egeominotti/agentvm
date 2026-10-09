@@ -40,6 +40,21 @@ impl Git {
     }
 
     /// A clone made with `--depth`: its history cannot be bundled whole for a VM.
+    /// Local branches, most recently committed first (at most 200).
+    pub fn branches(&self) -> Vec<String> {
+        self.refs("refs/heads", "refs/heads/")
+    }
+
+    /// Branches of `origin` this clone knows (from its last fetch), most recent first.
+    pub fn remote_branches(&self) -> Vec<String> {
+        self.refs("refs/remotes/origin", "refs/remotes/origin/").into_iter().filter(|b| b != "HEAD").collect()
+    }
+
+    fn refs(&self, under: &str, prefix: &str) -> Vec<String> {
+        let out = self.run(&["for-each-ref", "--sort=-committerdate", "--count=200", "--format=%(refname)", under]);
+        out.map(|o| o.lines().filter_map(|l| l.strip_prefix(prefix)).map(String::from).collect()).unwrap_or_default()
+    }
+
     pub fn is_shallow(&self) -> bool {
         self.run(&["rev-parse", "--is-shallow-repository"]).is_ok_and(|o| o.trim() == "true")
     }

@@ -61,3 +61,11 @@ fn the_open_files_limit_is_raised() {
     let limit = agentvm::adapters::host::raise_open_files_limit().unwrap();
     assert!(limit >= 4096, "{limit}");
 }
+
+/// What the scheduler asks before starting a VM: this Mac's free memory, as macOS judges it.
+#[test]
+fn the_mac_says_how_much_memory_is_free() {
+    let free = agentvm::adapters::host::memory_free_mb().expect("kern.memorystatus_level");
+    let total = agentvm::adapters::host::host_limits().ram_mb;
+    assert!(free > 0 && free <= total, "{free} of {total} MB");
+}

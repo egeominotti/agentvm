@@ -61,6 +61,10 @@ scripts/    build.sh (incremental), test.sh, sandbox.sh, vm-run.ts, build-golden
 - **Secrets** (Claude token, git tokens, S3 key) live in the macOS Keychain, reach processes on
   stdin or in their own environment, never on a command line, in a URL, a file or a VM.
 - **Real Claude costs the user's quota**: run `--ignored` system tests only when they matter.
+- **Mind the Mac's memory**: every agentvm on the Mac (the user's, sandboxes, test runs) shares
+  it. Check `memory_pressure` before a full `--ignored` run while the user has VMs open: a Mac out
+  of memory froze a user's VM once. The scheduler now waits for real free memory before starting
+  a VM, but tests are heavier than one VM.
 - Commit and push straight to `main` (no branches), `type(scope): summary` + a body saying why,
   ending with the co-author line.
 

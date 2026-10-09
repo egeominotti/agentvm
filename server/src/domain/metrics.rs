@@ -75,3 +75,14 @@ impl VmMetrics {
         if self.mem_total_mb == 0 { 0.0 } else { 100.0 * self.mem_used_mb as f64 / self.mem_total_mb as f64 }
     }
 }
+
+/// A running VM writes its numbers every second. Silent this long, it is not answering (frozen,
+/// out of memory, its kernel stopped): it cannot save or close itself.
+pub const UNRESPONSIVE_AFTER_S: f64 = 45.0;
+
+/// How long a VM has been silent, when that is long enough to call it unresponsive. A VM that
+/// never wrote numbers yet (still booting) is not judged.
+pub fn unresponsive_for(metrics_at: Option<f64>, now: f64) -> Option<f64> {
+    let silent = now - metrics_at?;
+    (silent > UNRESPONSIVE_AFTER_S).then_some(silent)
+}

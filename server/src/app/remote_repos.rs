@@ -79,9 +79,28 @@ fn auth_for(ctx: &AppCtx, remote: &GitRemote) -> Option<Auth> {
     Some(Auth { username: remote.token_user().to_owned(), token })
 }
 
-/// Who can read the repository behind `remote`, and whether this Mac (or a saved token) can.
+/// Recent answers per link: the New VM dialog asks again at every pause in typing.
+static SEEN: Mutex<Option<HashMap<String, (std::time::Instant, Visibility)>>> = Mutex::new(None);
+
+/// Who can read the repository behind `remote`, whether this Mac (or a saved token) can, and its
+/// branches. Remembered for 5 minutes (30 s when out of reach: often a passing network failure);
+/// saving or removing a token forgets everything.
 pub fn visibility(ctx: &AppCtx, remote: &GitRemote) -> Visibility {
-    remote::visibility(&remote.public_url(), &remote.url, PROTOCOLS, auth_for(ctx, remote).as_ref())
+    use std::time::{Duration, Instant};
+    if let Some((at, seen)) = SEEN.lock().unwrap().get_or_insert_default().get(&remote.url) {
+        let fresh =
+            if matches!(seen, Visibility::NoAccess(_)) { Duration::from_secs(30) } else { Duration::from_secs(300) };
+        if at.elapsed() < fresh {
+            return seen.clone();
+        }
+    }
+    let answer = remote::visibility(&remote.public_url(), &remote.url, PROTOCOLS, auth_for(ctx, remote).as_ref());
+    SEEN.lock().unwrap().get_or_insert_default().insert(remote.url.clone(), (Instant::now(), answer.clone()));
+    answer
+}
+
+fn forget_visibility() {
+    SEEN.lock().unwrap().take();
 }
 
 /// Hosts that may have a token: the usual ones, and every host agentvm has cloned from.
@@ -105,6 +124,7 @@ pub fn token_hosts(ctx: &AppCtx) -> Vec<String> {
 /// Saves the token for `host` in the Keychain, for clones, fetches and pushes from this Mac.
 pub fn save_token(ctx: &AppCtx, host: &str, token: crate::secret::Secret) -> Result<(), RemoteRepoError> {
     use crate::adapters::keychain::KeychainError;
+    forget_visibility();
     ctx.keychain.write_git_token(host, &token).map_err(|e| match e {
         KeychainError::InvalidGitToken => RemoteRepoError::BadToken(format!(
             "{e}: the host is a name like github.com, the token one line (e.g. github_pat_…)"
@@ -114,6 +134,7 @@ pub fn save_token(ctx: &AppCtx, host: &str, token: crate::secret::Secret) -> Res
 }
 
 pub fn remove_token(ctx: &AppCtx, host: &str) -> Result<(), RemoteRepoError> {
+    forget_visibility();
     ctx.keychain.delete_git_token(host).map_err(|e| RemoteRepoError::BadToken(e.to_string()))
 }
 

@@ -42,6 +42,13 @@ impl Scheduler {
     /// Waits for a slot, then until `mb` fits beside the memory already reserved within
     /// `budget_mb` (this Mac's memory minus what macOS keeps). A VM alone always starts.
     pub async fn acquire(&self, mb: u64, budget_mb: u64) -> Slot {
+        self.acquire_with(mb, budget_mb, &|| None).await
+    }
+
+    /// [`Scheduler::acquire`], and also until the Mac really has `mb` free (`host_free_mb`, `None`
+    /// when unknown): another agentvm, tests or apps may use memory this one never reserved.
+    /// That memory is freed without telling us, so it is looked at again every 2 s.
+    pub async fn acquire_with(&self, mb: u64, budget_mb: u64, host_free_mb: &(dyn Fn() -> Option<u64> + Sync)) -> Slot {
         let permit = self.slots.clone().acquire_owned().await.expect("semaphore is never closed");
         loop {
             // Registered before looking, so memory freed in between is never missed.
@@ -50,12 +57,17 @@ impl Scheduler {
             freed.as_mut().enable();
             {
                 let mut reserved = self.memory.reserved_mb.lock().unwrap();
-                if *reserved == 0 || *reserved + mb <= budget_mb {
+                let fits_here = *reserved == 0 || *reserved + mb <= budget_mb;
+                let fits_mac = host_free_mb().is_none_or(|free| free >= mb);
+                if fits_here && fits_mac {
                     *reserved += mb;
                     return Slot { _permit: Some(permit), mb, memory: self.memory.clone() };
                 }
             }
-            freed.await;
+            tokio::select! {
+                _ = freed => {}
+                _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {}
+            }
         }
     }
 

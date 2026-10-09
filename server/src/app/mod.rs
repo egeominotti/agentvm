@@ -20,6 +20,7 @@ pub mod record;
 mod record_file;
 pub mod recover;
 pub mod remote_repos;
+pub mod repo_link;
 pub mod repos;
 pub mod scheduler;
 pub mod session;

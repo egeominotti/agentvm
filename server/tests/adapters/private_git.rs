@@ -90,7 +90,8 @@ fn a_private_repository_is_told_apart_and_opens_with_the_token() {
     assert!(!dest.exists());
 
     // With the token: private, and everything works.
-    assert_eq!(remote::visibility(&url, &url, TEST, Some(&auth())), Visibility::Private);
+    let Visibility::Private(heads) = remote::visibility(&url, &url, TEST, Some(&auth())) else { panic!("not private") };
+    assert!(heads.contains("refs/heads/main"), "{heads}");
     remote::clone(&url, &dest, TEST, Some(&auth())).unwrap();
     assert_eq!(sh(&dest, "cat s"), "secret\n");
     assert_eq!(remote::update(&dest, TEST, Some(&auth())).unwrap(), remote::Update::Current);
@@ -112,7 +113,7 @@ fn a_repository_without_authentication_is_public() {
     let root = tempfile::tempdir().unwrap();
     private_repo(root.path());
     let url = format!("file://{}", root.path().join("shop.git").display());
-    assert_eq!(remote::visibility(&url, &url, &["file"], None), Visibility::Public);
+    assert!(matches!(remote::visibility(&url, &url, &["file"], None), Visibility::Public(_)));
 }
 
 /// The real thing, over the network: GitHub says public for a public repository, and nothing for
@@ -121,7 +122,7 @@ fn a_repository_without_authentication_is_public() {
 #[ignore = "requires the network (github.com)"]
 fn github_tells_public_from_out_of_reach() {
     let public = "https://github.com/octocat/Hello-World.git";
-    assert_eq!(remote::visibility(public, public, remote::PROTOCOLS, None), Visibility::Public);
+    assert!(matches!(remote::visibility(public, public, remote::PROTOCOLS, None), Visibility::Public(_)));
     let missing = "https://github.com/egeominotti/agentvm-no-such-repo-0.git";
     assert!(matches!(remote::visibility(missing, missing, remote::PROTOCOLS, None), Visibility::NoAccess(_)));
 }

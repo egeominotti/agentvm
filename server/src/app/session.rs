@@ -39,6 +39,20 @@ pub enum SessionError {
         "the VM stays open, nothing is lost: the snapshot before closing failed ({0}). To close without it, turn off \"Snapshot before closing\" in Settings"
     )]
     SnapshotFailed(String),
+    #[error(
+        "the VM has not answered for {0} s (frozen, or out of memory): it cannot save or close itself. Force stop powers it off and keeps its disk in Snapshots, to resume"
+    )]
+    Unresponsive(u64),
+}
+
+/// A VM silent for too long cannot save or close: said at once, instead of waiting for minutes.
+fn answering(record: &crate::app::record::TaskRecord) -> Result<(), SessionError> {
+    let now =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+    match crate::domain::metrics::unresponsive_for(record.metrics_at, now) {
+        Some(silent) => Err(SessionError::Unresponsive(silent as u64)),
+        None => Ok(()),
+    }
 }
 
 fn running_terminal(ctx: &AppCtx, id: &TaskId) -> Result<crate::app::record::TaskRecord, SessionError> {
@@ -71,6 +85,7 @@ pub async fn open_terminal(
 /// Asks the guest to commit and bundle, then imports the work into the repo.
 pub async fn save(ctx: &AppCtx, id: &TaskId) -> Result<Saved, SessionError> {
     let record = running_terminal(ctx, id)?;
+    answering(&record)?;
     let jobs = ctx.config.jobs();
     let not_running = || ctx.store.get(id).is_none_or(|r| r.state != TaskState::Running);
     let answer = ctx.guest.ask(&jobs, id, "save", &["save.done"], SAVE_TIMEOUT, not_running).await;
@@ -123,7 +138,7 @@ const CLOSE_TIMEOUT: Duration = Duration::from_secs(300);
 /// outcome as for any task), or why it stays up: its final save failed and nothing is lost. Runs
 /// on a task of its own, so a page reloaded meanwhile cannot leave the close half done.
 pub async fn close(ctx: &Arc<AppCtx>, id: &TaskId) -> Result<(), SessionError> {
-    running_terminal(ctx, id)?;
+    answering(&running_terminal(ctx, id)?)?;
     let (ctx, id) = (ctx.clone(), id.clone());
     tokio::spawn(async move { close_and_wait(&ctx, &id).await })
         .await

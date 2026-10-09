@@ -102,7 +102,7 @@ export function Toolbar({ task: t, sessions, actions: a, inspector, onInspector 
             Delete this machine
           </MenuItem>
         ) : (
-          <MenuItem icon="stop" danger confirm="Power off without saving?" onSelect={() => a.stop.mutate()}>
+          <MenuItem icon="stop" danger confirm="Power off now? Its disk is kept" onSelect={() => a.stop.mutate()}>
             Force stop
           </MenuItem>
         )}

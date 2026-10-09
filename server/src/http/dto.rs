@@ -16,6 +16,9 @@ pub struct CreateTask {
     pub prompt: String,
     #[serde(default)]
     pub base_ref: Option<String>,
+    /// The branch to start from (the default when absent); wins over `base_ref`.
+    #[serde(default)]
+    pub branch: Option<String>,
     #[serde(default)]
     pub interactive: bool,
     #[serde(default)]

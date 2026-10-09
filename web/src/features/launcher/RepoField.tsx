@@ -167,10 +167,10 @@ function RepoStatus({
   );
 }
 
-/** The check of `path`, asked once typing has stopped for 300 ms; `undefined` until it answers
+/** The check of `path`, asked once typing has stopped for 150 ms; `undefined` until it answers
  *  for the path as it is now. */
 export function useSettledCheck(path: string): RepoCheck | undefined {
-  const settled = useDebounced(path.trim(), 300);
+  const settled = useDebounced(path.trim(), 150);
   const check = useRepoCheck(settled);
   if (settled !== path.trim()) return undefined;
   // The server could not check it: say so, instead of "Checking…" for ever.
@@ -186,6 +186,8 @@ export function useSettledCheck(path: string): RepoCheck | undefined {
       to_clone: false,
       visibility: null,
       warning: null,
+      branches: [],
+      default_branch: null,
     };
   }
   return check.data;

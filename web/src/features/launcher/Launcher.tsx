@@ -17,6 +17,8 @@ export function Launcher() {
   const [open, setOpen] = useState(false);
   const [repo, setRepo] = useState("");
   const [choice, setChoice] = useState<Choice | null>(null);
+  // The branch to start from; empty means the repository's default.
+  const [branch, setBranch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const settings = useSettings().data;
@@ -89,6 +91,7 @@ export function Launcher() {
       const r = await api<{ id: string }>("/api/tasks", "POST", {
         repo_path: repo.trim(),
         prompt: "",
+        branch: branch || null,
         interactive: true,
         model: choice.model,
         claude_version: choice.version || null,
@@ -140,7 +143,11 @@ export function Launcher() {
             </header>
             <RepoField
               value={repo}
-              onChange={setRepo}
+              onChange={(v) => {
+                // Another repository: back to its default branch.
+                setRepo(v);
+                setBranch("");
+              }}
               onPicked={focusLaunch}
               recent={recent}
               inputRef={repoInput}
@@ -150,6 +157,18 @@ export function Launcher() {
                 go("#/settings/git");
               }}
             />
+            {check?.ok && check.branches.length > 1 ? (
+              <label className="branch-field">
+                <span className="field-label">Branch</span>
+                <select value={branch} onChange={(e) => setBranch(e.target.value)}>
+                  {check.branches.map((b) => (
+                    <option key={b} value={b === check.default_branch ? "" : b}>
+                      {b === check.default_branch ? `${b} (default)` : b}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             {choice ? <Options value={choice} onChange={setChoice} /> : null}
             {error ? <p className="form-error">{error}</p> : null}
             <footer className="dialog-foot">

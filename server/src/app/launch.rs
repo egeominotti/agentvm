@@ -26,7 +26,7 @@ pub(super) async fn run(ctx: Arc<AppCtx>, id: TaskId) {
         tracing::info!(task = %id, memory_mb, reserved_mb = ctx.scheduler.reserved_mb(), budget_mb, "waiting for memory");
     }
     let _slot = tokio::select! {
-        slot = ctx.scheduler.acquire(memory_mb, budget_mb) => slot,
+        slot = ctx.scheduler.acquire_with(memory_mb, budget_mb, &crate::adapters::host::memory_free_mb) => slot,
         _ = stop.wait_for(|s| *s) => return, // stopped while queued
     };
     if ctx.store.get(&id).is_none_or(|r| r.state != TaskState::Queued) {

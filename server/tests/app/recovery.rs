@@ -51,3 +51,24 @@ async fn queued_tasks_own_their_folder_at_start_up() {
     let live = agentvm::app::supervisor::recover(&ctx);
     assert!(live.contains(id.as_str()), "{live:?}");
 }
+
+/// Force stop powers the VM off at once, so it saves nothing: its disk is kept too (a Stop must
+/// never be the way work gets lost, least of all for a VM that stopped answering).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stopped_vm_keeps_its_disk_as_a_snapshot() {
+    let home = tempfile::tempdir().unwrap();
+    let repo = git_repo();
+    let id = interrupted_task(home.path(), &repo, true);
+    let file = home.path().join("jobs").join(id.as_str()).join("record.json");
+    let mut rec: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    rec["stop_requested"] = true.into();
+    std::fs::write(&file, rec.to_string()).unwrap();
+    let ctx = ctx(home.path());
+    agentvm::app::supervisor::recover(&ctx);
+    let rec = wait_terminal(&ctx, &id).await;
+    assert!(matches!(rec.state, agentvm::domain::task::TaskState::Stopped), "{:?}", rec.state);
+    let snaps = ctx.snapshots.list();
+    assert_eq!(snaps.len(), 1, "the stopped VM's disk was thrown away: {snaps:?}");
+    assert!(snaps[0].name.starts_with("Interrupted"), "resumable like any interrupted disk: {}", snaps[0].name);
+    assert_eq!(std::fs::read(ctx.snapshots.disk(&snaps[0].id)).unwrap(), vec![7u8; 4 << 20]);
+}

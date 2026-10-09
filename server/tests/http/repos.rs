@@ -115,3 +115,30 @@ async fn pushing_the_branch_of_an_unknown_machine_is_not_found() {
     let (status, _) = send(app(home.path()), req).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn a_folder_lists_its_branches_the_checked_out_one_first() {
+    let repo = tempfile::tempdir().unwrap();
+    git(repo.path(), &["init", "-q", "-b", "trunk"]);
+    git(repo.path(), &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "a"]);
+    git(repo.path(), &["branch", "zeta"]);
+    git(repo.path(), &["branch", "alpha"]);
+    let body = check(&repo.path().display().to_string()).await;
+    assert_eq!(body["default_branch"], "trunk", "{body}");
+    assert_eq!(body["branches"][0], "trunk", "{body}");
+    assert_eq!(body["branches"].as_array().unwrap().len(), 3, "{body}");
+}
+
+/// A branch that is not a branch name is refused before anything runs.
+#[tokio::test]
+async fn a_launch_from_a_branch_that_is_not_a_name_is_refused() {
+    let home = tempfile::tempdir().unwrap();
+    let req = json_req(
+        "POST",
+        "/api/tasks",
+        serde_json::json!({ "repo_path": "/tmp", "branch": "--upload-pack=touch /tmp/x", "interactive": true }),
+    );
+    let (status, body) = send(app(home.path()), req).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body["error"].as_str().unwrap().contains("not a branch name"), "{body}");
+}

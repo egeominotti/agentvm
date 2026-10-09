@@ -63,13 +63,18 @@ pub(super) fn collect(
     };
     let final_ = match final_ {
         Final::Failed(reason) if !end.stop_requested => Final::Failed(keep_disk(ctx, record, ws, reason)),
+        // Powered off at once, it saved nothing: its disk is kept, resumable in Snapshots.
+        Final::Stopped => {
+            keep_disk(ctx, record, ws, String::new());
+            Final::Stopped
+        }
         f => f,
     };
     apply(TaskEvent::Finished(final_, branch))
 }
 
-/// Whatever went wrong, the disk may hold work that never reached the repository: keep it
-/// (an instant clone) instead of deleting it with the job. Only a Stop asked for discards it.
+/// Whatever went wrong, or when the VM was stopped, the disk may hold work that never reached the
+/// repository: keep it (an instant clone) instead of deleting it with the job.
 /// Returns the failure reason, saying where the disk went.
 fn keep_disk(ctx: &AppCtx, record: &TaskRecord, ws: &JobWorkspace, reason: String) -> String {
     match tokio::task::block_in_place(|| snapshots::keep_disk(ctx, record, ws)) {

@@ -18,6 +18,14 @@ pub fn host_limits() -> HostLimits {
 }
 
 /// Free space (MB) on the volume holding `path`, as `df` reports it.
+/// Memory this Mac has free for new work, as macOS judges it (`kern.memorystatus_level`, the
+/// figure `memory_pressure` prints): free and reclaimable pages, not counting what is in use.
+pub fn memory_free_mb() -> Option<u64> {
+    let percent = sysctl("kern.memorystatus_level")?;
+    let total_mb = sysctl("hw.memsize")? >> 20;
+    (percent <= 100).then(|| total_mb * percent / 100)
+}
+
 pub fn free_mb(path: &Path) -> Option<u64> {
     use crate::process::OutputWithin;
     let out = Command::new("df").arg("-k").arg("-P").arg(path).output_within(std::time::Duration::from_secs(5)).ok()?;

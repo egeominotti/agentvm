@@ -73,3 +73,23 @@ async fn a_failed_snapshot_before_closing_keeps_the_vm_open() {
     assert!(matches!(&err, SessionError::SnapshotFailed(_)), "{err}");
     assert!(!share.join("close.request").exists(), "the VM was asked to close without its snapshot");
 }
+
+/// A VM that stopped answering (no numbers for minutes: frozen, out of memory) cannot save: Close
+/// and Save say so at once, with the way out, instead of "Closing…" for minutes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_vm_that_stopped_answering_is_said_so_at_once() {
+    let (home, repo) = (tempfile::tempdir().unwrap(), git_repo());
+    let id = running_task(home.path(), &repo, true);
+    let ctx = ctx(home.path());
+    let mut rec = agentvm::app::store::Store::load(&home.path().join("jobs")).remove(0);
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64();
+    rec.metrics_at = Some(now - 120.0);
+    ctx.store.insert(rec);
+    let t0 = std::time::Instant::now();
+    let err = close(&ctx, &id).await.unwrap_err();
+    assert!(matches!(err, SessionError::Unresponsive(_)), "{err}");
+    assert!(err.to_string().contains("Force stop"), "{err}");
+    let err = agentvm::app::session::save(&ctx, &id).await.unwrap_err();
+    assert!(matches!(err, SessionError::Unresponsive(_)), "{err}");
+    assert!(t0.elapsed() < Duration::from_secs(2), "took {:?}", t0.elapsed());
+}
