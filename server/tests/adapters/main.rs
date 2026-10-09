@@ -8,6 +8,7 @@ mod guest_save;
 mod helpers;
 mod jsonl;
 mod lock;
+mod private_git;
 mod process;
 mod pty;
 mod remote;

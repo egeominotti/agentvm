@@ -28,4 +28,12 @@ remote: string | null,
 /**
  * The link is cloned at launch (not on this Mac yet).
  */
-to_clone: boolean, };
+to_clone: boolean, 
+/**
+ * For a link: `public`, `private` (this Mac or a saved token can read it) or `no_access`.
+ */
+visibility: string | null, 
+/**
+ * Worth knowing, without stopping a launch (the remote out of reach, the copy here is used).
+ */
+warning: string | null, };

@@ -48,3 +48,26 @@ fn secret_redacts_its_own_value() {
     assert_eq!(secret.redact("token=sk-ant-oat01-abc fine"), "token=[REDACTED] fine");
     assert_eq!(secret.redact("nothing to hide"), "nothing to hide");
 }
+
+/// Tokens for private repositories, one per git host, in the Keychain: written, listed by host
+/// only, replaced and removed. A malformed token or host never reaches `security`.
+#[test]
+fn git_tokens_are_kept_per_host() {
+    let tmp = tempfile::tempdir().unwrap();
+    let kc = TempKeychain(tmp.path().join("g.keychain-db"));
+    sh(tmp.path(), &format!("security create-keychain -p x {}", kc.0.display()));
+    let keychain = Keychain::new(Some(kc.0.clone()));
+    assert!(keychain.read_git_token("github.com").is_none());
+    keychain.write_git_token("github.com", &Secret::new("github_pat_11AAAA_first".into())).unwrap();
+    keychain.write_git_token("github.com", &Secret::new("github_pat_11AAAA_second".into())).unwrap();
+    keychain.write_git_token("gitlab.com", &Secret::new("glpat-xyz".into())).unwrap();
+    assert_eq!(keychain.read_git_token("github.com").unwrap().expose(), "github_pat_11AAAA_second");
+    assert_eq!(
+        keychain.git_token_hosts(&["github.com", "gitlab.com", "example.org"]),
+        vec!["github.com", "gitlab.com"]
+    );
+    keychain.delete_git_token("github.com").unwrap();
+    assert!(keychain.read_git_token("github.com").is_none());
+    assert!(keychain.write_git_token("github.com", &Secret::new("bad token\" ; rm -rf /".into())).is_err());
+    assert!(keychain.write_git_token("evil host -s x", &Secret::new("tok".into())).is_err());
+}

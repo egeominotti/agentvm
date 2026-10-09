@@ -27,6 +27,8 @@ pub enum KeychainError {
     MissingS3Secret,
     #[error("the S3 secret key contains unsupported characters")]
     InvalidS3Secret,
+    #[error("that is not a git token for a host (one line, no quotes or spaces)")]
+    InvalidGitToken,
 }
 
 #[derive(Clone)]
@@ -87,6 +89,41 @@ impl Keychain {
         self.write(S3_SERVICE, &format!("\"{s}\""))
     }
 
+    /// The token for private repositories on `host` (github.com…), if one was saved.
+    pub fn read_git_token(&self, host: &str) -> Option<Secret> {
+        valid_host(host).then(|| self.read(&git_service(host))).flatten()
+    }
+
+    /// Saves (or replaces) the token for `host`; on stdin to `security`, never on a command line.
+    pub fn write_git_token(&self, host: &str, token: &Secret) -> Result<(), KeychainError> {
+        let t = token.expose().trim();
+        let well_formed =
+            !t.is_empty() && t.len() <= 512 && t.bytes().all(|c| c.is_ascii_graphic() && c != b'"' && c != b'\\');
+        if !valid_host(host) || !well_formed {
+            return Err(KeychainError::InvalidGitToken);
+        }
+        self.write(&git_service(host), &format!("\"{t}\""))
+    }
+
+    pub fn delete_git_token(&self, host: &str) -> Result<(), KeychainError> {
+        if !valid_host(host) {
+            return Err(KeychainError::InvalidGitToken);
+        }
+        let mut cmd = Command::new("security");
+        cmd.args(["delete-generic-password", "-s", &git_service(host)]);
+        if let Some(kc) = &self.keychain {
+            cmd.arg(kc);
+        }
+        // Already absent is fine: the token is gone either way.
+        crate::process::output(&mut cmd, KEYCHAIN_LIMIT).map_err(|e| KeychainError::WriteFailed(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Which of `hosts` have a token saved (the tokens themselves are never listed).
+    pub fn git_token_hosts<'h>(&self, hosts: &[&'h str]) -> Vec<&'h str> {
+        hosts.iter().copied().filter(|h| self.read_git_token(h).is_some()).collect()
+    }
+
     fn read(&self, service: &str) -> Option<Secret> {
         let mut cmd = Command::new("security");
         cmd.args(["find-generic-password", "-s", service, "-w"]);
@@ -122,4 +159,16 @@ impl Keychain {
         let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
         if out.status.success() && stderr.is_empty() { Ok(()) } else { Err(KeychainError::WriteFailed(stderr)) }
     }
+}
+
+fn git_service(host: &str) -> String {
+    format!("agentvm-git-{host}")
+}
+
+/// A host name only: it becomes part of a `security` command line.
+fn valid_host(host: &str) -> bool {
+    !host.is_empty()
+        && host.len() <= 253
+        && host.contains('.')
+        && host.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'.' || c == b'-')
 }

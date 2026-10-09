@@ -6,6 +6,7 @@ import { Account } from "./Account";
 import { Agent } from "./Agent";
 import { Appearance } from "./Appearance";
 import { AutoSnapshots } from "./AutoSnapshots";
+import { GitAccess } from "./GitAccess";
 import { Image } from "./Image";
 import { Notifications } from "./Notifications";
 import { Resources } from "./Resources";
@@ -18,6 +19,7 @@ const SECTIONS = [
   ["agent", "Agent"],
   ["account", "Claude account"],
   ["browser", "This browser"],
+  ["git", "Git access"],
   ["snapshots", "Automatic snapshots"],
   ["image", "VM image"],
   ["storage", "Storage"],
@@ -61,6 +63,7 @@ export function SettingsView({ section }: { section?: string }) {
         <Notifications />
       </>
     ),
+    git: <GitAccess />,
     snapshots: <AutoSnapshots s={s} set={set} />,
     image: <Image s={s} set={set} />,
     storage: <Storage />,

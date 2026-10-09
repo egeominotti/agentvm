@@ -3,6 +3,7 @@
 mod assets;
 mod changes;
 mod diagnostics;
+mod git_access;
 mod guard;
 mod helpers;
 mod history;

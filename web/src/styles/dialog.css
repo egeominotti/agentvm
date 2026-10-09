@@ -14,12 +14,11 @@
 .field-label { margin-top: 6px; font-size: var(--fs-xs); font-weight: 510; color: var(--ink-2); }
 .optional { color: var(--ink-3); font-weight: 420; margin-left: 4px; }
 .repo-field { position: relative; display: grid; gap: 6px; }
-.repo-input, .task-input, .options select {
+.repo-input, .options select {
   width: 100%; border: 1px solid var(--line-2); border-radius: var(--r); background: var(--bg); color: var(--ink); outline: none;
 }
 .repo-input { height: 36px; padding: 0 11px; font-family: var(--mono); font-size: var(--fs-sm); }
-.task-input { padding: 9px 11px; resize: vertical; min-height: 84px; max-height: 260px; line-height: 1.5; }
-.repo-input:focus, .task-input:focus, .options select:focus { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 25%, transparent); }
+.repo-input:focus, .options select:focus { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 25%, transparent); }
 .suggest { position: absolute; top: 62px; left: 0; right: 0; z-index: 2; padding: 4px; border-radius: var(--r); border: 1px solid var(--line-2); background: var(--dialog); box-shadow: var(--shadow-pop); }
 .suggest div { display: flex; align-items: baseline; gap: 10px; padding: 7px 9px; border-radius: 5px; cursor: pointer; }
 .suggest div.active, .suggest div:hover { background: var(--hover); }
@@ -29,7 +28,6 @@
 .repo-status.good { color: var(--ink-2); font-family: var(--mono); }
 .repo-status.bad { color: var(--fail-ink); }
 .ok-mark { width: 7px; height: 7px; border-radius: 50%; background: var(--done); }
-.path-hint { margin: 0; font-size: var(--fs-xs); color: var(--wait); }
 .link { border: 0; background: none; padding: 0; color: var(--brand-hi); font: inherit; cursor: pointer; text-decoration: underline; }
 .check-row { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--ink-2); cursor: pointer; width: fit-content; }
 .check-row input { accent-color: var(--brand); }
@@ -46,3 +44,9 @@
 .shortcuts dt { display: flex; gap: 4px; }
 .shortcuts dd { margin: 0; color: var(--ink-2); font-size: var(--fs-sm); }
 .shortcuts kbd { min-width: 22px; text-align: center; padding: 4px 6px; opacity: 1; color: var(--ink); }
+.repo-status .i { width: 13px; height: 13px; vertical-align: -2px; margin-right: 5px; }
+.repo-status .vis { display: inline-flex; align-items: center; margin-right: 8px; padding: 1px 7px 1px 5px; border-radius: 99px; border: 1px solid var(--line-2); color: var(--ink-2); }
+.repo-status .vis .i { margin-right: 4px; }
+.repo-status .vis.private { border-color: color-mix(in srgb, var(--wait) 45%, var(--line-2)); color: var(--wait); }
+.repo-status .warn { display: block; margin-top: 3px; color: var(--wait); }
+.repo-status .link { margin-left: 6px; }

@@ -6,6 +6,7 @@ mod diagnostics;
 mod dto;
 mod error;
 mod events;
+mod git_access;
 mod golden;
 mod guard;
 mod history;

@@ -18,8 +18,7 @@ pub struct CheckQuery {
 
 pub async fn check(State(ctx): Ctx, Query(q): Query<CheckQuery>) -> Result<Json<RepoCheck>, ApiError> {
     // git runs a process: off the async threads.
-    let home = ctx.config.home.clone();
-    let answer = tokio::task::spawn_blocking(move || check_repo(&home, &q.path)).await.map_err(ApiError::internal)?;
+    let answer = tokio::task::spawn_blocking(move || check_repo(&ctx, &q.path)).await.map_err(ApiError::internal)?;
     Ok(Json(answer))
 }
 

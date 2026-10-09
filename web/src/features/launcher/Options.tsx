@@ -10,15 +10,7 @@ export type Choice = { model: string; version: string; cpus: number; memoryMb: n
 /** Kept for macOS, as the server's scheduler does. */
 const RESERVED_MB = 8192;
 
-export function Options({
-  value: v,
-  onChange,
-  count,
-}: {
-  value: Choice;
-  onChange: (c: Choice) => void;
-  count: number;
-}) {
+export function Options({ value: v, onChange }: { value: Choice; onChange: (c: Choice) => void }) {
   const settings = useSettings().data;
   const status = useStatus().data;
   const golden = useGolden().data;
@@ -50,9 +42,8 @@ export function Options({
         <span>Claude Code</span>
         <select value={v.version} onChange={(e) => set({ version: e.target.value })}>
           <option value="">{golden?.claude_version ? `Image's (${golden.claude_version})` : "Image's version"}</option>
-          <option value="latest">{releases ? `Latest (${releases.latest})` : "Latest"}</option>
-          <option value="stable">{releases ? `Stable (${releases.stable})` : "Stable"}</option>
-          {releases?.versions.slice(0, 20).map((r) => (
+          {/* The four newest releases: enough to step back from a bad one. */}
+          {releases?.versions.slice(0, 4).map((r) => (
             <option key={r} value={r}>
               {r}
             </option>
@@ -79,15 +70,15 @@ export function Options({
           ))}
         </select>
       </label>
-      <p className={`res-hint${now != null && now < count ? " over" : ""}`}>
+      <p className={`res-hint${now === 0 ? " over" : ""}`}>
         {now == null
           ? ""
-          : now < count
-            ? `${now === 0 ? "None starts" : `Only ${now} ${now === 1 ? "starts" : "start"}`} now (${
+          : now === 0
+            ? `It waits in the queue: ${
                 slots != null && slots < Math.max(fits ?? 0, 0)
                   ? `${status?.concurrency} run at a time`
-                  : `memory for ${gb(v.memoryMb)} each`
-              }): the others wait in the queue.`
+                  : `no memory free for ${gb(v.memoryMb)}`
+              } right now.`
             : `${gb(Math.max(free ?? 0, 0))} free for VMs: room for ${fits} like this.`}
         {v.cpus >= hostCpus && hostCpus > 1 ? " Every VM shares this Mac's cores." : ""}
       </p>

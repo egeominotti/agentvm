@@ -142,6 +142,19 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   check: <path d="m3.5 8.5 3 3 6-7" />,
+  // Private: a padlock. Public: a globe.
+  lock: (
+    <>
+      <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
+      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M2.5 8h11M8 2.5c1.5 1.6 2.3 3.4 2.3 5.5S9.5 11.9 8 13.5C6.5 11.9 5.7 10.1 5.7 8S6.5 4.1 8 2.5Z" />
+    </>
+  ),
   key: (
     <>
       <circle cx="5.5" cy="10.5" r="2.75" />

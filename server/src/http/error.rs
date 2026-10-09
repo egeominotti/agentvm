@@ -64,6 +64,8 @@ impl From<crate::app::remote_repos::RemoteRepoError> for ApiError {
             E::Git(_) => StatusCode::BAD_GATEWAY,
             E::DiskFull(_) => StatusCode::INSUFFICIENT_STORAGE,
             E::NotFound => StatusCode::NOT_FOUND,
+            E::BadToken(_) => StatusCode::BAD_REQUEST,
+            E::Keychain(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         ApiError::new(code, e)
     }

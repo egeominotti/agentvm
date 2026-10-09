@@ -81,3 +81,8 @@ input[type="range"] { width: 100%; accent-color: var(--brand); height: 20px; }
 .set-card form:not(.inline-form) { display: grid; gap: 14px; }
 code { background: var(--raised); padding: 1px 5px; border-radius: 4px; }
 .settings-nav a:focus-visible, .choices button:focus-visible { outline-offset: -2px; }
+.span-git { grid-column: span 6; }
+.token-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.token-list li { display: flex; align-items: center; gap: 8px; }
+.token-list li .btn { margin-left: auto; }
+.host-input { max-width: 160px; flex: 0 0 auto; }

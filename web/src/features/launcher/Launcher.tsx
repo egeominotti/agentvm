@@ -1,5 +1,5 @@
-// New VM (⌘K): a repository, an optional first task, and the machine's options. It says why it
-// cannot launch instead of failing after the click.
+// New VM (⌘K): a repository (a folder or a link) and the machine's options; Claude starts in its
+// terminal. It says why it cannot launch instead of failing after the click.
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
@@ -10,17 +10,12 @@ import { Button } from "../../components/Button";
 import { shortPath } from "../../lib/format";
 import { type Choice, Options } from "./Options";
 import { NEW_VM_EVENT } from "./open";
-import { notLaunched, rememberRepo, splitPrompts, storedRecent } from "./prompts";
 import { RepoField, useSettledCheck } from "./RepoField";
-
-/** A task that is only a path was most likely meant as the repository. */
-const looksLikePath = (text: string) => /^(~\/|\/)\S+$/.test(text.trim());
+import { rememberRepo, storedRecent } from "./recent";
 
 export function Launcher() {
   const [open, setOpen] = useState(false);
   const [repo, setRepo] = useState("");
-  const [task, setTask] = useState("");
-  const [perLine, setPerLine] = useState(false);
   const [choice, setChoice] = useState<Choice | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -30,7 +25,8 @@ export function Launcher() {
   const qc = useQueryClient();
   const check = useSettledCheck(repo);
   const repoInput = useRef<HTMLInputElement>(null);
-  const taskInput = useRef<HTMLTextAreaElement>(null);
+  const form = useRef<HTMLFormElement>(null);
+  const focusLaunch = () => form.current?.querySelector<HTMLButtonElement>("button[type=submit]")?.focus();
 
   const recent = [
     ...new Set([
@@ -70,7 +66,6 @@ export function Launcher() {
     setChoice((c) => c ?? { model: s.model, version: "", cpus: s.cpus, memoryMb: s.memory_mb });
   }, [open, settings]);
 
-  const prompts = splitPrompts(task, perLine);
   const blocker = !status
     ? "Connecting to agentvm…"
     : !status.golden
@@ -90,42 +85,26 @@ export function Launcher() {
     if (blocker || busy || !choice) return;
     setBusy(true);
     setError(null);
-    const ids: string[] = [];
-    let failure: string | null = null;
-    for (const prompt of prompts) {
-      try {
-        const r = await api<{ id: string }>("/api/tasks", "POST", {
-          repo_path: repo.trim(),
-          prompt,
-          interactive: true,
-          model: choice.model,
-          claude_version: choice.version || null,
-          cpus: choice.cpus,
-          memory_mb: choice.memoryMb,
-        });
-        ids.push(r.id);
-      } catch (err) {
-        failure = (err as Error).message;
-        setError(failure);
-        break;
-      }
-    }
-    setBusy(false);
-    if (ids.length) {
+    try {
+      const r = await api<{ id: string }>("/api/tasks", "POST", {
+        repo_path: repo.trim(),
+        prompt: "",
+        interactive: true,
+        model: choice.model,
+        claude_version: choice.version || null,
+        cpus: choice.cpus,
+        memory_mb: choice.memoryMb,
+      });
       rememberRepo(repo.trim());
       await qc.invalidateQueries({ queryKey: keys.tasks });
+      setOpen(false);
+      go(`#/vm/${r.id}`);
+    } catch (err) {
+      // The dialog stays, with the reason.
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
     }
-    if (ids.length < prompts.length) {
-      // Some did not launch: the dialog stays, with the reason and only the tasks still to launch.
-      if (ids.length) {
-        setError(`${ids.length} of ${prompts.length} launched, then: ${failure ?? "a launch failed"}`);
-        setTask(notLaunched(prompts, ids.length));
-      }
-      return;
-    }
-    setTask("");
-    setOpen(false);
-    go(ids.length === 1 ? `#/vm/${ids[0]}` : "#/wall");
   };
 
   return (
@@ -141,10 +120,13 @@ export function Launcher() {
           }}
           onOpenAutoFocus={(e) => {
             e.preventDefault();
-            (repo.trim() || recent[0] ? taskInput : repoInput).current?.focus();
+            // With a repository already there, Enter launches at once.
+            if (repo.trim() || recent[0]) requestAnimationFrame(focusLaunch);
+            else repoInput.current?.focus();
           }}
         >
           <form
+            ref={form}
             onSubmit={launch}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) launch();
@@ -159,57 +141,21 @@ export function Launcher() {
             <RepoField
               value={repo}
               onChange={setRepo}
-              onPicked={() => taskInput.current?.focus()}
+              onPicked={focusLaunch}
               recent={recent}
               inputRef={repoInput}
               check={check}
+              onGitAccess={() => {
+                setOpen(false);
+                go("#/settings/git");
+              }}
             />
-            <label className="field-label" htmlFor="launcher-task">
-              First task for Claude <span className="optional">optional</span>
-            </label>
-            <textarea
-              id="launcher-task"
-              ref={taskInput}
-              className="task-input"
-              value={task}
-              rows={4}
-              placeholder="Leave it empty to start in the terminal"
-              onChange={(e) => setTask(e.target.value)}
-            />
-            {looksLikePath(task) ? (
-              <p className="path-hint">
-                This looks like a folder.{" "}
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() => {
-                    setRepo(task.trim());
-                    setTask("");
-                    taskInput.current?.focus();
-                  }}
-                >
-                  Use it as the repository
-                </button>
-              </p>
-            ) : null}
-            <label className="check-row">
-              <input type="checkbox" checked={perLine} onChange={(e) => setPerLine(e.target.checked)} />
-              One VM per line of the task
-            </label>
-            {choice ? <Options value={choice} onChange={setChoice} count={prompts.length} /> : null}
+            {choice ? <Options value={choice} onChange={setChoice} /> : null}
             {error ? <p className="form-error">{error}</p> : null}
             <footer className="dialog-foot">
               <span className="blocker">{blocker}</span>
               <Button type="submit" variant="primary" disabled={!!blocker || busy}>
-                {busy
-                  ? check?.to_clone
-                    ? "Cloning…"
-                    : check?.remote
-                      ? "Fetching…"
-                      : "Launching…"
-                  : prompts.length > 1
-                    ? `Launch ${prompts.length} VMs`
-                    : "Launch VM"}{" "}
+                {busy ? (check?.to_clone ? "Cloning…" : check?.remote ? "Fetching…" : "Launching…") : "Launch VM"}{" "}
                 <kbd>⌘↵</kbd>
               </Button>
             </footer>

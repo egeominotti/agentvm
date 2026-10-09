@@ -14,9 +14,11 @@ type Props = {
   recent: string[];
   inputRef?: Ref<HTMLInputElement>;
   check: RepoCheck | undefined;
+  /** Opens Settings › Git access (a private repository with no access yet). */
+  onGitAccess: () => void;
 };
 
-export function RepoField({ value, onChange, onPicked, recent, inputRef, check }: Props) {
+export function RepoField({ value, onChange, onPicked, recent, inputRef, check, onGitAccess }: Props) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const listId = useId();
@@ -92,22 +94,63 @@ export function RepoField({ value, onChange, onPicked, recent, inputRef, check }
           ))}
         </div>
       ) : null}
-      <RepoStatus path={value} check={check} />
+      <RepoStatus path={value} check={check} onGitAccess={onGitAccess} />
     </div>
   );
 }
 
+/** Who can read a repository given as a link. */
+function Visibility({ c }: { c: RepoCheck }) {
+  if (c.visibility === "public") {
+    return (
+      <span className="vis">
+        <Icon name="globe" />
+        Public
+      </span>
+    );
+  }
+  if (c.visibility === "private") {
+    return (
+      <span className="vis private">
+        <Icon name="lock" />
+        Private · this Mac has access
+      </span>
+    );
+  }
+  return null;
+}
+
 /** The server's word on the repository; `check` is for the path as it was when typing stopped. */
-function RepoStatus({ path, check: c }: { path: string; check: RepoCheck | undefined }) {
+function RepoStatus({
+  path,
+  check: c,
+  onGitAccess,
+}: {
+  path: string;
+  check: RepoCheck | undefined;
+  onGitAccess: () => void;
+}) {
   if (!path.trim())
     return <p className="repo-status">The VM gets a fresh clone of it: your files are never touched.</p>;
   if (!c) return <p className="repo-status">Checking…</p>;
-  if (!c.ok) return <p className="repo-status bad">{c.error}</p>;
+  if (!c.ok) {
+    return (
+      <p className="repo-status bad">
+        {c.visibility === "no_access" ? <Icon name="lock" /> : null}
+        {c.error}
+        {c.visibility === "no_access" ? (
+          <button type="button" className="link" onClick={onGitAccess}>
+            Add a token
+          </button>
+        ) : null}
+      </p>
+    );
+  }
   if (c.remote && c.to_clone) {
     return (
       <p className="repo-status good">
-        <Icon name="download" />
-        Cloned at launch into {shortPath(c.path)}, with your Mac's git access
+        <Visibility c={c} />
+        Cloned at launch into {shortPath(c.path)}
       </p>
     );
   }
@@ -118,6 +161,8 @@ function RepoStatus({ path, check: c }: { path: string; check: RepoCheck | undef
       {c.branch ? ` · ${c.branch}` : " · detached HEAD"}
       {c.sha ? ` · ${c.sha.slice(0, 7)}` : ""}
       {c.remote ? " · fetched at launch" : ""}
+      {c.remote ? <Visibility c={c} /> : null}
+      {c.warning ? <span className="warn">{c.warning}</span> : null}
     </p>
   );
 }
@@ -139,6 +184,8 @@ export function useSettledCheck(path: string): RepoCheck | undefined {
       error: check.error.message,
       remote: null,
       to_clone: false,
+      visibility: null,
+      warning: null,
     };
   }
   return check.data;

@@ -88,15 +88,18 @@ async fn a_shallow_clone_is_refused_with_the_fix() {
     assert!(body["error"].as_str().unwrap().contains("git fetch --unshallow"), "{body}");
 }
 
-/// A link is previewed without the network: what will be cloned, and where.
+/// A link says where it would be cloned and who can read it; one this Mac cannot reach (here a
+/// host that cannot exist) is refused before launching, with what gives access.
 #[tokio::test]
-async fn a_link_says_what_will_be_cloned_and_where() {
-    let body = check("acme/shop").await;
-    assert_eq!(body["ok"], true, "{body}");
-    assert_eq!(body["remote"], "https://github.com/acme/shop.git");
+async fn a_link_out_of_reach_says_where_it_would_go_and_how_to_get_access() {
+    let body = check("https://agentvm.invalid/acme/shop").await;
+    assert_eq!(body["ok"], false, "{body}");
+    assert_eq!(body["visibility"], "no_access");
+    assert_eq!(body["remote"], "https://agentvm.invalid/acme/shop.git");
     assert_eq!(body["to_clone"], true);
     assert_eq!(body["name"], "shop");
-    assert!(body["path"].as_str().unwrap().ends_with("repos/github.com/acme/shop"), "{body}");
+    assert!(body["path"].as_str().unwrap().ends_with("repos/agentvm.invalid/acme/shop"), "{body}");
+    assert!(body["error"].as_str().unwrap().contains("Settings › Git access"), "{body}");
     let bad = check("ext::sh -c id").await;
     assert_eq!(bad["ok"], false);
     assert!(bad["error"].is_string(), "{bad}");

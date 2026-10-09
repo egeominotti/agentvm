@@ -87,6 +87,20 @@ impl GitRemote {
         }
     }
 
+    /// The https form, for telling whether anyone can read it (an ssh link has one on GitHub too).
+    pub fn public_url(&self) -> String {
+        format!("https://{}/{}.git", self.host, self.path)
+    }
+
+    /// The user name that goes with an access token on this host.
+    pub fn token_user(&self) -> &'static str {
+        match self.host.as_str() {
+            "github.com" => "x-access-token",
+            "gitlab.com" => "oauth2",
+            _ => "agentvm",
+        }
+    }
+
     /// Where agentvm keeps its clone: `<home>/repos/<host>/<path>`.
     pub fn dir(&self, home: &Path) -> PathBuf {
         self.path.split('/').fold(home.join("repos").join(&self.host), |p, s| p.join(s))
