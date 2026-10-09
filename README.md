@@ -25,6 +25,15 @@ touching your files or your checkout. You watch and drive every VM from a dashbo
 `http://127.0.0.1:7777`. When the work is done, it comes back to your repository as commits on an
 `agent/<id>` branch, and the VM is thrown away.
 
+```bash
+git clone https://github.com/egeominotti/agentvm.git && cd agentvm && ./quickstart
+```
+
+One command builds everything, makes the VM image the first time (about 2 minutes, once) and
+opens the dashboard. Then paste a Claude token (`claude setup-token`) in **Settings › Claude
+account** and press **New VM**. Needs a Mac with Apple silicon, Xcode Command Line Tools,
+[Rust](https://rustup.rs) and [Bun](https://bun.sh); details in [Quickstart](#quickstart).
+
 <p align="center">
   <img src="docs/assets/wall.webp" alt="The Machines wall: four Claude Code agents, each in its own VM, waiting for review" width="100%">
 </p>
