@@ -128,3 +128,41 @@ pub fn create_unique(dir: &Path, name: &str) -> io::Result<(File, String)> {
     }
     Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("too many files called {name}")))
 }
+
+/// A folder of the guest's, opened without following a symlink: its files are opened relative
+/// to that handle, so swapping the folder (or a file in it) for a symlink never makes the host
+/// read a file of this Mac.
+pub struct GuestDir {
+    path: std::path::PathBuf,
+    fd: File,
+}
+
+impl GuestDir {
+    pub fn open(path: &Path) -> Option<GuestDir> {
+        let fd = OpenOptions::new().read(true).custom_flags(O_NOFOLLOW | O_DIRECTORY).open(path).ok()?;
+        Some(GuestDir { path: path.to_path_buf(), fd })
+    }
+
+    /// The names of its entries (only names: contents are read through `open_file`).
+    pub fn names(&self) -> Vec<String> {
+        let Ok(entries) = fs::read_dir(&self.path) else { return Vec::new() };
+        entries.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect()
+    }
+
+    /// The regular file `name` of this folder, never through a symlink, never blocking on a FIFO.
+    pub fn open_file(&self, name: &str) -> Option<File> {
+        use std::os::fd::{AsRawFd, FromRawFd};
+        if name.is_empty() || name.contains(['/', '\0']) || name == "." || name == ".." {
+            return None;
+        }
+        let cname = std::ffi::CString::new(name).ok()?;
+        // SAFETY: valid directory descriptor and NUL-terminated name.
+        let fd = unsafe { openat(self.fd.as_raw_fd(), cname.as_ptr(), O_NOFOLLOW | O_NONBLOCK) };
+        if fd < 0 {
+            return None;
+        }
+        // SAFETY: `fd` was just opened and is owned by nobody else.
+        let f = unsafe { File::from_raw_fd(fd) };
+        f.metadata().ok()?.is_file().then_some(f)
+    }
+}

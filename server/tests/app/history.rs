@@ -40,10 +40,10 @@ fn the_conversation_is_read_from_the_copied_sessions() {
         serde_json::json!({"type": "assistant", "timestamp": "t1", "message": {"id": "m1", "content": [{"type": "tool_use", "name": "Write", "input": {"file_path": "README.md"}}]}}),
     ];
     std::fs::write(claude.join("p--s.jsonl"), lines.iter().map(|l| l.to_string() + "\n").collect::<String>()).unwrap();
-    let page = conversation(&ctx, &id, 0).unwrap();
+    let page = conversation(&ctx, &id, &Default::default()).unwrap();
     assert_eq!(page.entries.len(), 2);
     assert_eq!(page.entries[0].kind, EntryKind::User { text: "Add a README".into() });
     assert_eq!(page.entries[1].kind, EntryKind::ToolUse { name: "Write".into(), input: "README.md".into() });
-    assert_eq!(page.next, 3);
-    assert!(conversation(&ctx, &id, 3).unwrap().entries.is_empty());
+    assert!(!page.more);
+    assert!(conversation(&ctx, &id, &page.cursor).unwrap().entries.is_empty());
 }

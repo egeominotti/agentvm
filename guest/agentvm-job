@@ -48,19 +48,22 @@ keep_running /usr/local/bin/agentvm-metrics
 # Claude Code's sessions, copied to the host as they grow (only the new bytes): there they
 # outlive the VM, for the dashboard's history of the conversation.
 copy_transcripts() {
-  local f dest have size
-  mkdir -p "$JOB/claude"
-  for f in /root/.claude/projects/*/*.jsonl; do
-    [ -f "$f" ] || continue
-    dest="$JOB/claude/$(basename "$(dirname "$f")")--$(basename "$f")"
-    size=$(stat -c %s "$f")
-    have=$(stat -c %s "$dest" 2>/dev/null || echo 0)
-    if [ "$size" -lt "$have" ]; then
-      cp "$f" "$dest.tmp" && mv -f "$dest.tmp" "$dest"
-    elif [ "$size" -gt "$have" ]; then
-      tail -c +"$((have + 1))" "$f" | head -c "$((size - have))" >> "$dest"
-    fi
-  done
+  # One copy at a time: the watcher and a save copying together would append the same bytes twice.
+  (
+    flock 9 || exit 0
+    mkdir -p "$JOB/claude"
+    for f in /root/.claude/projects/*/*.jsonl; do
+      [ -f "$f" ] || continue
+      dest="$JOB/claude/$(basename "$(dirname "$f")")--$(basename "$f")"
+      size=$(stat -c %s "$f")
+      have=$(stat -c %s "$dest" 2>/dev/null || echo 0)
+      if [ "$size" -lt "$have" ]; then
+        cp "$f" "$dest.tmp" && mv -f "$dest.tmp" "$dest"
+      elif [ "$size" -gt "$have" ]; then
+        tail -c +"$((have + 1))" "$f" | head -c "$((size - have))" >> "$dest"
+      fi
+    done
+  ) 9> /run/agentvm-transcripts.lock
 }
 watch_transcripts() { while true; do copy_transcripts; sleep 2; done; }
 keep_running watch_transcripts

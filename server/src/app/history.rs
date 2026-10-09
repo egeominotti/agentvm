@@ -10,26 +10,35 @@ use crate::domain::ids::TaskId;
 use crate::domain::transcript::{HistoryEntry, parse_line};
 use crate::domain::usage::{AgentUsage, UsageSample};
 
-/// Session lines read per page.
-const PAGE_LINES: usize = 500;
+/// Raw session bytes read per page (entries are then clipped to 16 KB each).
+const PAGE_BYTES: u64 = 4 << 20;
+
+pub use crate::adapters::transcripts::Cursor;
 
 #[derive(Debug, Serialize)]
 pub struct Conversation {
     pub entries: Vec<HistoryEntry>,
-    /// The line to ask for next (the same when there is nothing new).
-    pub next: usize,
+    /// Where to continue from (the same when there is nothing new).
+    pub cursor: Cursor,
+    /// More is already waiting: ask again at once.
+    pub more: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error("task not found")]
 pub struct NotFound;
 
-/// Claude's conversation in VM `id` from session line `after` on, a page at a time.
-pub fn conversation(ctx: &AppCtx, id: &TaskId, after: usize) -> Result<Conversation, NotFound> {
+/// What Claude's conversation in VM `id` gained since `cursor`, a page at a time.
+pub fn conversation(ctx: &AppCtx, id: &TaskId, cursor: &Cursor) -> Result<Conversation, NotFound> {
     ctx.store.get(id).ok_or(NotFound)?;
     let dir = ctx.config.jobs().join(id.as_str()).join("share/claude");
-    let page = crate::adapters::transcripts::read_page(&dir, after, PAGE_LINES);
-    Ok(Conversation { entries: page.lines.iter().flat_map(|l| parse_line(l)).collect(), next: page.next })
+    let (lines, cursor) = crate::adapters::transcripts::read_new(&dir, cursor, PAGE_BYTES);
+    let read: u64 = lines.iter().map(|l| l.len() as u64 + 1).sum();
+    Ok(Conversation {
+        entries: lines.iter().flat_map(|l| parse_line(l)).collect(),
+        cursor,
+        more: read >= PAGE_BYTES / 2,
+    })
 }
 
 /// Claude's usage over the VM's life.

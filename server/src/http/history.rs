@@ -1,4 +1,4 @@
-//! `/api/tasks/{id}/claude?after=<line>` and `/api/tasks/{id}/claude/usage`: Claude's
+//! `/api/tasks/{id}/claude?cursor=<json>` and `/api/tasks/{id}/claude/usage`: Claude's
 //! conversation and usage in a VM, kept after the VM is closed.
 
 use axum::Json;
@@ -8,12 +8,13 @@ use serde::{Deserialize, Serialize};
 use super::Ctx;
 use super::error::ApiError;
 use super::tasks::find;
-use crate::app::history::{Conversation, conversation, usage};
+use crate::app::history::{Conversation, Cursor, conversation, usage};
 use crate::domain::usage::UsageSample;
 
 #[derive(Deserialize)]
 pub struct Params {
-    after: Option<usize>,
+    /// The `cursor` of the previous answer, as JSON (none: from the start).
+    cursor: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -35,7 +36,13 @@ pub async fn claude(
     Query(p): Query<Params>,
 ) -> Result<Json<Conversation>, ApiError> {
     let (id, _) = find(&ctx, &id)?;
-    blocking(move || conversation(&ctx, &id, p.after.unwrap_or(0)).ok()).await.map(Json)
+    let cursor: Cursor = match p.cursor.as_deref() {
+        Some(json) => {
+            serde_json::from_str(json).map_err(|_| ApiError::bad_request("cursor is the one a previous answer gave"))?
+        }
+        None => Cursor::default(),
+    };
+    blocking(move || conversation(&ctx, &id, &cursor).ok()).await.map(Json)
 }
 
 pub async fn claude_usage(State(ctx): Ctx, Path(id): Path<String>) -> Result<Json<Usage>, ApiError> {

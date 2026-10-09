@@ -7,13 +7,12 @@ import { lineChart } from "../../../ui/line-chart.js";
 import { entry, turns } from "./entries.js";
 
 const BLUE = "#3987e5";
-const PAGE = 500;
 
 export class ConversationPanel {
   constructor(id) {
     this.id = id;
     this.entries = [];
-    this.next = 0;
+    this.cursor = null;
     this.samples = [];
     this.list = h("div", { class: "conversation" });
     this.head = h("div", { class: "conv-head" });
@@ -23,16 +22,23 @@ export class ConversationPanel {
     this.el.hidden = true;
   }
 
-  /** Reads what is new since the last call: the next pages of the conversation, all the usage. */
-  async load() {
+  /** Reads what is new since the last call. One read at a time: a poll that comes while a
+   *  read is running waits for it instead of reading (and appending) the same entries. */
+  load() {
+    this.loading ??= this.read().finally(() => { this.loading = null; });
+    return this.loading;
+  }
+
+  async read() {
     for (let more = true; more;) {
-      const r = await api(`/api/tasks/${this.id}/claude?after=${this.next}`);
+      const q = this.cursor ? `?cursor=${encodeURIComponent(JSON.stringify(this.cursor))}` : "";
+      const r = await api(`/api/tasks/${this.id}/claude${q}`);
       if (!r.ok) break;
-      const lines = r.data.next - this.next;
+      if (r.data.entries.length && !this.entries.length) this.list.replaceChildren();
       this.entries.push(...r.data.entries);
       this.list.append(...r.data.entries.map(entry).filter(Boolean));
-      this.next = r.data.next;
-      more = lines >= PAGE;
+      this.cursor = r.data.cursor;
+      more = r.data.more;
     }
     const u = await api(`/api/tasks/${this.id}/claude/usage`);
     if (u.ok) this.samples = u.data.samples;

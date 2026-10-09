@@ -128,7 +128,7 @@ fn claudes_conversation_is_kept_after_the_vm_closes() {
     }
     std::thread::sleep(Duration::from_secs(3)); // the copier runs every 2 s
     let kinds = |server: &crate::helpers::Server| {
-        let page = crate::helpers::get_json(&format!("{}/api/tasks/{id}/claude?after=0", server.base));
+        let page = crate::helpers::get_json(&format!("{}/api/tasks/{id}/claude", server.base));
         page["entries"]
             .as_array()
             .unwrap()

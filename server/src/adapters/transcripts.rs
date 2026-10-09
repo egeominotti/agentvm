@@ -1,66 +1,64 @@
-//! Claude's session files the guest copies to `share/claude/`, read a page of lines at a time:
-//! never a whole file in memory, never a line past 1 MB, never through a symlink.
+//! Claude's session files the guest copies to `share/claude/`, read from where the last read
+//! stopped: a cursor keeps a byte offset per file, so a read costs what is new, every line is
+//! read once whichever file grew, and a page is bounded in bytes.
 
-use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::collections::BTreeMap;
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::path::Path;
 
-/// A longer line (a tool that printed megabytes) is skipped: it still counts as a line.
+use serde::{Deserialize, Serialize};
+
+use crate::guestfs::GuestDir;
+
+/// A longer line (a tool that printed megabytes) is skipped: the cursor moves past it.
 const MAX_LINE: usize = 1 << 20;
 
-#[derive(Debug, PartialEq)]
-pub struct Page {
-    pub lines: Vec<String>,
-    /// The line to ask for next.
-    pub next: usize,
-}
+/// Per session file, the offset of the first line not read yet.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Cursor(pub BTreeMap<String, u64>);
 
-/// Up to `max` lines from line `from`, counted across the session files oldest first.
-pub fn read_page(dir: &Path, from: usize, max: usize) -> Page {
-    let mut page = Page { lines: Vec::new(), next: from };
-    let mut index = 0;
-    for file in sessions(dir) {
-        let Some(f) = crate::guestfs::open_regular(&file) else { continue };
-        let mut reader = BufReader::new(f);
-        while page.lines.len() < max {
-            let Some(line) = next_line(&mut reader) else { break };
-            if index >= from {
-                if let Some(text) = line {
-                    page.lines.push(text);
-                }
-                page.next = index + 1;
-            }
-            index += 1;
+/// The complete lines written since `cursor` (files in name order), up to about `max_bytes`,
+/// and the cursor to continue from.
+pub fn read_new(dir: &Path, cursor: &Cursor, max_bytes: u64) -> (Vec<String>, Cursor) {
+    let mut next = cursor.clone();
+    let mut lines = Vec::new();
+    let Some(guest) = GuestDir::open(dir) else { return (lines, next) };
+    let mut names: Vec<String> = guest.names().into_iter().filter(|n| n.ends_with(".jsonl")).collect();
+    names.sort();
+    let mut budget = max_bytes;
+    for name in names {
+        let Some(mut file) = guest.open_file(&name) else { continue };
+        let len = file.metadata().map_or(0, |m| m.len());
+        let mut offset = next.0.get(&name).copied().unwrap_or(0);
+        // The copier rewrote a session that shrank: read it again from the start.
+        if offset > len {
+            offset = 0;
         }
-        if page.lines.len() >= max {
+        if file.seek(SeekFrom::Start(offset)).is_err() {
+            continue;
+        }
+        let mut reader = BufReader::new(file);
+        while budget > 0 {
+            let Some((line, used)) = next_line(&mut reader) else { break };
+            offset += used;
+            budget = budget.saturating_sub(used);
+            lines.extend(line);
+        }
+        next.0.insert(name, offset);
+        if budget == 0 {
             break;
         }
     }
-    page
+    (lines, next)
 }
 
-/// The `*.jsonl` regular files of `dir` (symlinks left out), oldest first.
-fn sessions(dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
-    let mut files: Vec<_> = entries
-        .flatten()
-        .filter(|e| e.file_name().to_string_lossy().ends_with(".jsonl"))
-        .filter_map(|e| {
-            let meta = std::fs::symlink_metadata(e.path()).ok()?;
-            meta.is_file().then(|| (meta.modified().ok(), e.path()))
-        })
-        .collect();
-    files.sort();
-    files.into_iter().map(|(_, p)| p).collect()
-}
-
-/// The next complete line: `None` at the end, `Some(None)` for a line too long to keep.
-fn next_line(reader: &mut impl BufRead) -> Option<Option<String>> {
-    let mut line = Vec::new();
-    let mut too_long = false;
+/// The next complete line (`None` inside when too long to keep) and the bytes it took; `None`
+/// at the end, including a last line still being copied (no newline yet).
+fn next_line(reader: &mut impl BufRead) -> Option<(Option<String>, u64)> {
+    let (mut line, mut used, mut too_long) = (Vec::new(), 0u64, false);
     loop {
         let buf = reader.fill_buf().ok()?;
         if buf.is_empty() {
-            // A last line without its newline is still being copied: not a line yet.
             return None;
         }
         let (chunk, ends) = match buf.iter().position(|&b| b == b'\n') {
@@ -73,14 +71,11 @@ fn next_line(reader: &mut impl BufRead) -> Option<Option<String>> {
             too_long = true;
             line.clear();
         }
-        let used = ends.unwrap_or(buf.len());
-        reader.consume(used);
+        let take = ends.unwrap_or(buf.len());
+        reader.consume(take);
+        used += take as u64;
         if ends.is_some() {
-            return Some(finish(line, too_long));
+            return Some(((!too_long).then(|| String::from_utf8_lossy(&line).into_owned()), used));
         }
     }
-}
-
-fn finish(line: Vec<u8>, too_long: bool) -> Option<String> {
-    (!too_long).then(|| String::from_utf8_lossy(&line).into_owned())
 }

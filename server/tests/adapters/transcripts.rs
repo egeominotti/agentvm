@@ -1,64 +1,96 @@
-//! Claude's session files copied out of the VM, read a page at a time.
+//! Claude's session files copied out of the VM, read from where the last read stopped.
 
-use agentvm::adapters::transcripts::{Page, read_page};
+use agentvm::adapters::transcripts::{Cursor, read_new};
 
-fn session(dir: &std::path::Path, name: &str, lines: &[&str]) {
-    std::fs::write(dir.join(name), lines.join("\n") + "\n").unwrap();
+const PAGE: u64 = 4 << 20;
+
+fn append(dir: &std::path::Path, name: &str, text: &str) {
+    use std::io::Write;
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join(name))
+        .unwrap()
+        .write_all(text.as_bytes())
+        .unwrap();
 }
 
+/// Two sessions growing at once (Claude in the terminal and in the root shell): every line is
+/// read once, whichever file changed last.
 #[test]
-fn lines_are_paged_across_session_files_in_order() {
+fn each_line_is_read_once_while_sessions_grow() {
     let dir = tempfile::tempdir().unwrap();
-    session(dir.path(), "a--1.jsonl", &["l0", "l1", "l2"]);
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    session(dir.path(), "a--2.jsonl", &["l3", "l4"]);
-    let Page { lines, next } = read_page(dir.path(), 0, 4);
-    assert_eq!(lines, ["l0", "l1", "l2", "l3"]);
-    assert_eq!(next, 4);
-    let rest = read_page(dir.path(), next, 4);
-    assert_eq!((rest.lines, rest.next), (vec!["l4".to_owned()], 5));
-    assert!(read_page(dir.path(), 5, 4).lines.is_empty());
-    assert!(read_page(&dir.path().join("none"), 0, 4).lines.is_empty());
+    append(dir.path(), "p--a.jsonl", "a0\na1\n");
+    append(dir.path(), "p--b.jsonl", "b0\n");
+    let (lines, cursor) = read_new(dir.path(), &Cursor::default(), PAGE);
+    assert_eq!(lines, ["a0", "a1", "b0"]);
+    append(dir.path(), "p--b.jsonl", "b1\n");
+    append(dir.path(), "p--a.jsonl", "a2\n");
+    let (lines, cursor) = read_new(dir.path(), &cursor, PAGE);
+    assert_eq!(lines, ["a2", "b1"]);
+    assert!(read_new(dir.path(), &cursor, PAGE).0.is_empty());
 }
 
-/// Hours of work make a big session: a page never loads the whole file, and a gigantic line
-/// is skipped rather than held in memory.
+/// A page holds at most `max_bytes` of lines; the next pages continue exactly after it.
 #[test]
-fn a_big_session_is_paged_in_bounded_memory() {
+fn pages_are_bounded_in_bytes_and_continue_exactly() {
     let dir = tempfile::tempdir().unwrap();
-    let mut big = String::new();
-    for i in 0..200_000 {
-        big.push_str(&format!("{{\"n\":{i},\"pad\":\"{}\"}}\n", "x".repeat(400)));
+    for i in 0..100 {
+        append(dir.path(), "s.jsonl", &format!("{i:03}{}\n", "x".repeat(10_000)));
     }
-    big.push_str(&"y".repeat(30 << 20));
-    big.push_str("\nlast\n");
-    std::fs::write(dir.path().join("s.jsonl"), big).unwrap();
+    let (mut all, mut cursor, mut pages) = (Vec::new(), Cursor::default(), 0);
+    loop {
+        let (lines, next) = read_new(dir.path(), &cursor, 100_000);
+        if lines.is_empty() {
+            break;
+        }
+        assert!(lines.len() <= 10, "{}", lines.len());
+        all.extend(lines);
+        cursor = next;
+        pages += 1;
+    }
+    assert_eq!(all.len(), 100);
+    assert!(all.iter().enumerate().all(|(i, l)| l.starts_with(&format!("{i:03}"))));
+    assert!(pages >= 10);
+}
+
+/// Hours of work make a big session: reading what is new costs what is new, not the file.
+#[test]
+fn reading_from_the_cursor_does_not_rescan_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    append(dir.path(), "s.jsonl", &format!("{}\n", "y".repeat(400)).repeat(120_000));
+    let (_, mut cursor) = read_new(dir.path(), &Cursor::default(), u64::MAX);
+    append(dir.path(), "s.jsonl", "new\n");
     let t0 = std::time::Instant::now();
-    let page = read_page(dir.path(), 199_998, 10);
-    assert_eq!(page.lines.len(), 3, "two normal lines, the huge one skipped, then the last");
-    assert!(page.lines[2] == "last", "{:?}", &page.lines[2][..10.min(page.lines[2].len())]);
-    assert!(t0.elapsed() < std::time::Duration::from_secs(3), "{:?}", t0.elapsed());
+    let (lines, next) = read_new(dir.path(), &cursor, PAGE);
+    assert_eq!(lines, ["new"]);
+    assert!(t0.elapsed() < std::time::Duration::from_millis(50), "{:?}", t0.elapsed());
+    cursor = next;
+    assert!(read_new(dir.path(), &cursor, PAGE).0.is_empty());
 }
 
-/// The folder is the guest's: a symlink it planted there is never read.
+/// A last line still being copied is left for later; a line past 1 MB is skipped, not kept.
 #[test]
-fn a_planted_symlink_is_not_read() {
+fn partial_and_oversized_lines() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("secret"), "mac file\n").unwrap();
-    let share = dir.path().join("claude");
+    append(dir.path(), "s.jsonl", &format!("l0\n{}\nl1-half", "z".repeat(3 << 20)));
+    let (lines, cursor) = read_new(dir.path(), &Cursor::default(), u64::MAX);
+    assert_eq!(lines, ["l0"]);
+    append(dir.path(), "s.jsonl", " and the rest\n");
+    assert_eq!(read_new(dir.path(), &cursor, PAGE).0, ["l1-half and the rest"]);
+}
+
+/// The folder is the guest's: neither a symlinked folder nor a symlinked file is read.
+#[test]
+fn guest_planted_symlinks_are_not_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let mac = dir.path().join("mac");
+    std::fs::create_dir(&mac).unwrap();
+    append(&mac, "secret.jsonl", "mac file\n");
+    std::os::unix::fs::symlink(&mac, dir.path().join("claude")).unwrap();
+    assert!(read_new(&dir.path().join("claude"), &Cursor::default(), PAGE).0.is_empty());
+    let share = dir.path().join("share");
     std::fs::create_dir(&share).unwrap();
-    std::os::unix::fs::symlink(dir.path().join("secret"), share.join("x.jsonl")).unwrap();
-    assert!(read_page(&share, 0, 10).lines.is_empty());
-}
-
-/// The guest copies a session as it grows: a last line still being written is not a line yet,
-/// and once complete it is read, not skipped.
-#[test]
-fn a_line_still_being_copied_is_read_once_complete() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("s.jsonl"), "l0\nl1-half").unwrap();
-    let first = read_page(dir.path(), 0, 10);
-    assert_eq!((first.lines.clone(), first.next), (vec!["l0".to_owned()], 1));
-    std::fs::write(dir.path().join("s.jsonl"), "l0\nl1-half and the rest\n").unwrap();
-    assert_eq!(read_page(dir.path(), first.next, 10).lines, ["l1-half and the rest"]);
+    std::os::unix::fs::symlink(mac.join("secret.jsonl"), share.join("x.jsonl")).unwrap();
+    assert!(read_new(&share, &Cursor::default(), PAGE).0.is_empty());
 }

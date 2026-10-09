@@ -18,7 +18,10 @@ export class TelemetryPanel {
     this.points = [];
     this.seg = h("div", { class: "seg range" }, RANGES.map(([key, label]) =>
       h("button", { type: "button", "aria-pressed": String(key === this.range), onclick: () => this.setRange(key) }, label)));
-    this.el = h("div", { class: "telemetry" });
+    this.top = h("div");
+    this.charts = h("div");
+    this.bottom = h("div");
+    this.el = h("div", { class: "telemetry" }, this.top, this.seg, this.charts, this.bottom);
     this.fetch();
     this.timer = setInterval(() => this.fetch(), REFRESH_MS[this.range]);
   }
@@ -32,31 +35,34 @@ export class TelemetryPanel {
   }
 
   async fetch() {
-    const r = await api(`/api/tasks/${this.id}/telemetry?range=${this.range}`);
-    if (r.ok) { this.points = r.data.points; if (this.task) this.render(); }
+    const range = this.range;
+    const r = await api(`/api/tasks/${this.id}/telemetry?range=${range}`);
+    // An answer for a range left meanwhile is dropped.
+    if (!r.ok || range !== this.range) return;
+    this.points = r.data.points;
+    if (this.task) this.charts.replaceChildren(...charts(this.points, this.task));
   }
 
-  /** Called on every refresh of the task list. */
+  /** Called on every refresh of the task list: only the text changes, the charts (and a reader's
+   *  hover on them) stay until new points arrive. */
   update(t, label) {
     // A closed VM has no live numbers: its whole life is what is left to show.
     if (isEnded(t) && !this.task && this.range === "5m") this.setRange("all");
+    const first = !this.task;
     this.task = t;
     this.label = label;
-    this.render();
+    if (first) this.charts.replaceChildren(...charts(this.points, t));
+    this.renderText();
   }
 
-  render() {
+  renderText() {
     const t = this.task, ended = isEnded(t), m = ended ? null : t.metrics;
     const stale = !ended && t.metrics_age_s != null && t.metrics_age_s > STALE_S;
-    this.el.replaceChildren(...[
+    this.top.replaceChildren(...[
       ended && h("p", { class: "closed-note" }, "This VM is closed: below is its history."),
       stale && h("p", { class: "stale" }, `No new numbers for ${Math.round(t.metrics_age_s)} s: the VM may be very busy or stuck. Showing the last ones.`),
-      this.seg,
-      ...charts(this.points, t),
-      m && processes(m),
-      t.usage && usage(t.usage),
-      facts(t, this.label),
     ].filter(Boolean));
+    this.bottom.replaceChildren(...[m && processes(m), t.usage && usage(t.usage), facts(t, this.label)].filter(Boolean));
   }
 
   destroy() { clearInterval(this.timer); }
