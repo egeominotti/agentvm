@@ -9,6 +9,7 @@ import { Snapshots } from "../features/snapshots/Snapshots";
 import { Wall } from "../features/wall/Wall";
 import { useAttention } from "./attention";
 import { useRoute } from "./router";
+import { Shortcuts } from "./Shortcuts";
 import { Sidebar } from "./sidebar/Sidebar";
 import "../styles/app.css";
 import "../styles/components.css";
@@ -19,6 +20,8 @@ import "../styles/outcome.css";
 import "../styles/settings.css";
 import "../styles/snapshots.css";
 import "../styles/wall.css";
+// Last: narrow windows override the rules above.
+import "../styles/responsive.css";
 
 export function App() {
   const route = useRoute();
@@ -35,6 +38,7 @@ export function App() {
         </main>
       </div>
       <Launcher />
+      <Shortcuts />
     </ToastProvider>
   );
 }

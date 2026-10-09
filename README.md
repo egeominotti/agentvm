@@ -218,6 +218,9 @@ Everything the dashboard does is available over a local JSON API.
 | `GET` | `/api/tasks/{id}/pty?session=claude\|shell` | WebSocket to a terminal in the VM |
 | `POST` | `/api/tasks/{id}/save` · `/close` · `/stop` · `/snapshot` | Act on a running VM |
 | `GET` | `/api/tasks/{id}/diff` · `/events` | Branch diff · server-sent events |
+| `GET` | `/api/tasks/{id}/diagnostics` | Why it failed, its timeline, its logs and its lines of the server log |
+| `GET` | `/api/tasks/{id}/telemetry?range=5m\|1h\|all` | CPU, memory, disk I/O and network over time |
+| `GET` | `/api/tasks/{id}/claude?cursor=…` · `/claude/usage` | Claude's conversation, a page at a time · cost and tokens over time |
 | `POST` | `/api/tasks/{id}/upload` | Copy a file into the VM (`x-file-name` header, raw body) |
 | `PUT` | `/api/tasks/{id}/auto-snapshots` | This machine's snapshot interval: `{every_min}` or `null` |
 | `GET` | `/api/snapshots` | Local snapshots |
@@ -226,6 +229,7 @@ Everything the dashboard does is available over a local JSON API.
 | `GET`/`POST`/`DELETE` | `/api/backups`, `/api/backups/{id}/restore`, `/api/backups/{id}` | Snapshots in S3 |
 | `GET`/`PUT` | `/api/settings`, `/api/settings/token`, `/api/settings/s3` | Settings, Claude token, S3 |
 | `GET` | `/api/status`, `/api/golden`, `/api/claude/versions` | Host, VM image, Claude Code releases |
+| `GET` | `/api/repos/check?path=…` | Whether a VM can be launched on a folder, and why not |
 
 Non-interactive tasks (`interactive: false`) run `claude -p` to completion and return a branch,
 which is handy for scripting.
@@ -234,7 +238,9 @@ which is handy for scripting.
 
 ```
 server/      Rust: domain (pure) → app (use cases) → http, plus adapters for git, VMs, PTY,
-             Keychain, S3, archives; the dashboard (vanilla JS, xterm.js) is embedded
+             Keychain, S3, archives; the dashboard's build is embedded in the binary
+web/         The dashboard: React, TypeScript (types generated from the Rust ones), Vite, Bun;
+             terminals are xterm.js on WebGL
 vm-helper/   Swift: one VM per process, vsock bridge for terminals
 guest/       Golden image setup, plus the job runner, PTY server, Claude wrapper, status line
              and telemetry collector that the server ships to every VM at launch
@@ -248,13 +254,16 @@ VMs, real Claude and a real S3 server. An architecture test enforces the layerin
 touches adapters, the domain does no I/O, adapters do not know each other.
 
 ```bash
-scripts/test.sh               # domain, adapters, app, HTTP, architecture (all in parallel)
+cd web && bun install && bun run build   # once, before cargo: the server embeds the dashboard
+AGENTVM_API=http://127.0.0.1:7777 bun run dev   # the dashboard with hot reload, on a running server
+scripts/test.sh               # dashboard, domain, adapters, app, HTTP, architecture (in parallel)
 scripts/dev-s3.sh up
 scripts/test.sh --ignored     # real VMs, Claude and S3
 ```
 
-CI runs formatting, clippy, the tests that need no VM, the Swift build and script checks on every
-push. GitHub's macOS runners cannot nest virtualization, so VM tests run locally.
+CI runs formatting, clippy, the dashboard's type check, lint and tests, the tests that need no VM,
+the Swift build and script checks on every push, and fails when the dashboard's API types are not
+the ones generated from the server's. GitHub's macOS runners cannot nest virtualization, so VM tests run locally.
 
 ## Contributing
 
@@ -267,6 +276,7 @@ Release notes: [CHANGELOG.md](CHANGELOG.md).
 
 ## Acknowledgements
 
-[xterm.js](https://xtermjs.org) (MIT) and the [Geist](https://vercel.com/font) fonts (SIL OFL 1.1)
-are bundled under `server/src/http/web/vendor/`; the dashboard loads nothing from the internet.
+[xterm.js](https://xtermjs.org) (MIT), [React](https://react.dev) (MIT), [TanStack Query](https://tanstack.com/query)
+(MIT), [Radix UI](https://www.radix-ui.com) (MIT) and the [Geist](https://vercel.com/font) fonts (SIL OFL 1.1) are
+bundled into the dashboard; it loads nothing from the internet.
 Local S3 testing uses [RustFS](https://github.com/rustfs/rustfs).

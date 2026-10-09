@@ -28,13 +28,10 @@ type Routes = Router<Arc<AppCtx>>;
 
 fn dashboard() -> Routes {
     Router::new()
-        .route("/", get(assets::dashboard))
-        .route("/logo.svg", get(assets::logo))
-        .route("/assets/{*path}", get(assets::asset))
-        .route("/vendor/{*path}", get(assets::vendor))
-        .route("/next", get(assets::next_redirect))
-        .route("/next/", get(assets::next_index))
-        .route("/next/{*path}", get(assets::next))
+        .route("/", get(assets::index))
+        .route("/next", get(assets::moved))
+        .route("/next/", get(assets::moved))
+        .route("/{*path}", get(assets::file))
 }
 
 fn task_routes() -> Routes {

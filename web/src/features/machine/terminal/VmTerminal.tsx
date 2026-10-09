@@ -40,6 +40,11 @@ export const VmTerminal = memo(function VmTerminal({ id, session, live, visible,
       if (d && (d.cols !== xterm.cols || d.rows !== xterm.rows)) xterm.resize(d.cols, d.rows);
     };
     term.current = { xterm, resize };
+    // In development, the console can reach each terminal (window.__terms.claude…).
+    if (import.meta.env.DEV) {
+      const w = window as unknown as { __terms?: Record<string, unknown> };
+      w.__terms = { ...w.__terms, [session]: { xterm, ws: () => ws } };
+    }
     copySelections(xterm, (ok) =>
       say(ok ? "Copied to the clipboard" : "The browser blocked the clipboard", ok ? "ok" : "err"),
     );

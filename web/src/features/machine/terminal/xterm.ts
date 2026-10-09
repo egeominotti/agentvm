@@ -54,6 +54,9 @@ export function openXterm(el: HTMLElement, { fontSize = 13, readOnly = false } =
   xterm.loadAddon(fit);
   xterm.open(el);
   let losses = 0;
+  let closing = false;
+  /** The canvases the WebGL renderers drew on: their contexts are given back on close. */
+  const gpuCanvases = new Set<HTMLCanvasElement>();
   let retry: ReturnType<typeof setTimeout> | undefined;
   const gpu = () => {
     try {
@@ -61,17 +64,24 @@ export function openXterm(el: HTMLElement, { fontSize = 13, readOnly = false } =
       gl.onContextLoss(() => {
         gl.dispose();
         // A context lost again and again (no GPU to give) stays on the DOM renderer.
-        if (++losses <= 5) retry = setTimeout(gpu, 1000 * losses);
+        if (!closing && ++losses <= 5) retry = setTimeout(gpu, 1000 * losses);
       });
+      const before = new Set(el.querySelectorAll("canvas"));
       xterm.loadAddon(gl);
+      for (const c of el.querySelectorAll("canvas")) if (!before.has(c)) gpuCanvases.add(c);
     } catch {
       // No WebGL here: the DOM renderer is slower but always there.
     }
   };
   gpu();
-  /** Disposes the terminal and its pending GPU retry. */
+  /** Disposes the terminal, giving its GPU context back at once: the WebGL addon leaves it to
+   *  the garbage collector, and a page with too many alive loses the oldest, which may be the
+   *  terminal you are typing in. */
   const close = () => {
+    closing = true;
     clearTimeout(retry);
+    // Only canvases that already hold a WebGL context: asking another one would create it.
+    for (const canvas of gpuCanvases) canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
     xterm.dispose();
   };
   return { xterm, fit, close };

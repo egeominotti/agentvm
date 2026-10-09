@@ -3,6 +3,7 @@
 import { type DragEvent, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useTask, useTasks } from "../../api/queries";
+import { TOGGLE_PANEL_EVENT } from "../../app/keys";
 import { useToast } from "../../components/Toast";
 import { isEnded } from "../../lib/task";
 import { useMachineActions } from "./actions";
@@ -46,6 +47,21 @@ export function MachineView({ id }: { id: string }) {
     else if (ended || t?.interactive === false) setTab("claude");
   }, [state, ended, t?.interactive]);
 
+  // ⌘J anywhere shows or hides the details.
+  useEffect(() => {
+    const toggle = () =>
+      setPanel((p) => {
+        try {
+          localStorage.setItem(PANEL_KEY, p ? "off" : "on");
+        } catch {
+          // Not remembered: it still works.
+        }
+        return !p;
+      });
+    window.addEventListener(TOGGLE_PANEL_EVENT, toggle);
+    return () => window.removeEventListener(TOGGLE_PANEL_EVENT, toggle);
+  }, []);
+
   if (!t) {
     return (
       <div className="empty-state">
@@ -58,16 +74,7 @@ export function MachineView({ id }: { id: string }) {
 
   const running = state === "running";
   const showPanel = panel;
-  const togglePanel = () => {
-    setPanel((p) => {
-      try {
-        localStorage.setItem(PANEL_KEY, p ? "off" : "on");
-      } catch {
-        // Not remembered: it still works.
-      }
-      return !p;
-    });
-  };
+  const togglePanel = () => window.dispatchEvent(new Event(TOGGLE_PANEL_EVENT));
   // Shown at once, then focused in the same click: keys typed right after go to the terminal.
   const pick = (s: Session) => {
     flushSync(() => {

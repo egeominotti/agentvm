@@ -1,49 +1,31 @@
-//! Embeds the dashboards into `$OUT_DIR/web_assets.rs` as `(path, bytes)` tables sorted by path,
-//! which `http::assets` serves. A new dashboard file needs no Rust change.
-//! - `FILES`: every file under `src/http/web/` but `index.html` (served at `/`).
-//! - `NEXT`: the React dashboard built by `bun run build` in `web/`, served under `/next/`. Empty
-//!   when it was not built, so the server still compiles and tests without Bun.
-//!
-//! Hidden files like `.DS_Store` are left out of both.
+//! Embeds the dashboard built by `bun run build` in `web/` (`web/dist`) into
+//! `$OUT_DIR/web_assets.rs` as a `FILES: &[(path, bytes)]` table sorted by path, which
+//! `http::assets` serves. Empty when the dashboard was not built, so the server still compiles
+//! and its tests can say what is missing. Hidden files like `.DS_Store` are left out.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-const WEB: &str = "src/http/web";
-const NEXT: &str = "../web/dist";
+const DIST: &str = "../web/dist";
 
 fn main() {
     // A directory: Cargo reruns this script when any file under it is added, removed or changed.
-    println!("cargo:rerun-if-changed={WEB}");
-    println!("cargo:rerun-if-changed={NEXT}");
-    let manifest = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("set by Cargo"));
-
+    println!("cargo:rerun-if-changed={DIST}");
+    let dist = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("set by Cargo")).join(DIST);
     let mut files = Vec::new();
-    collect(&manifest.join(WEB), &manifest.join(WEB), &mut files);
-    files.retain(|(path, _)| path != "index.html");
-
-    let mut next = Vec::new();
-    let dist = manifest.join(NEXT);
     if dist.join("index.html").is_file() {
-        collect(&dist, &dist, &mut next);
+        collect(&dist, &dist, &mut files);
     } else {
-        println!("cargo:warning=web/dist is missing: /next/ is empty (cd web && bun install && bun run build)");
+        println!("cargo:warning=web/dist is missing: the dashboard is empty (cd web && bun install && bun run build)");
     }
-
-    let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("set by Cargo")).join("web_assets.rs");
-    let source = format!("{}{}", table("FILES", files), table("NEXT", next));
-    std::fs::write(&out, source).unwrap_or_else(|e| panic!("cannot write {}: {e}", out.display()));
-}
-
-/// `pub static <name>` holding the files, sorted by path for a binary search.
-fn table(name: &str, mut files: Vec<(String, String)>) -> String {
     files.sort();
-    let mut out = format!("pub static {name}: &[(&str, &[u8])] = &[\n");
+    let mut table = String::from("pub static FILES: &[(&str, &[u8])] = &[\n");
     for (path, source) in &files {
-        writeln!(out, "    ({path:?}, include_bytes!({source:?})),").expect("writing to a String");
+        writeln!(table, "    ({path:?}, include_bytes!({source:?})),").expect("writing to a String");
     }
-    out.push_str("];\n");
-    out
+    table.push_str("];\n");
+    let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("set by Cargo")).join("web_assets.rs");
+    std::fs::write(&out, table).unwrap_or_else(|e| panic!("cannot write {}: {e}", out.display()));
 }
 
 /// `(path relative to root with `/` separators, absolute source path)` of every file under `dir`.

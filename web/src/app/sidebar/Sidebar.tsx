@@ -45,9 +45,10 @@ export function Sidebar({ route }: { route: Route }) {
             key={name}
             href={href}
             aria-current={route.name === name || (name === "wall" && focused) ? "page" : undefined}
+            title={label}
           >
             <Icon name={icon} />
-            {label}
+            <span className="nav-label">{label}</span>
             {name === "wall" && live ? <span className="count num">{live}</span> : null}
           </a>
         ))}

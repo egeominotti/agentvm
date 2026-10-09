@@ -10,8 +10,7 @@ declare const process: { env: Record<string, string | undefined> };
 const API = process.env.AGENTVM_API ?? "http://127.0.0.1:7777";
 
 export default defineConfig({
-  // Served at /next/ while it replaces the dashboard at / screen by screen.
-  base: "/next/",
+  base: "/",
   plugins: [react()],
   build: { outDir: "dist", sourcemap: false, chunkSizeWarningLimit: 1500 },
   server: {

@@ -47,9 +47,6 @@ jobs:
       - name: Build the VM helper (Swift)
         working-directory: .
         run: swiftc -O vm-helper/*.swift -o /tmp/agentvm-vm
-      - name: Check dashboard scripts
-        working-directory: .
-        run: find server/src/http/web/js -name '*.js' -print0 | xargs -0 -n1 bun build --no-bundle >/dev/null
       - name: Check shell scripts
         working-directory: .
         run: |
