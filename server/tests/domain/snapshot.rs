@@ -56,3 +56,14 @@ fn automatic_snapshot_settings_are_validated() {
     assert!(AutoSnapshots { every_min: 30, keep: 0, before_close: true }.validate().is_err());
     assert!(AutoSnapshots { every_min: 30, keep: 51, before_close: true }.validate().is_err());
 }
+
+/// A machine started from a snapshot says where it came from, once: a kept disk is resumed.
+#[test]
+fn a_restored_machine_is_named_after_its_snapshot() {
+    use agentvm::domain::snapshot::{restored_label, title_of_label};
+    assert_eq!(restored_label("Fix the cart"), "Restored: Fix the cart");
+    assert_eq!(restored_label("Interrupted: setup-fail, 03:21"), "Resumed: setup-fail, 03:21");
+    assert_eq!(title_of_label("Restored: Fix the cart"), "Fix the cart");
+    assert_eq!(title_of_label("Resumed: setup-fail, 03:21"), "setup-fail, 03:21");
+    assert_eq!(title_of_label("Spike"), "Spike");
+}

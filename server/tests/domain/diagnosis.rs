@@ -33,3 +33,15 @@ fn a_kept_disk_is_mentioned() {
 fn an_unknown_reason_has_no_hint() {
     assert_eq!(hint("something new", ""), None);
 }
+
+/// A failed setup.sh does not stop an interactive VM: when the VM later dies for another reason,
+/// that reason is the hint, not the setup.
+#[test]
+fn a_failed_setup_is_not_blamed_for_what_it_did_not_cause() {
+    let log = "[1.69s] running .agentvm/setup.sh\n[1.70s] setup failed (see setup.log)\n[1.71s] terminal ready";
+    says("vm_error: agentvm-vm exited without a final event", log, "console");
+    says("timeout", log, "time limit");
+    says("fetch_failed: git import failed", log, "imported");
+    // A Claude that fails after a failed setup most likely missed what the setup installs.
+    says("claude_exit 1", log, "setup.sh");
+}

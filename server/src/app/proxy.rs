@@ -12,7 +12,7 @@ use crate::domain::task::TaskState;
 /// The machine's DNS name, from what the dashboard shows as its title.
 pub fn vm_name(record: &TaskRecord) -> String {
     let title = match (&record.label, &record.prompt) {
-        (Some(label), _) => label.trim_start_matches("Restored: ").to_owned(),
+        (Some(label), _) => crate::domain::snapshot::title_of_label(label).to_owned(),
         (None, Some(p)) => p.as_str().lines().next().unwrap_or_default().to_owned(),
         (None, None) => record.repo.as_path().file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
     };

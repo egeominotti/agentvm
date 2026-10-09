@@ -108,3 +108,21 @@ impl AutoSnapshots {
         autos.into_iter().skip(self.keep as usize).map(|s| s.id.clone()).collect()
     }
 }
+
+const INTERRUPTED: &str = "Interrupted: ";
+const RESTORED: &str = "Restored: ";
+const RESUMED: &str = "Resumed: ";
+
+/// The label of a machine started from the snapshot `name`: a kept disk of an interrupted
+/// machine is resumed, any other snapshot restored.
+pub fn restored_label(name: &str) -> String {
+    match name.strip_prefix(INTERRUPTED) {
+        Some(rest) => format!("{RESUMED}{rest}"),
+        None => format!("{RESTORED}{name}"),
+    }
+}
+
+/// The machine's title within such a label.
+pub fn title_of_label(label: &str) -> &str {
+    label.strip_prefix(RESTORED).or_else(|| label.strip_prefix(RESUMED)).unwrap_or(label)
+}

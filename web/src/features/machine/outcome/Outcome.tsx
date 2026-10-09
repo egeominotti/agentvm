@@ -1,20 +1,15 @@
 // How a machine ended and what to do with its work: the branch and the commands to use it.
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { api } from "../../../api/client";
+import type { SnapshotMeta } from "../../../api/generated/SnapshotMeta";
 import type { TaskDto } from "../../../api/generated/TaskDto";
+import { keys } from "../../../api/queries";
+import { go } from "../../../app/router";
 import { Button } from "../../../components/Button";
 import { plural, shortPath } from "../../../lib/format";
 import { statusOf } from "../../../lib/task";
-
-/** [title, explanation] for a failure reason reported by the server. */
-function explain(reason: string): [string, string] {
-  if (reason === "timeout") return ["Time limit reached", "The agent was stopped after the time limit in Settings."];
-  if (reason === "guest_no_result") return ["The VM shut down without a result", "Diagnostics show its last logs."];
-  if (reason.startsWith("claude_exit")) return ["Claude stopped with an error", "Diagnostics show what it printed."];
-  if (reason.startsWith("vm_error")) return ["The VM did not start", "Virtualization.framework reported an error."];
-  if (reason.startsWith("fetch_failed"))
-    return ["Could not import the branch", "The work finished but git fetch failed."];
-  return ["Failed", "Diagnostics show what happened."];
-}
+import { explain, readableReason } from "./explain";
 
 export function Outcome({ task: t }: { task: TaskDto }) {
   const s = t.status;
@@ -44,10 +39,39 @@ export function Outcome({ task: t }: { task: TaskDto }) {
         <>
           <h2>{explain(s.reason)[0]}</h2>
           <p>{explain(s.reason)[1]}</p>
-          <code className="reason">{s.reason}</code>
+          <details className="reason">
+            <summary>What the server reported</summary>
+            <pre>{readableReason(s.reason)}</pre>
+          </details>
         </>
       ) : null}
+      {s.state === "failed" || s.state === "stopped" ? <ResumeKeptDisk task={t} /> : null}
     </section>
+  );
+}
+
+/** A machine that ended before its work reached the repository has its disk kept as a snapshot:
+ *  one click starts a new VM from it, Claude's conversation included. */
+function ResumeKeptDisk({ task: t }: { task: TaskDto }) {
+  const qc = useQueryClient();
+  const snapshots = useQuery({ queryKey: ["snapshots"], queryFn: () => api<SnapshotMeta[]>("/api/snapshots") });
+  const kept = snapshots.data?.find((s) => s.source_task === t.id && s.name.startsWith("Interrupted: "));
+  const resume = useMutation({
+    mutationFn: (id: string) => api<{ id: string }>(`/api/snapshots/${id}/restore`, "POST"),
+    onSuccess: async (r) => {
+      await qc.invalidateQueries({ queryKey: keys.tasks });
+      go(`#/vm/${r.id}`);
+    },
+  });
+  if (!kept) return null;
+  return (
+    <div className="resume">
+      <p>Its disk was kept, with everything it had not saved yet.</p>
+      <Button variant="primary" disabled={resume.isPending} onClick={() => resume.mutate(kept.id)}>
+        {resume.isPending ? "Starting…" : "Resume in a new VM"}
+      </Button>
+      {resume.error ? <span className="msg err">{resume.error.message}</span> : null}
+    </div>
   );
 }
 

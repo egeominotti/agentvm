@@ -2,6 +2,7 @@
 import { useDiagnostics } from "../../../api/queries";
 import { Button } from "../../../components/Button";
 import { useToast } from "../../../components/Toast";
+import { readableReason } from "../outcome/explain";
 import { openFirst, reportText } from "./report";
 
 const time = (at: number) =>
@@ -30,7 +31,7 @@ export function DiagnosticsTab({ id }: { id: string }) {
           Copy report
         </Button>
       </div>
-      <p className="diag-summary">{d.summary}</p>
+      <p className="diag-summary">{readableReason(d.summary)}</p>
       {d.hint ? <p className="diag-hint">{d.hint}</p> : null}
       {d.timeline.length ? (
         <ol className="diag-timeline">

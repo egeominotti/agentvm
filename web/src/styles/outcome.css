@@ -5,7 +5,7 @@
 .outcome h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: var(--fs-lg); font-weight: 590; letter-spacing: -0.015em; }
 .outcome h2::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--c); flex-shrink: 0; }
 .outcome p { margin: 0; color: var(--ink-2); }
-.outcome .reason { font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink-3); white-space: pre-wrap; word-break: break-word; }
+
 .cmd { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 .cmd code { flex: 1; min-width: 0; padding: 6px 10px; border-radius: 6px; background: var(--bg); border: 1px solid var(--line); color: var(--ink-2); font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-all; }
 .cmd .btn { margin-top: 3px; }
@@ -22,3 +22,7 @@
 .diff-body .a { background: rgba(76, 183, 130, .08); color: #6fcf9f; }
 .diff-body .d { background: rgba(235, 87, 87, .08); color: #f08080; }
 .diff-body .h { color: var(--ink-3); background: var(--surface); }
+.outcome .reason summary { cursor: pointer; font-size: var(--fs-xs); color: var(--ink-3); }
+.outcome .reason pre { margin: 8px 0 0; max-height: 240px; overflow: auto; padding: 8px 10px; border-radius: var(--r-sm); background: var(--bg); font: 11px/1.45 var(--mono); color: var(--ink-2); white-space: pre-wrap; word-break: break-word; }
+.resume { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.resume p { flex: 1; min-width: 200px; }

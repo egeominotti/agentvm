@@ -136,7 +136,7 @@ fn title(record: &TaskRecord, now: SystemTime) -> String {
         record.repo.as_path().file_name().map_or_else(|| "repository".into(), |n| n.to_string_lossy().into_owned());
     match (&record.prompt, &record.label) {
         (Some(p), _) => p.as_str().lines().next().unwrap_or_default().to_owned(),
-        (None, Some(label)) => label.trim_start_matches("Restored: ").to_owned(),
+        (None, Some(label)) => crate::domain::snapshot::title_of_label(label).to_owned(),
         (None, None) => format!("{repo_name}, {}", clock(now)),
     }
 }
@@ -202,7 +202,7 @@ pub fn restore(ctx: &Arc<AppCtx>, snap: &SnapshotId) -> Result<TaskId, SnapshotE
             restore_from: Some(snap.clone()),
             cpus: (meta.cpus > 0).then_some(meta.cpus),
             memory_mb: (meta.memory_mb > 0).then_some(meta.memory_mb),
-            label: Some(format!("Restored: {}", meta.name)),
+            label: Some(crate::domain::snapshot::restored_label(&meta.name)),
         },
     )?;
     Ok(id)
