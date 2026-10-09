@@ -33,6 +33,9 @@
 
 .screen { flex: 1; min-height: 0; position: relative; background: var(--term); }
 .screen .term { position: absolute; inset: 0; padding: 10px 6px 6px 14px; }
+.screen .term.away { visibility: hidden; }
+.term-host { width: 100%; height: 100%; }
+.preview-term .term-host { width: auto; height: auto; }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; z-index: 4; padding: 24px; background: var(--term); animation: fade-in .2s ease; }
 .overlay-note { display: grid; justify-items: center; gap: 6px; text-align: center; color: var(--ink-2); }
 .overlay-note .boot-mark { width: 36px; height: 36px; margin-bottom: 8px; }

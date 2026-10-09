@@ -68,5 +68,8 @@ export const VmTerminal = memo(function VmTerminal({ id, session, live, visible,
     return () => cancelAnimationFrame(frame);
   }, [visible]);
 
-  return <div ref={el} className="term" hidden={!visible} />;
+  // Hidden, it keeps its size (invisible, out of reach of clicks, keys and screen readers). Shrunk
+  // to nothing (display: none), restty would fit the screen to one column and lose what it shows,
+  // and tmux, whose size never changed, would not draw it again on return.
+  return <div ref={el} className={visible ? "term" : "term away"} inert={!visible} aria-hidden={!visible} />;
 });

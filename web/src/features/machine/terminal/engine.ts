@@ -36,17 +36,35 @@ function resttyCanRun(): boolean {
 }
 
 export async function openView(el: HTMLElement, opts: ViewOptions): Promise<TerminalView> {
+  // Each view draws in a box of its own, removed with it: a view that finishes opening after its
+  // terminal was already closed and opened again (React remounts, a VM restarting) then disposes
+  // only itself, never the canvas of the view that replaced it.
+  const host = document.createElement("div");
+  host.className = "term-host";
+  el.append(host);
+  const view = await open(host, opts);
+  el.dataset.engine = host.dataset.engine;
+  return {
+    ...view,
+    dispose: () => {
+      view.dispose();
+      host.remove();
+    },
+  };
+}
+
+async function open(host: HTMLElement, opts: ViewOptions): Promise<TerminalView> {
   if (resttyCanRun()) {
     try {
       const { openRestty } = await import("./restty-view");
-      return await openRestty(el, opts);
+      return await openRestty(host, opts);
     } catch (e) {
       console.warn("restty could not start; xterm.js draws this terminal", e);
-      el.replaceChildren();
+      host.replaceChildren();
     }
   }
   const { openXtermView } = await import("./xterm-view");
   // xterm measures its cells once: the font must be there first.
   await monoFont();
-  return openXtermView(el, opts);
+  return openXtermView(host, opts);
 }

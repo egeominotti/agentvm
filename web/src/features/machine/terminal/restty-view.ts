@@ -7,12 +7,8 @@ import { DeviceAttributes } from "../../../lib/da-replies";
 import { Osc52Scanner } from "../../../lib/osc52";
 import type { TerminalView, ViewOptions } from "./engine";
 import { pageTheme } from "./palette";
+import { RESTTY_FONTS } from "./restty-fonts";
 
-// TTF, not WOFF2: restty's text shaper misreads WOFF2 glyphs ("i" and ligatures come out wrong).
-const FONTS = [
-  { url: "/fonts/JetBrainsMonoNerdFontMono-Regular.ttf", weight: 400 },
-  { url: "/fonts/JetBrainsMonoNerdFontMono-Bold.ttf", weight: 700 },
-];
 /** Ghostty's own Catppuccin themes, as in the user's Ghostty: Latte light, Mocha dark. */
 const THEME = { light: "Catppuccin Latte", dark: "Catppuccin Mocha" } as const;
 
@@ -55,8 +51,14 @@ export async function openRestty(el: HTMLElement, opts: ViewOptions): Promise<Te
       root: el,
       terminal: {
         renderer,
-        fonts: FONTS,
+        fonts: RESTTY_FONTS,
+        // The size of the letters, as everywhere else on the page. restty's default ("height")
+        // fits the whole line height in it: letters a quarter smaller, thin and hard to read.
         fontSize,
+        fontSizeMode: "em",
+        // As Ghostty on macOS: blended as the system blends text, full strokes rather than the
+        // thinner linear-space look.
+        alphaBlending: "native",
         theme: getBuiltinTheme(THEME[pageTheme()]) ?? undefined,
         autoResize: !fixed,
         showResizeOverlay: false,
