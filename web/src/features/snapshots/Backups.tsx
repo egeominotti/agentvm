@@ -68,11 +68,17 @@ export function Backups() {
                   </IconButton>
                 }
               >
-                <MenuItem danger confirm="Delete it from S3?" onSelect={() => remove.mutate(b.snapshot.id)}>
+                <MenuItem
+                  icon="trash"
+                  danger
+                  confirm="Delete it from S3?"
+                  onSelect={() => remove.mutate(b.snapshot.id)}
+                >
                   Delete from S3
                 </MenuItem>
               </Menu>
               <Button disabled={b.local || bring.isPending} onClick={() => bring.mutate(b.snapshot.id)}>
+                <Icon name={b.local ? "check" : "cloud-down"} />
                 {b.local ? "On this Mac" : "Bring to this Mac"}
               </Button>
             </li>

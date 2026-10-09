@@ -19,3 +19,8 @@ export function linePath(values: (number | null)[], x: (i: number) => number, y:
   const points = values.filter((v) => v != null).length;
   return points === 1 ? `${d}h0.1` : d;
 }
+
+/** Whether a chart has a line to draw: at least one series with values at two moments. */
+export function drawable(times: number[], series: (number | null)[][]): boolean {
+  return times.length >= 2 && series.some((values) => values.filter((v) => v != null).length >= 2);
+}

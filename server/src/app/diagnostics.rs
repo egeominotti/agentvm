@@ -55,7 +55,8 @@ pub fn of(ctx: &AppCtx, id: &TaskId) -> Result<Diagnostics, DiagnosticsError> {
         .filter_map(|(name, file)| {
             // Never through a symlink or a FIFO the guest planted, never the whole file.
             let bytes = guestfs::read_suffix(&job.join(file), TAIL_BYTES)?;
-            let text = String::from_utf8_lossy(&bytes);
+            // Logs are terminal output (the console above all): shown without control sequences.
+            let text = crate::domain::console_text::readable(&String::from_utf8_lossy(&bytes));
             let lines: Vec<&str> = text.lines().collect();
             let tail = lines[lines.len().saturating_sub(TAIL_LINES)..].join("\n");
             Some(LogTail { name: (*name).to_owned(), file: (*file).to_owned(), tail })

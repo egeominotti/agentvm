@@ -49,7 +49,10 @@ async fn interactive_vm_serves_a_shell_over_vsock_and_closes_on_request() {
             tokio::time::sleep(Duration::from_millis(300)).await;
             continue;
         }
-        let deadline = Instant::now() + Duration::from_secs(10);
+        // Typed the moment the session opens, in a VM just booted (tmux still starting): the keys
+        // must arrive. A closed connection (the guest not listening yet) is retried; keys lost
+        // on a live one are the bug, never retried away.
+        let deadline = Instant::now() + Duration::from_secs(15);
         while Instant::now() < deadline {
             match tokio::time::timeout(Duration::from_secs(1), pty.recv()).await {
                 Ok(Ok(Some(bytes))) => {
@@ -58,10 +61,12 @@ async fn interactive_vm_serves_a_shell_over_vsock_and_closes_on_request() {
                         break 'retry;
                     }
                 }
-                Ok(_) => continue 'retry,
+                Ok(_) if seen.is_empty() => continue 'retry,
+                Ok(_) => break 'retry,
                 Err(_) => {}
             }
         }
+        break;
     }
     assert!(seen.contains("hello-42"), "terminal output: {seen:?}");
 

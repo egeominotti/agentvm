@@ -5,6 +5,7 @@ import { useRef } from "react";
 import { api } from "../../api/client";
 import type { SnapshotMeta } from "../../api/generated/SnapshotMeta";
 import { Button } from "../../components/Button";
+import { Icon } from "../../components/Icon";
 import { useToast } from "../../components/Toast";
 import { plural, repoName } from "../../lib/format";
 import { Backups } from "./Backups";
@@ -43,6 +44,7 @@ export function Snapshots() {
         <span className="sub">Whole VMs saved at a moment: files, installed packages, Claude's conversation.</span>
         <span className="tb-gap" />
         <Button size="sm" onClick={() => file.current?.click()}>
+          <Icon name="upload" />
           Import from file
         </Button>
         <input ref={file} type="file" accept=".zst,.tar,.gz" hidden onChange={(e) => importFile(e.target.files?.[0])} />

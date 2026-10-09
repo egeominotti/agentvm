@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { linePath, niceMax } from "./chart";
+import { drawable, linePath, niceMax } from "./chart";
 
 it("rounds the top of the axis to a number that reads well", () => {
   expect(niceMax(0)).toBe(1);
@@ -22,4 +22,21 @@ it("a single point is still drawn, as a dot-sized segment", () => {
       () => 20,
     ),
   ).toBe("M150.0,20.0h0.1");
+});
+
+it("draws a line only from two moments with a value: one alone is no line", () => {
+  expect(drawable([], [[]])).toBe(false);
+  expect(drawable([1], [[0]])).toBe(false);
+  expect(drawable([1, 2], [[null, null]])).toBe(false);
+  expect(
+    drawable(
+      [1, 2],
+      [
+        [null, 3],
+        [4, null],
+      ],
+    ),
+  ).toBe(false);
+  expect(drawable([1, 2], [[1, 3]])).toBe(true);
+  expect(drawable([1, 2, 3], [[null, 3, 5]])).toBe(true);
 });

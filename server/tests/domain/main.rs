@@ -1,6 +1,7 @@
 //! Domain rules: pure logic without I/O, tested directly.
 
 mod agent_event;
+mod console_text;
 mod diagnosis;
 mod guest_reply;
 mod hostname;

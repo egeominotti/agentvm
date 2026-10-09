@@ -2,6 +2,7 @@
 // item asks first: its first selection shows the question, the second one acts.
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { type ReactNode, useState } from "react";
+import { Icon, type IconName } from "./Icon";
 
 export function Menu({ trigger, children }: { trigger: ReactNode; children: ReactNode }) {
   return (
@@ -16,9 +17,16 @@ export function Menu({ trigger, children }: { trigger: ReactNode; children: Reac
   );
 }
 
-type ItemProps = { children: ReactNode; onSelect: () => void; danger?: boolean; confirm?: string; disabled?: boolean };
+type ItemProps = {
+  children: ReactNode;
+  onSelect: () => void;
+  icon?: IconName;
+  danger?: boolean;
+  confirm?: string;
+  disabled?: boolean;
+};
 
-export function MenuItem({ children, onSelect, danger, confirm, disabled }: ItemProps) {
+export function MenuItem({ children, onSelect, icon, danger, confirm, disabled }: ItemProps) {
   const [armed, setArmed] = useState(false);
   return (
     <Dropdown.Item
@@ -33,6 +41,7 @@ export function MenuItem({ children, onSelect, danger, confirm, disabled }: Item
         onSelect();
       }}
     >
+      {icon ? <Icon name={icon} /> : null}
       {armed && confirm ? confirm : children}
     </Dropdown.Item>
   );

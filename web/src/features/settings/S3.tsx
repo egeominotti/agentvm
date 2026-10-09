@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { S3Config } from "../../api/generated/S3Config";
 import { Button } from "../../components/Button";
+import { Icon } from "../../components/Icon";
 import { Segmented } from "../../components/Segmented";
 import { PRESETS } from "./presets";
 
@@ -108,6 +109,7 @@ export function S3() {
       </label>
       <div className="row-actions">
         <Button type="submit" variant="primary" disabled={save.isPending}>
+          <Icon name="cloud-up" />
           {save.isPending ? "Testing the connection…" : "Test & save"}
         </Button>
         {save.isSuccess ? <span className="msg ok">Connected: the bucket accepts uploads. Saved.</span> : null}

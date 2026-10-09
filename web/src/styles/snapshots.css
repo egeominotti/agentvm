@@ -1,5 +1,6 @@
 /* Snapshots, grouped by the machine they came from, and the S3 backups. */
-.snapshots { max-width: 980px; }
+/* Content up to 980px wide; the scroll box (and its scrollbar) spans the whole view. */
+.wall-scroll.snapshots { grid-template-columns: minmax(0, 980px); }
 .snap-group { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .snap-group > header { display: flex; align-items: baseline; gap: 10px; }
 .snap-group h2 { margin: 0; min-width: 0; font-size: var(--fs-md); font-weight: 590; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -13,7 +14,8 @@
 .snap-meta { font-size: var(--fs-xs); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .snap.interrupted { background: color-mix(in srgb, var(--wait) 7%, transparent); }
 .snap.interrupted b { color: var(--wait); }
-.auto-snaps summary { cursor: pointer; padding: 4px 2px; font-size: var(--fs-sm); color: var(--ink-3); width: fit-content; }
+.auto-snaps summary { display: flex; align-items: center; gap: 0; cursor: pointer; padding: 4px 2px; font-size: var(--fs-sm); color: var(--ink-3); width: fit-content; list-style: none; }
+
 .auto-snaps summary:hover { color: var(--ink); }
 .auto-snaps .snaps { margin-top: 6px; }
 .empty-card { display: grid; gap: 6px; padding: 18px; border: 1px dashed var(--line-2); border-radius: var(--r-lg); }

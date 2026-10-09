@@ -1,7 +1,7 @@
 // One choice among a few, all in view (arrow keys move between them).
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
-type Props<T> = { label: string; value: T; options: [T, string][]; onChange: (v: T) => void; wide?: boolean };
+type Props<T> = { label: string; value: T; options: [T, ReactNode][]; onChange: (v: T) => void; wide?: boolean };
 
 export function Segmented<T extends string | number>({ label, value, options, onChange, wide }: Props<T>) {
   const keys = (e: KeyboardEvent<HTMLDivElement>) => {

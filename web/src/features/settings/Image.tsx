@@ -5,6 +5,7 @@ import type { GoldenStatus } from "../../api/generated/GoldenStatus";
 import type { Settings } from "../../api/generated/Settings";
 import { useReleases } from "../../api/queries";
 import { Button } from "../../components/Button";
+import { Icon } from "../../components/Icon";
 import { gb } from "../../lib/format";
 import type { SetSetting } from "./useDraft";
 
@@ -54,6 +55,7 @@ export function Image({ s, set }: { s: Settings; set: SetSetting }) {
       </label>
       <div className="row-actions">
         <Button disabled={!!d?.rebuilding || rebuild.isPending} onClick={() => rebuild.mutate()}>
+          <Icon name="refresh" />
           {d?.rebuilding ? "Rebuilding…" : "Rebuild image"}
         </Button>
         {rebuild.error ? <span className="msg err">{rebuild.error.message}</span> : null}

@@ -7,6 +7,7 @@ import type { TaskDto } from "../../../api/generated/TaskDto";
 import { keys } from "../../../api/queries";
 import { go } from "../../../app/router";
 import { Button } from "../../../components/Button";
+import { Icon } from "../../../components/Icon";
 import { plural, shortPath } from "../../../lib/format";
 import { statusOf } from "../../../lib/task";
 import { explain, readableReason } from "./explain";
@@ -68,6 +69,7 @@ function ResumeKeptDisk({ task: t }: { task: TaskDto }) {
     <div className="resume">
       <p>Its disk was kept, with everything it had not saved yet.</p>
       <Button variant="primary" disabled={resume.isPending} onClick={() => resume.mutate(kept.id)}>
+        <Icon name="restore" />
         {resume.isPending ? "Starting…" : "Resume in a new VM"}
       </Button>
       {resume.error ? <span className="msg err">{resume.error.message}</span> : null}
@@ -89,6 +91,7 @@ function Command({ text }: { text: string }) {
           })
         }
       >
+        <Icon name={copied ? "check" : "copy"} />
         {copied ? "Copied" : "Copy"}
       </Button>
     </div>

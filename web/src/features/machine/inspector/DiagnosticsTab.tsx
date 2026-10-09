@@ -1,6 +1,7 @@
 // Why a machine failed, what to do, when each step happened, and the evidence.
 import { useDiagnostics } from "../../../api/queries";
 import { Button } from "../../../components/Button";
+import { Icon } from "../../../components/Icon";
 import { useToast } from "../../../components/Toast";
 import { readableReason } from "../outcome/explain";
 import { openFirst, reportText } from "./report";
@@ -34,9 +35,11 @@ export function DiagnosticsTab({ id, ended }: { id: string; ended: boolean }) {
     <div className="diag">
       <div className="tab-actions">
         <Button size="sm" variant="ghost" onClick={() => q.refetch()}>
+          <Icon name="refresh" />
           Refresh
         </Button>
         <Button size="sm" onClick={copy}>
+          <Icon name="copy" />
           Copy report
         </Button>
       </div>

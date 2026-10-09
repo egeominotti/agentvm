@@ -93,8 +93,12 @@ export const VmTerminal = memo(function VmTerminal({ id, session, live, visible,
     });
     observer.observe(box);
     connect();
-    // Opened in view (the page was loaded on this machine): it takes the keyboard at once.
-    if (visibleRef.current) requestAnimationFrame(() => xterm.focus());
+    // Opened in view (the page was loaded on this machine, or the Shell just chosen): it takes
+    // the keyboard now, so the first keys typed are not lost, and again once it is drawn.
+    if (visibleRef.current) {
+      xterm.focus();
+      requestAnimationFrame(() => xterm.focus());
+    }
 
     return () => {
       closed = true;
@@ -109,9 +113,10 @@ export const VmTerminal = memo(function VmTerminal({ id, session, live, visible,
     };
   }, [id, session, live, say, fontReady]);
 
-  // Back in view: take the box's size and the keyboard (once the browser has shown it).
+  // Back in view: take the keyboard at once, and the box's size once the browser has shown it.
   useEffect(() => {
     if (!visible) return;
+    term.current?.xterm.focus();
     const frame = requestAnimationFrame(() => {
       term.current?.resize();
       term.current?.xterm.focus();

@@ -9,7 +9,9 @@ import { turns } from "./turns";
 import { useConversation } from "./useConversation";
 
 // Memoized: the machine view re-renders every second; the conversation changes on its own clock.
-export const ClaudeTab = memo(function ClaudeTab({ id, live }: { id: string; live: boolean }) {
+type Props = { id: string; live: boolean; interactive: boolean };
+
+export const ClaudeTab = memo(function ClaudeTab({ id, live, interactive }: Props) {
   const { entries, loaded, error, retry } = useConversation(id, live);
   const samples = useClaudeUsage(id, live).data?.samples ?? [];
   const last = samples.at(-1);
@@ -57,7 +59,8 @@ export const ClaudeTab = memo(function ClaudeTab({ id, live }: { id: string; liv
         times={times}
         max={100}
         format={(v) => `${v.toFixed(0)}%`}
-        empty="Not reported for automatic tasks"
+        // Claude Code reports its context only in a terminal's status line.
+        empty={interactive ? "No data yet" : "Not reported for automatic tasks"}
         series={context ? [{ name: "Context", color: BLUE, values: samples.map((s) => s.context_pct) }] : []}
       />
       <h3 className="tab-heading">Conversation</h3>

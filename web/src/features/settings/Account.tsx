@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "../../api/client";
 import { keys, useStatus } from "../../api/queries";
 import { Button } from "../../components/Button";
+import { Icon } from "../../components/Icon";
 
 export function Account() {
   const connected = useStatus().data?.token;
@@ -40,6 +41,7 @@ export function Account() {
           onChange={(e) => setToken(e.target.value)}
         />
         <Button type="submit" disabled={!token.trim() || save.isPending}>
+          <Icon name="key" />
           {save.isPending ? "Saving…" : "Save token"}
         </Button>
       </form>

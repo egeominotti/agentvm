@@ -4,6 +4,7 @@ import { api } from "../../api/client";
 import { keys, useTasks } from "../../api/queries";
 import { Button } from "../../components/Button";
 import { ConfirmButton } from "../../components/ConfirmButton";
+import { Icon } from "../../components/Icon";
 import { useToast } from "../../components/Toast";
 import { plural } from "../../lib/format";
 import { isEnded, isQueued, isWaiting } from "../../lib/task";
@@ -54,6 +55,7 @@ export function Wall() {
         </span>
         <span className="tb-gap" />
         <Button variant="primary" onClick={openLauncher}>
+          <Icon name="plus" />
           New VM <kbd>⌘K</kbd>
         </Button>
       </header>

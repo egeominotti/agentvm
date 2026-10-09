@@ -57,11 +57,13 @@ export function SnapshotRow({ s, label, resume }: { s: SnapshotMeta; label: stri
           </IconButton>
         }
       >
-        <MenuItem onSelect={() => window.open(`/api/snapshots/${s.id}/export`, "_blank")}>Download (.tar.zst)</MenuItem>
-        <MenuItem disabled={backup.isPending} onSelect={() => backup.mutate()}>
+        <MenuItem icon="download" onSelect={() => window.open(`/api/snapshots/${s.id}/export`, "_blank")}>
+          Download (.tar.zst)
+        </MenuItem>
+        <MenuItem icon="cloud-up" disabled={backup.isPending} onSelect={() => backup.mutate()}>
           Back up to S3
         </MenuItem>
-        <MenuItem danger confirm="Delete it for good?" onSelect={() => remove.mutate()}>
+        <MenuItem icon="trash" danger confirm="Delete it for good?" onSelect={() => remove.mutate()}>
           Delete
         </MenuItem>
       </Menu>
@@ -71,6 +73,7 @@ export function SnapshotRow({ s, label, resume }: { s: SnapshotMeta; label: stri
         onClick={() => restore.mutate()}
         title="Starts a new VM exactly from this point; Claude continues its conversation"
       >
+        <Icon name="restore" />
         {restore.isPending ? "Starting…" : resume ? "Resume" : "Restore"}
       </Button>
     </li>

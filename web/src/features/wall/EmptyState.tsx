@@ -1,5 +1,6 @@
 // No machine yet: what agentvm is, and the one thing to do next.
 import { Button } from "../../components/Button";
+import { Icon } from "../../components/Icon";
 import { openLauncher } from "../launcher/open";
 
 export function EmptyState() {
@@ -12,6 +13,7 @@ export function EmptyState() {
         Nothing it does can touch your Mac.
       </p>
       <Button variant="primary" onClick={openLauncher}>
+        <Icon name="plus" />
         Launch your first VM <kbd>⌘K</kbd>
       </Button>
       <ol>

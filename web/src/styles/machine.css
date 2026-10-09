@@ -10,7 +10,8 @@
 .toolbar .btn { flex-shrink: 0; }
 
 .seg { display: inline-flex; background: var(--bg); border: 1px solid var(--line-2); border-radius: 7px; padding: 2px; gap: 2px; }
-.seg button { border: 0; background: none; height: 22px; padding: 0 10px; border-radius: 5px; cursor: pointer; color: var(--ink-3); font-weight: 510; font-size: var(--fs-sm); }
+.seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 0; background: none; height: 22px; padding: 0 10px; border-radius: 5px; cursor: pointer; color: var(--ink-3); font-weight: 510; font-size: var(--fs-sm); transition: color .12s, background .12s; }
+.seg button .i { width: 13px; height: 13px; }
 .seg button:hover { color: var(--ink); }
 .seg button[aria-selected="true"] { background: var(--active); color: var(--ink); box-shadow: 0 0 0 1px var(--line-2) inset; }
 

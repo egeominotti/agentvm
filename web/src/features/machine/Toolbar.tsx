@@ -44,8 +44,20 @@ export function Toolbar({ task: t, session, onSession, actions: a, inspector, on
           label="Session"
           value={session}
           options={[
-            ["claude", "Claude"],
-            ["shell", "Shell"],
+            [
+              "claude",
+              <>
+                <Icon name="spark" />
+                Claude
+              </>,
+            ],
+            [
+              "shell",
+              <>
+                <Icon name="terminal" />
+                Shell
+              </>,
+            ],
           ]}
           onChange={onSession}
         />
@@ -58,6 +70,7 @@ export function Toolbar({ task: t, session, onSession, actions: a, inspector, on
             onClick={() => a.save.mutate()}
             title={`Copy the VM's commits to the branch ${t.branch} in your repository. The VM keeps running.`}
           >
+            <Icon name="save" />
             {a.save.isPending ? "Saving…" : "Save"}
           </Button>
           <Button
@@ -66,6 +79,7 @@ export function Toolbar({ task: t, session, onSession, actions: a, inspector, on
             onClick={() => a.close.mutate()}
             title="Save, then shut the VM down"
           >
+            <Icon name="power" />
             {a.close.isPending ? "Closing…" : "Close"}
           </Button>
         </>
@@ -79,7 +93,7 @@ export function Toolbar({ task: t, session, onSession, actions: a, inspector, on
       >
         {terminal ? (
           <>
-            <MenuItem disabled={!running || a.snapshot.isPending} onSelect={() => a.snapshot.mutate()}>
+            <MenuItem icon="snapshot" disabled={!running || a.snapshot.isPending} onSelect={() => a.snapshot.mutate()}>
               Take a snapshot now
             </MenuItem>
             <MenuLabel>Automatic snapshots</MenuLabel>
@@ -96,9 +110,12 @@ export function Toolbar({ task: t, session, onSession, actions: a, inspector, on
             <MenuSeparator />
           </>
         ) : null}
-        <MenuItem onSelect={() => navigator.clipboard.writeText(t.branch)}>Copy branch name</MenuItem>
+        <MenuItem icon="branch" onSelect={() => navigator.clipboard.writeText(t.branch)}>
+          Copy branch name
+        </MenuItem>
         {ended ? (
           <MenuItem
+            icon="trash"
             danger
             confirm="Delete its logs and Claude's history? Its branch stays"
             onSelect={() => a.remove.mutate()}
@@ -106,7 +123,7 @@ export function Toolbar({ task: t, session, onSession, actions: a, inspector, on
             Delete this machine
           </MenuItem>
         ) : (
-          <MenuItem danger confirm="Power off without saving?" onSelect={() => a.stop.mutate()}>
+          <MenuItem icon="stop" danger confirm="Power off without saving?" onSelect={() => a.stop.mutate()}>
             Force stop
           </MenuItem>
         )}

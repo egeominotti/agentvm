@@ -1,7 +1,7 @@
 // A time-series line chart: one y axis from 0, recessive grid, a legend for two or more series,
 // and a crosshair whose tooltip lists every series at the hovered time (arrow keys too).
 import { type KeyboardEvent, type PointerEvent, useRef, useState } from "react";
-import { linePath, niceMax } from "../lib/chart";
+import { drawable, linePath, niceMax } from "../lib/chart";
 import { clock } from "../lib/format";
 
 // Categorical slots 1 and 2 of the reference palette, validated on the panel's dark surface.
@@ -40,7 +40,12 @@ export function LineChart({ title, times, series, format, max, reference, empty 
       <span className="chart-now">{latest}</span>
     </figcaption>
   );
-  if (times.length === 0 || known.length === 0) {
+  if (
+    !drawable(
+      times,
+      series.map((s) => s.values),
+    )
+  ) {
     return (
       <figure className="chart">
         {head}

@@ -92,7 +92,7 @@ export function Inspector({ task: t, tab, onTab, onClose }: Props) {
           <TelemetryTab task={t} />
         </Tabs.Content>
         <Tabs.Content value="claude" className="tab-body">
-          <ClaudeTab id={t.id} live={live} />
+          <ClaudeTab id={t.id} live={live} interactive={t.interactive} />
         </Tabs.Content>
         <Tabs.Content value="diagnostics" className="tab-body">
           <DiagnosticsTab id={t.id} ended={!live} />
