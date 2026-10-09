@@ -6,6 +6,7 @@
     position: absolute; top: 0; right: 0; bottom: 0; z-index: 10; max-width: calc(100% - 48px);
     background: var(--surface); box-shadow: -18px 0 40px rgba(0, 0, 0, .45);
   }
+  .machine.with-panel .tabs .inspector-close { display: grid; }
   .res { grid-template-columns: 1fr; }
   .grid3 { grid-template-columns: 1fr 1fr; }
   .span-account, .span-notifications, .span-image, .span-storage { grid-column: span 6; }
@@ -35,4 +36,31 @@
   .settings-head { margin: -16px -16px 12px; padding: 16px 16px 10px; top: -16px; }
   .toolbar { gap: 6px; padding: 0 6px 0 10px; }
   .toolbar .status-label { display: none; }
+  .wall-scroll { padding: 14px 12px 28px; }
+  /* Every choice readable in full: they wrap to more rows instead of being cut to "1…". */
+  .seg.wide { display: flex; flex-wrap: wrap; }
+  .seg.wide button { flex: 1 0 auto; overflow: visible; }
+  .status-line { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .inline-form { flex-wrap: wrap; }
+  .inline-form .text-input { flex: 1 1 100%; }
+  .choices { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Phones: the bar of a running terminal on two rows, so nothing falls off its right edge: the
+   name with ⋯ and details on top, the sessions with Save and Close below. */
+@media (max-width: 520px) {
+  .toolbar:has(.seg) { flex-wrap: wrap; height: auto; padding: 6px 6px 6px 10px; row-gap: 6px; }
+  .toolbar:has(.seg) .tb-title { flex: 1 1 0; }
+  .toolbar:has(.seg) .icon-btn { order: 1; }
+  .toolbar:has(.seg)::after { content: ""; order: 2; flex-basis: 100%; }
+  .toolbar:has(.seg) .seg, .toolbar:has(.seg) .tb-gap, .toolbar:has(.seg) .btn { order: 3; }
+  .toolbar:has(.seg) .seg { margin: 0 auto 0 0; }
+}
+
+/* Touch screens: no keyboard shortcuts to hint at, and fields at 16px so iOS does not zoom the
+   page each time one is tapped. */
+@media (hover: none) and (pointer: coarse) {
+  .btn kbd, .new-vm kbd { display: none; }
+  .menu-item { height: 40px; }
+  input, textarea, select, .text-input.mono, .options select { font-size: 16px; }
 }

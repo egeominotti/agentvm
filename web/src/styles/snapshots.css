@@ -1,6 +1,6 @@
 /* Snapshots, grouped by the machine they came from, and the S3 backups. */
 .snapshots { max-width: 980px; }
-.snap-group { display: grid; gap: 8px; }
+.snap-group { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .snap-group > header { display: flex; align-items: baseline; gap: 10px; }
 .snap-group h2 { margin: 0; min-width: 0; font-size: var(--fs-md); font-weight: 590; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .snap-group > header .sub { flex-shrink: 0; }

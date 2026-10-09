@@ -178,7 +178,7 @@ export function MachineView({ id }: { id: string }) {
           </section>
         )}
       </section>
-      {showPanel ? <Inspector key={String(ended)} task={t} tab={tab} onTab={setTab} /> : null}
+      {showPanel ? <Inspector key={String(ended)} task={t} tab={tab} onTab={setTab} onClose={togglePanel} /> : null}
     </div>
   );
 }

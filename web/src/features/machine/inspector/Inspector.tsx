@@ -3,6 +3,8 @@
 import * as Tabs from "@radix-ui/react-tabs";
 import { type PointerEvent as ReactPointerEvent, useState } from "react";
 import type { TaskDto } from "../../../api/generated/TaskDto";
+import { IconButton } from "../../../components/Button";
+import { Icon } from "../../../components/Icon";
 import { isEnded } from "../../../lib/task";
 import { ClaudeTab } from "./ClaudeTab";
 import { DiagnosticsTab } from "./DiagnosticsTab";
@@ -31,9 +33,9 @@ function remember(width: number) {
   }
 }
 
-type Props = { task: TaskDto; tab: InspectorTab; onTab: (t: InspectorTab) => void };
+type Props = { task: TaskDto; tab: InspectorTab; onTab: (t: InspectorTab) => void; onClose: () => void };
 
-export function Inspector({ task: t, tab, onTab }: Props) {
+export function Inspector({ task: t, tab, onTab, onClose }: Props) {
   const [width, setWidth] = useState(storedWidth);
   const live = !isEnded(t);
 
@@ -81,6 +83,10 @@ export function Inspector({ task: t, tab, onTab }: Props) {
           <Tabs.Trigger value="telemetry">Telemetry</Tabs.Trigger>
           <Tabs.Trigger value="claude">Claude</Tabs.Trigger>
           <Tabs.Trigger value="diagnostics">Diagnostics</Tabs.Trigger>
+          {/* On narrow screens the panel covers the toolbar button that opened it. */}
+          <IconButton className="inspector-close" aria-label="Close the details" onClick={onClose}>
+            <Icon name="close" />
+          </IconButton>
         </Tabs.List>
         <Tabs.Content value="telemetry" className="tab-body">
           <TelemetryTab task={t} />

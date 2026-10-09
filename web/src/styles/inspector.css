@@ -7,6 +7,7 @@
 .tabs button { height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--ink-3); font-weight: 510; font-size: var(--fs-sm); cursor: pointer; }
 .tabs button:hover { color: var(--ink); background: var(--hover); }
 .tabs button[data-state="active"] { color: var(--ink); background: var(--active); }
+.tabs .inspector-close { display: none; margin-left: auto; padding: 0; }
 .tab-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px 28px; }
 .tab-body:focus-visible { outline: none; }
 .tab-heading { margin: 18px 0 8px; font-size: var(--fs-xs); font-weight: 510; color: var(--ink-3); }
