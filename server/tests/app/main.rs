@@ -15,6 +15,7 @@ mod history;
 mod logging;
 mod persistence;
 mod recovery;
+mod remote_repos;
 mod scheduler;
 mod settings;
 mod store;

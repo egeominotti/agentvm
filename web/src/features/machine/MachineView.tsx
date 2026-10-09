@@ -108,7 +108,7 @@ export function MachineView({ id }: { id: string }) {
         ) : null}
         {ended ? (
           <div className="result">
-            <Outcome task={t} />
+            <Outcome task={t} actions={actions} />
             {state === "done" ? <DiffView id={id} /> : null}
           </div>
         ) : (

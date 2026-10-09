@@ -49,8 +49,15 @@ async fn the_boot_console_is_shown_as_plain_text() {
     let (ctx, id) = crate::telemetry::vm(home.path());
     let job = home.path().join("jobs").join(&id);
     std::fs::create_dir_all(&job).unwrap();
-    std::fs::write(job.join("console.log"), "\x1b[6n\x1b[!p\x1b]104\x07\x1b[?7h\r\r\nDebian GNU/Linux 13\r\nagentvm login: ").unwrap();
-    let req = Request::get(format!("/api/tasks/{id}/diagnostics")).header("host", "127.0.0.1:7777").body(Body::empty()).unwrap();
+    std::fs::write(
+        job.join("console.log"),
+        "\x1b[6n\x1b[!p\x1b]104\x07\x1b[?7h\r\r\nDebian GNU/Linux 13\r\nagentvm login: ",
+    )
+    .unwrap();
+    let req = Request::get(format!("/api/tasks/{id}/diagnostics"))
+        .header("host", "127.0.0.1:7777")
+        .body(Body::empty())
+        .unwrap();
     let (status, body) = send(agentvm::http::router(ctx), req).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let console = body["logs"].as_array().unwrap().iter().find(|l| l["file"] == "console.log").expect("no console log");

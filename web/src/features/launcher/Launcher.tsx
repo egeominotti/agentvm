@@ -201,7 +201,16 @@ export function Launcher() {
             <footer className="dialog-foot">
               <span className="blocker">{blocker}</span>
               <Button type="submit" variant="primary" disabled={!!blocker || busy}>
-                {busy ? "Launching…" : prompts.length > 1 ? `Launch ${prompts.length} VMs` : "Launch VM"} <kbd>⌘↵</kbd>
+                {busy
+                  ? check?.to_clone
+                    ? "Cloning…"
+                    : check?.remote
+                      ? "Fetching…"
+                      : "Launching…"
+                  : prompts.length > 1
+                    ? `Launch ${prompts.length} VMs`
+                    : "Launch VM"}{" "}
+                <kbd>⌘↵</kbd>
               </Button>
             </footer>
           </form>

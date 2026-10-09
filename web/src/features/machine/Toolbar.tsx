@@ -89,6 +89,9 @@ export function Toolbar({ task: t, sessions, actions: a, inspector, onInspector 
         <MenuItem icon="branch" onSelect={() => navigator.clipboard.writeText(t.branch)}>
           Copy branch name
         </MenuItem>
+        <MenuItem icon="cloud-up" disabled={a.push.isPending} onSelect={() => a.push.mutate()}>
+          Push branch to origin
+        </MenuItem>
         {ended ? (
           <MenuItem
             icon="trash"

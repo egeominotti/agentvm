@@ -53,6 +53,7 @@ fn adapters_do_not_know_each_other_or_outer_layers() {
             "orphans",
             "pty",
             "records",
+            "remote",
             "releases",
             "s3",
             "server_log",

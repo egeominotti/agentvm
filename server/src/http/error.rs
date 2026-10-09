@@ -55,6 +55,20 @@ impl From<SubmitError> for ApiError {
     }
 }
 
+impl From<crate::app::remote_repos::RemoteRepoError> for ApiError {
+    fn from(e: crate::app::remote_repos::RemoteRepoError) -> Self {
+        use crate::app::remote_repos::RemoteRepoError as E;
+        let code = match e {
+            E::Link(_) => StatusCode::BAD_REQUEST,
+            // The remote refused or could not be reached.
+            E::Git(_) => StatusCode::BAD_GATEWAY,
+            E::DiskFull(_) => StatusCode::INSUFFICIENT_STORAGE,
+            E::NotFound => StatusCode::NOT_FOUND,
+        };
+        ApiError::new(code, e)
+    }
+}
+
 impl From<DiffError> for ApiError {
     fn from(e: DiffError) -> Self {
         let code = match e {

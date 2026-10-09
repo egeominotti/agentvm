@@ -3,6 +3,7 @@
 mod agent_event;
 mod console_text;
 mod diagnosis;
+mod git_remote;
 mod guest_reply;
 mod hostname;
 mod ids;

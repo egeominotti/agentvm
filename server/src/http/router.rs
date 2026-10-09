@@ -46,6 +46,7 @@ fn task_routes() -> Routes {
         .route("/api/tasks/{id}/claude", get(history::claude))
         .route("/api/tasks/{id}/claude/usage", get(history::claude_usage))
         .route("/api/tasks/{id}/stop", post(tasks::stop))
+        .route("/api/tasks/{id}/push", post(repos::push))
         .route("/api/tasks/{id}/save", post(session::save))
         .route("/api/tasks/{id}/close", post(session::close))
         .route("/api/tasks/{id}/pty", get(terminal::pty))

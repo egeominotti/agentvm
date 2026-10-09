@@ -87,3 +87,28 @@ async fn a_shallow_clone_is_refused_with_the_fix() {
     assert_eq!(body["ok"], false, "{body}");
     assert!(body["error"].as_str().unwrap().contains("git fetch --unshallow"), "{body}");
 }
+
+/// A link is previewed without the network: what will be cloned, and where.
+#[tokio::test]
+async fn a_link_says_what_will_be_cloned_and_where() {
+    let body = check("acme/shop").await;
+    assert_eq!(body["ok"], true, "{body}");
+    assert_eq!(body["remote"], "https://github.com/acme/shop.git");
+    assert_eq!(body["to_clone"], true);
+    assert_eq!(body["name"], "shop");
+    assert!(body["path"].as_str().unwrap().ends_with("repos/github.com/acme/shop"), "{body}");
+    let bad = check("ext::sh -c id").await;
+    assert_eq!(bad["ok"], false);
+    assert!(bad["error"].is_string(), "{bad}");
+}
+
+#[tokio::test]
+async fn pushing_the_branch_of_an_unknown_machine_is_not_found() {
+    let home = tempfile::tempdir().unwrap();
+    let req = axum::http::Request::post("/api/tasks/0199c4b6-a2f2-7fff-bfff-ffffffffffff/push")
+        .header("host", "127.0.0.1:7777")
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let (status, _) = send(app(home.path()), req).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

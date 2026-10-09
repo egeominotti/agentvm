@@ -7,7 +7,8 @@ fn claude_the_shell_and_numbered_shells_are_sessions() {
     for name in ["claude", "shell", "shell-2", "shell-9"] {
         assert!(is_session(name), "{name}");
     }
-    for name in ["", "bash", "shell-1", "shell-10", "shell-0", "shell-", "shell-2 ", "Shell-2", "../claude", "shell-02"] {
+    for name in ["", "bash", "shell-1", "shell-10", "shell-0", "shell-", "shell-2 ", "Shell-2", "../claude", "shell-02"]
+    {
         assert!(!is_session(name), "{name:?}");
     }
 }

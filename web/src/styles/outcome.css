@@ -26,3 +26,6 @@
 .outcome .reason pre { margin: 8px 0 0; max-height: 240px; overflow: auto; padding: 8px 10px; border-radius: var(--r-sm); background: var(--bg); font: 11px/1.45 var(--mono); color: var(--ink-2); white-space: pre-wrap; word-break: break-word; }
 .resume { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .resume p { flex: 1; min-width: 200px; }
+.push-branch { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 12px; margin-top: 4px; border-top: 1px solid var(--line); }
+.push-branch p { margin: 0; color: var(--ink-2); font-size: var(--fs-sm); }
+a.btn { text-decoration: none; }

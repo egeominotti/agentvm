@@ -20,4 +20,12 @@ sha: string | null,
 /**
  * Why a VM cannot be launched on it, in words for the user.
  */
-error: string | null, };
+error: string | null, 
+/**
+ * Given as a link: what is cloned and fetched.
+ */
+remote: string | null, 
+/**
+ * The link is cloned at launch (not on this Mac yet).
+ */
+to_clone: boolean, };

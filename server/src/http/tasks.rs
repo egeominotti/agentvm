@@ -1,5 +1,7 @@
 //! Tasks (`/api/tasks`): launch, list, inspect, stop, forget, and the diff of their work.
 
+use crate::app::remote_repos;
+use crate::domain::git_remote::GitRemote;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -31,10 +33,20 @@ pub async fn create(State(ctx): Ctx, Json(req): Json<CreateTask>) -> Result<(Sta
         Some(v) => Some(ClaudeVersion::parse(v).map_err(ApiError::bad_request)?),
         None => None,
     };
+    // A link: cloned (or fetched) first, then launched from that clone like any repository.
+    let repo = if GitRemote::looks_like_link(&req.repo_path) {
+        let (ctx, link) = (ctx.clone(), req.repo_path.clone());
+        let opened = tokio::task::spawn_blocking(move || remote_repos::open(&ctx, &link))
+            .await
+            .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e))??;
+        opened.path.display().to_string()
+    } else {
+        req.repo_path.clone()
+    };
     // Off the async workers: it reads the repository and the Keychain.
     let id = tokio::task::spawn_blocking(move || {
         let new = NewTask {
-            repo: &req.repo_path,
+            repo: &repo,
             prompt: req.prompt,
             base_ref: req.base_ref.as_deref(),
             interactive: req.interactive,

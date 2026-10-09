@@ -1,11 +1,13 @@
 //! A repository, checked before a VM is launched on it: does it exist, is it a git repository,
-//! does it have a commit to start from.
+//! does it have a commit to start from. A link (GitHub…) is previewed without the network: where
+//! it will be cloned, or the clone already there.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
 use crate::adapters::git::Git;
+use crate::domain::git_remote::GitRemote;
 use crate::domain::ids::RepoPath;
 
 #[derive(Debug, Clone, Serialize)]
@@ -22,13 +24,51 @@ pub struct RepoCheck {
     pub sha: Option<String>,
     /// Why a VM cannot be launched on it, in words for the user.
     pub error: Option<String>,
+    /// Given as a link: what is cloned and fetched.
+    pub remote: Option<String>,
+    /// The link is cloned at launch (not on this Mac yet).
+    pub to_clone: bool,
 }
 
-pub fn check(path: &str) -> RepoCheck {
+/// `input`: a folder, or a link to clone into `<home>/repos`.
+pub fn check(home: &Path, input: &str) -> RepoCheck {
+    if !GitRemote::looks_like_link(input) {
+        return check_folder(input);
+    }
+    let remote = match GitRemote::parse(input) {
+        Ok(r) => r,
+        Err(e) => {
+            let mut answer = check_folder(input);
+            answer.ok = false;
+            answer.error = Some(e);
+            return answer;
+        }
+    };
+    let dir = remote.dir(home);
+    let mut answer = if dir.join(".git").is_dir() {
+        check_folder(&dir.display().to_string())
+    } else {
+        let name = remote.path.rsplit('/').next().unwrap_or_default().to_owned();
+        let path = dir.display().to_string();
+        RepoCheck { ok: true, path, name, branch: None, sha: None, error: None, remote: None, to_clone: true }
+    };
+    answer.remote = Some(remote.url);
+    answer
+}
+
+fn check_folder(path: &str) -> RepoCheck {
     let full = expand_home(path);
     let name = full.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let mut answer =
-        RepoCheck { ok: false, path: full.display().to_string(), name, branch: None, sha: None, error: None };
+    let mut answer = RepoCheck {
+        ok: false,
+        path: full.display().to_string(),
+        name,
+        branch: None,
+        sha: None,
+        error: None,
+        remote: None,
+        to_clone: false,
+    };
     if !full.is_dir() {
         answer.error = Some("This folder does not exist.".into());
         return answer;

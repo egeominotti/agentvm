@@ -10,9 +10,11 @@ import { Button } from "../../../components/Button";
 import { Icon } from "../../../components/Icon";
 import { plural, shortPath } from "../../../lib/format";
 import { statusOf } from "../../../lib/task";
+import type { MachineActions } from "../actions";
 import { explain, readableReason } from "./explain";
+import { PushBranch } from "./PushBranch";
 
-export function Outcome({ task: t }: { task: TaskDto }) {
+export function Outcome({ task: t, actions }: { task: TaskDto; actions: MachineActions }) {
   const s = t.status;
   const repo = shortPath(t.repo).replace(/ /g, "\\ ");
   return (
@@ -25,6 +27,7 @@ export function Outcome({ task: t }: { task: TaskDto }) {
           <p>Already in your repository. To try the work, or to merge it:</p>
           <Command text={`git -C ${repo} switch ${s.branch}`} />
           <Command text={`git -C ${repo} merge ${s.branch}`} />
+          <PushBranch actions={actions} />
         </>
       ) : s.state === "no_changes" ? (
         <>

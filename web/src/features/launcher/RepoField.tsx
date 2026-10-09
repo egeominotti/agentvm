@@ -3,7 +3,8 @@
 import { type KeyboardEvent, type Ref, useId, useState } from "react";
 import type { RepoCheck } from "../../api/generated/RepoCheck";
 import { useRepoCheck } from "../../api/queries";
-import { repoName } from "../../lib/format";
+import { Icon } from "../../components/Icon";
+import { repoName, shortPath } from "../../lib/format";
 import { useDebounced } from "../../lib/useDebounced";
 
 type Props = {
@@ -54,7 +55,7 @@ export function RepoField({ value, onChange, onPicked, recent, inputRef, check }
         ref={inputRef}
         className="repo-input"
         value={value}
-        placeholder="~/code/my-app"
+        placeholder="~/code/my-app or github.com/owner/repo"
         autoComplete="off"
         spellCheck={false}
         role="combobox"
@@ -102,12 +103,21 @@ function RepoStatus({ path, check: c }: { path: string; check: RepoCheck | undef
     return <p className="repo-status">The VM gets a fresh clone of it: your files are never touched.</p>;
   if (!c) return <p className="repo-status">Checking…</p>;
   if (!c.ok) return <p className="repo-status bad">{c.error}</p>;
+  if (c.remote && c.to_clone) {
+    return (
+      <p className="repo-status good">
+        <Icon name="download" />
+        Cloned at launch into {shortPath(c.path)}, with your Mac's git access
+      </p>
+    );
+  }
   return (
     <p className="repo-status good">
       <span className="ok-mark" aria-hidden="true" />
       {c.name}
       {c.branch ? ` · ${c.branch}` : " · detached HEAD"}
       {c.sha ? ` · ${c.sha.slice(0, 7)}` : ""}
+      {c.remote ? " · fetched at launch" : ""}
     </p>
   );
 }
@@ -120,7 +130,16 @@ export function useSettledCheck(path: string): RepoCheck | undefined {
   if (settled !== path.trim()) return undefined;
   // The server could not check it: say so, instead of "Checking…" for ever.
   if (check.error) {
-    return { ok: false, path: settled, name: "", branch: null, sha: null, error: check.error.message };
+    return {
+      ok: false,
+      path: settled,
+      name: "",
+      branch: null,
+      sha: null,
+      error: check.error.message,
+      remote: null,
+      to_clone: false,
+    };
   }
   return check.data;
 }

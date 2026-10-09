@@ -69,6 +69,7 @@ repository as a git branch, and the VM is thrown away.
 | **Live terminal wall** | Every VM on one screen, with Claude Code running in it, CPU and memory sparklines and Claude's cost. Amber means an agent is waiting for you; desktop notifications tell you when you are elsewhere. |
 | **Claude Code, unrestricted** | Interactive Claude Code as root (`--dangerously-skip-permissions`, `bypassPermissions` by default, no prompts), plus a root shell on the same checkout. Pick the model and the exact Claude Code version per launch. |
 | **Per-VM resources** | Choose vCPUs and memory for every launch; the dashboard shows how many more VMs fit in free memory. |
+| **Start from GitHub** | Paste `github.com/owner/repo`, `owner/repo` or an ssh link instead of a folder: agentvm clones it once into `~/AgentVMs/repos`, fetches it before every launch, and works with your Mac's git access (ssh key, `gh`), so private repositories work too. **Push branch** sends a VM's work back to origin and links to its pull request. |
 | **Work returns as git branches** | *Save to repo* turns the current state into commits on `agent/<id>` in your repository, without stopping anything. Ready-to-copy `git switch` / `git merge` commands and a per-file diff. |
 | **Snapshots, manual and automatic** | Freeze a whole running VM (files, packages, Claude's conversation) in under a second and restore it into a new machine where Claude continues the conversation. Automatic snapshots on a schedule (per machine if you like), the newest few kept, plus one just before closing. |
 | **Backups anywhere** | Download snapshots as `.tar.zst`, import them on another Mac, or back them up to any S3-compatible storage: AWS S3, Cloudflare R2, Hetzner Object Storage, Backblaze B2, MinIO, RustFS. Multipart uploads up to ~640 GB. |
@@ -129,7 +130,8 @@ task. A few seconds later Claude Code is running in its own machine.
 
 ## Using it
 
-1. **New VM** (⌘K): repository, first task, model, Claude Code version, vCPUs and memory.
+1. **New VM** (⌘K): repository (a folder, or a link like `github.com/owner/repo`), first task,
+   model, Claude Code version, vCPUs and memory.
    *One VM per line* launches a machine for every line of the task.
 2. **Machines** shows every VM live. Click one to work in it: Claude Code full size, a **Root
    shell** on the same checkout (`/root/work`), and the telemetry panel. Reloading the page keeps
@@ -246,10 +248,12 @@ Everything the dashboard does is available over a local JSON API.
 
 | Method | Path | |
 |---|---|---|
-| `POST` | `/api/tasks` | Launch: `{repo_path, prompt?, interactive?, model?, claude_version?, cpus?, memory_mb?}` |
+| `POST` | `/api/tasks` | Launch: `{repo_path, prompt?, interactive?, model?, claude_version?, cpus?, memory_mb?}`; `repo_path` may be a link (`github.com/owner/repo`): cloned or fetched first |
 | `GET` | `/api/tasks`, `/api/tasks/{id}` | Tasks with state, activity, telemetry and usage |
-| `GET` | `/api/tasks/{id}/pty?session=claude\|shell` | WebSocket to a terminal in the VM |
+| `GET`/`DELETE` | `/api/tasks/{id}/pty?session=claude\|shell\|shell-2…9` · `/api/tasks/{id}/pty/{shell-N}` | WebSocket to a terminal in the VM · close an extra shell |
 | `POST` | `/api/tasks/{id}/save` · `/close` · `/stop` · `/snapshot` | Act on a running VM |
+| `POST` | `/api/tasks/{id}/push` | Push the VM's branch to the repository's origin; returns the pull request link |
+| `GET` | `/api/changes` | Server-sent event on every change to the task list |
 | `GET` | `/api/tasks/{id}/diff` · `/events` | Branch diff · server-sent events |
 | `GET` | `/api/tasks/{id}/diagnostics` | Why it failed, its timeline, its logs and its lines of the server log |
 | `GET` | `/api/tasks/{id}/telemetry?range=5m\|1h\|all` | CPU, memory, disk I/O and network over time |

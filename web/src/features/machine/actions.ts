@@ -2,6 +2,7 @@
 // same terms as the button that did it.
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
+import type { PushedBranch } from "../../api/generated/PushedBranch";
 import type { Saved } from "../../api/generated/Saved";
 import type { SnapshotMeta } from "../../api/generated/SnapshotMeta";
 import { keys } from "../../api/queries";
@@ -56,7 +57,12 @@ export function useMachineActions(id: string) {
     },
     onError: fail,
   });
-  return { save, close, snapshot, stop, remove, autoSnapshots };
+  const push = useMutation({
+    mutationFn: () => api<PushedBranch>(`${base}/push`, "POST"),
+    onSuccess: (r) => say(`Pushed ${r.branch} to ${r.remote.replace(/^https:\/\/|^git@|\.git$/g, "")}`),
+    onError: fail,
+  });
+  return { save, close, snapshot, stop, remove, autoSnapshots, push };
 }
 
 export type MachineActions = ReturnType<typeof useMachineActions>;

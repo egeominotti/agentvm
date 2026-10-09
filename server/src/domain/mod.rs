@@ -3,6 +3,7 @@ pub mod agent_event;
 pub mod console_text;
 pub mod diagnosis;
 pub mod disk;
+pub mod git_remote;
 pub mod guest_reply;
 pub mod hostname;
 pub mod ids;

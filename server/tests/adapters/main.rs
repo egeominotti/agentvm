@@ -10,6 +10,7 @@ mod jsonl;
 mod lock;
 mod process;
 mod pty;
+mod remote;
 mod s3;
 mod secrets;
 mod server_log;

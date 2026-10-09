@@ -7,7 +7,10 @@ use crate::helpers::send;
 use crate::telemetry::vm;
 
 fn delete(id: &str, session: &str) -> Request<Body> {
-    Request::delete(format!("/api/tasks/{id}/pty/{session}")).header("host", "127.0.0.1:7777").body(Body::empty()).unwrap()
+    Request::delete(format!("/api/tasks/{id}/pty/{session}"))
+        .header("host", "127.0.0.1:7777")
+        .body(Body::empty())
+        .unwrap()
 }
 
 #[tokio::test]
