@@ -101,6 +101,8 @@ if [ "$RESTORE" = "true" ]; then
     log "could not switch to $BRANCH: continuing on $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
   fi
 else
+  # A new VM always starts from a clean checkout, even if the image holds an old one.
+  rm -rf "$WORK"
   # Errors go to job.log: the diagnostics show why a clone failed, not only "exit 128".
   git clone -q "$JOB/repo.bundle" "$WORK" 2>> "$JOB/job.log"
   cd "$WORK"

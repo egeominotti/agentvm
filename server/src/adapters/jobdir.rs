@@ -15,7 +15,6 @@ use crate::secret::Secret;
 
 unsafe extern "C" {
     fn clonefile(src: *const std::ffi::c_char, dst: *const std::ffi::c_char, flags: u32) -> std::ffi::c_int;
-    fn kill(pid: i32, sig: i32) -> std::ffi::c_int;
     fn getuid() -> u32;
 }
 
@@ -32,8 +31,6 @@ const RUNTIME: &[(&str, &str)] = &[
 
 /// JSON the guest writes (metrics, usage, result) is a few KiB.
 const SMALL_FILE: u64 = 1 << 20;
-/// `clonefile` flag: copy a link itself, never what it points to.
-const CLONE_NOFOLLOW: u32 = 0x0001;
 const JOB_LOG_MAX: u64 = 256 << 10;
 
 /// Owns `<jobs>/<id>/`. On `Drop` it deletes the disk, EFI variables, token and input bundle;
@@ -179,6 +176,16 @@ impl JobWorkspace {
         f.write_all(token.expose().as_bytes())
     }
 
+    /// The disk is a file of this VM's own, not a link: booted through a link the VM would write
+    /// into whatever it points to (the golden image every VM starts from).
+    pub fn check_own_disk(&self) -> io::Result<()> {
+        if fs::symlink_metadata(self.disk())?.file_type().is_file() {
+            Ok(())
+        } else {
+            Err(io::Error::other("the VM's disk is not a file of its own: refused"))
+        }
+    }
+
     /// Instant copy-on-write copy (APFS `clonefile(2)`).
     pub fn clone_disk(&self, golden: &Path) -> io::Result<()> {
         clone_file(golden, &self.disk())
@@ -242,41 +249,6 @@ fn socket_dir() -> PathBuf {
     PathBuf::from(format!("/tmp/agentvm-{}", unsafe { getuid() }))
 }
 
-/// At server startup: terminates VMs left over from a previous run and frees their disks. A VM
-/// gets SIGTERM, then SIGKILL if it is still there after 10 s; its files go only once it is gone.
-pub fn cleanup_orphans(jobs_root: &Path, keep: &std::collections::HashSet<String>) {
-    let Ok(entries) = fs::read_dir(jobs_root) else { return };
-    let orphans: Vec<PathBuf> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|d| !d.file_name().is_some_and(|n| keep.contains(&*n.to_string_lossy())))
-        .collect();
-    let helpers: Vec<i32> = orphans
-        .iter()
-        .filter_map(|dir| fs::read_to_string(dir.join("vm.pid")).ok()?.trim().parse::<u32>().ok())
-        .filter(|&pid| crate::pids::helper_pid(pid) == crate::pids::HelperPid::Ours)
-        .filter_map(|pid| i32::try_from(pid).ok())
-        .collect();
-    for &pid in &helpers {
-        // SAFETY: signal to a pid the kernel says is our helper.
-        unsafe { kill(pid, 15) };
-    }
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    // SAFETY: signal 0 only checks that the process exists.
-    while helpers.iter().any(|&p| unsafe { kill(p, 0) } == 0) && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-    for &pid in &helpers {
-        // SAFETY: as above; a helper that ignored SIGTERM must not keep its memory.
-        unsafe { kill(pid, 9) };
-    }
-    for dir in orphans {
-        for f in ["vm.pid", "disk.raw", "efivars", "share/.token", "share/repo.bundle"] {
-            let _ = fs::remove_file(dir.join(f));
-        }
-    }
-}
-
 /// Asks the guest for something by creating `<share>/<name>` holding the request's id (never
 /// through a planted symlink).
 pub fn write_request(share: &Path, name: &str, id: &str) -> io::Result<()> {
@@ -288,10 +260,5 @@ pub fn clone_file(src: &Path, dst: &Path) -> io::Result<()> {
     let src = CString::new(src.as_os_str().as_bytes())?;
     let dst = CString::new(dst.as_os_str().as_bytes())?;
     // SAFETY: C strings valid for the duration of the call.
-    // CLONE_NOFOLLOW: a disk that is a link (a planted snapshot) is never followed to a host file.
-    if unsafe { clonefile(src.as_ptr(), dst.as_ptr(), CLONE_NOFOLLOW) } == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
+    if unsafe { clonefile(src.as_ptr(), dst.as_ptr(), 0) } == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
 }

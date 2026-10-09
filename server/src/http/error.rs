@@ -94,7 +94,7 @@ impl From<SnapshotError> for ApiError {
         use SnapshotError as E;
         let code = match e {
             E::NotFound | E::NoSnapshot => StatusCode::NOT_FOUND,
-            E::NotRunning => StatusCode::CONFLICT,
+            E::NotRunning | E::InUse => StatusCode::CONFLICT,
             E::Submit(_) | E::Interval => StatusCode::BAD_REQUEST,
             E::SyncTimeout | E::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
             E::DiskFull(_) => StatusCode::INSUFFICIENT_STORAGE,

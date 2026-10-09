@@ -67,3 +67,19 @@ fn workspace_ships_the_guest_runtime_of_this_server() {
         assert_eq!(std::fs::read(&shipped).ok(), Some(std::fs::read(guest.join(f)).unwrap()), "{f}");
     }
 }
+
+/// A VM's disk must be a file of its own: booted through a link it would write into whatever the
+/// link points to (the golden image every VM starts from, which then breaks them all).
+#[test]
+fn a_disk_that_is_a_link_is_not_the_vms_own() {
+    let tmp = tempfile::tempdir().unwrap();
+    let id = agentvm::domain::ids::TaskId::generate(std::time::SystemTime::now(), &[9, 9]);
+    let ws = agentvm::adapters::jobdir::JobWorkspace::create(tmp.path(), &id).unwrap();
+    let golden = tmp.path().join("golden.raw");
+    std::fs::write(&golden, vec![0u8; 4096]).unwrap();
+    std::os::unix::fs::symlink(&golden, ws.disk()).unwrap();
+    assert!(ws.check_own_disk().is_err());
+    std::fs::remove_file(ws.disk()).unwrap();
+    ws.clone_disk(&golden).unwrap();
+    assert!(ws.check_own_disk().is_ok());
+}

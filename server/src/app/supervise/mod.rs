@@ -28,12 +28,13 @@ pub(super) async fn supervise(
     mut vm: VmProcess,
     token: Secret,
 ) -> Result<(), String> {
-    let on_result = usage_recorder(ctx, id);
+    let usage = crate::app::history::UsageRecorder::shared(crate::app::history::usage_file(ctx, id));
+    let on_result = usage_recorder(ctx, id, usage.clone());
     let follower = Follower::start(ctx.store.log(id).ok_or("task disappeared")?, ws.stream(), token, on_result);
     let on_started = || {
         let _ = ctx.store.apply(id, TaskEvent::VmStarted);
     };
-    let mut ticker = Ticker::new(ctx, id, record, &ws);
+    let mut ticker = Ticker::new(ctx, id, record, &ws, usage);
     let mut backstop = Backstop::new(ctx, record, &ws);
     let deadline_of = || backstop.as_mut().map(Backstop::deadline);
     let started = std::time::Instant::now();
@@ -54,10 +55,12 @@ pub(super) async fn supervise(
 }
 
 /// Keeps the task's cost and tokens in step with the agent's `result` events.
-fn usage_recorder(ctx: &AppCtx, id: &TaskId) -> impl Fn(f64, u64, u64) + Send + 'static {
+fn usage_recorder(
+    ctx: &AppCtx,
+    id: &TaskId,
+    history: crate::app::history::SharedUsage,
+) -> impl Fn(f64, u64, u64) + Send + 'static {
     let (store, id) = (ctx.store.clone_handle(), id.clone());
-    let history =
-        std::sync::Mutex::new(crate::app::history::UsageRecorder::new(crate::app::history::usage_file(ctx, &id)));
     move |cost_usd: f64, input_tokens: u64, output_tokens: u64| {
         let mut usage = store.get(&id).and_then(|r| r.usage).unwrap_or_default();
         usage.cost_usd = cost_usd;

@@ -40,25 +40,37 @@ impl SnapshotStore {
         self.dir(id).join("efivars")
     }
 
-    /// Clones the disk (instant on APFS) and copies the EFI variables next to the metadata.
+    /// Clones the disk (instant on APFS) and copies the EFI variables next to the metadata. Built
+    /// in a hidden folder and renamed whole: a crash meanwhile leaves no half snapshot, only a
+    /// hidden folder the start-up cleanup removes.
     pub fn create(&self, meta: &SnapshotMeta, disk: &Path, efivars: &Path) -> io::Result<SnapshotMeta> {
         let dir = self.dir(&meta.id);
         fs::create_dir_all(&self.root)?;
-        // `create_dir`, not `_all`: an existing snapshot with this id is refused (AlreadyExists),
-        // and the cleanup below only ever removes the folder this call created.
-        fs::create_dir(&dir)?;
+        if dir.exists() {
+            return Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("snapshot {} exists", meta.id)));
+        }
+        let building = self.root.join(format!(".{}.building", meta.id));
+        let _ = fs::remove_dir_all(&building);
+        fs::create_dir(&building)?;
         let result = (|| {
             // The guest flushed its cache; make sure the host has written it to the file too
             // (what the clone sees), without a full-drive flush that would stall every VM.
             crate::atomic_file::sync_file(&fs::File::open(disk)?)?;
-            clone(disk, &self.disk(&meta.id))?;
-            fs::copy(efivars, self.efivars(&meta.id))?;
-            let saved = SnapshotMeta { size_mb: allocated_mb(&dir), ..meta.clone() };
-            crate::atomic_file::write_json(&dir.join("meta.json"), &saved)?;
+            clone(disk, &building.join("disk.raw"))?;
+            fs::copy(efivars, building.join("efivars"))?;
+            crate::atomic_file::sync_file(&fs::File::open(building.join("efivars"))?)?;
+            let saved = SnapshotMeta { size_mb: allocated_mb(&building), ..meta.clone() };
+            crate::atomic_file::write_json(&building.join("meta.json"), &saved)?;
+            // A folder already there (another create with this id) refuses the rename.
+            fs::rename(&building, &dir).map_err(|e| match e.raw_os_error() {
+                Some(66) | Some(17) => io::Error::new(io::ErrorKind::AlreadyExists, e),
+                _ => e,
+            })?;
+            fs::File::open(&self.root).and_then(|d| crate::atomic_file::sync_file(&d))?;
             Ok(saved)
         })();
         if result.is_err() {
-            let _ = fs::remove_dir_all(&dir);
+            let _ = fs::remove_dir_all(&building);
         }
         result
     }

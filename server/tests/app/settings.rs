@@ -44,3 +44,27 @@ fn a_file_that_is_not_json_gives_the_defaults_and_is_kept() {
     assert_eq!(service.get(), defaults());
     assert_eq!(std::fs::read_to_string(tmp.path().join("settings.json.bad")).unwrap(), "not json");
 }
+
+/// Two saves at once: the scheduler ends with the value that was saved last, never the other.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_scheduler_follows_the_settings_saved_last() {
+    let home = tempfile::tempdir().unwrap();
+    let ctx = crate::helpers::ctx(home.path());
+    for _ in 0..50 {
+        let writers: Vec<_> = [3usize, 9]
+            .into_iter()
+            .map(|n| {
+                let ctx = ctx.clone();
+                tokio::task::spawn_blocking(move || {
+                    let mut s = ctx.settings.get();
+                    s.max_vms = n;
+                    ctx.update_settings(s).unwrap();
+                })
+            })
+            .collect();
+        for w in writers {
+            w.await.unwrap();
+        }
+        assert_eq!(ctx.scheduler.concurrency(), ctx.settings.get().max_vms);
+    }
+}

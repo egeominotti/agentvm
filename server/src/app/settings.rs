@@ -1,7 +1,7 @@
 //! Current settings: loaded at start-up, validated, persisted and applied at runtime.
 
 use std::path::PathBuf;
-use std::sync::RwLock;
+use std::sync::{Mutex, RwLock};
 
 use crate::adapters::settings_file::{self, Saved};
 use crate::domain::settings::{HostLimits, Settings, SettingsError};
@@ -11,6 +11,8 @@ pub struct SettingsService {
     path: PathBuf,
     limits: HostLimits,
     current: RwLock<Settings>,
+    /// One save at a time, with what follows it; reads only take `current`, never this.
+    writer: Mutex<()>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -35,7 +37,7 @@ impl SettingsService {
                 .map_or_else(|e| format!("not copied: {e}"), |p| p.display().to_string());
             eprintln!("settings: reset to default {} (the file as it was: {copy})", reset.join(", "));
         }
-        SettingsService { path, limits, current: RwLock::new(current) }
+        SettingsService { path, limits, current: RwLock::new(current), writer: Mutex::new(()) }
     }
 
     pub fn get(&self) -> Settings {
@@ -48,20 +50,27 @@ impl SettingsService {
 
     /// Everything but the S3 bucket, which only `set_s3` changes: the settings page sends the
     /// values it loaded, and a bucket configured since then must not be wiped by them.
-    pub fn update(&self, mut new: Settings) -> Result<Settings, UpdateError> {
-        let mut current = self.current.write().unwrap();
-        new.s3 = current.s3.clone();
+    pub fn update(&self, new: Settings) -> Result<Settings, UpdateError> {
+        self.update_then(new, |_| {})
+    }
+
+    /// `update`, then `then` with the saved settings, both before any other save: what follows a
+    /// save (the scheduler's size) always matches the file. Readers never wait for the disk.
+    pub fn update_then(&self, mut new: Settings, then: impl FnOnce(&Settings)) -> Result<Settings, UpdateError> {
+        let _writer = self.writer.lock().unwrap();
+        new.s3 = self.get().s3;
         new.validate(&self.limits)?;
         settings_file::save(&self.path, &new)?;
-        *current = new.clone();
+        *self.current.write().unwrap() = new.clone();
+        then(&new);
         Ok(new)
     }
 
     pub fn set_s3(&self, s3: Option<crate::domain::s3::S3Config>) -> Result<Settings, UpdateError> {
-        let mut current = self.current.write().unwrap();
-        let new = Settings { s3, ..current.clone() };
+        let _writer = self.writer.lock().unwrap();
+        let new = Settings { s3, ..self.get() };
         settings_file::save(&self.path, &new)?;
-        *current = new.clone();
+        *self.current.write().unwrap() = new.clone();
         Ok(new)
     }
 }

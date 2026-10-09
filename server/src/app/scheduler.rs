@@ -20,7 +20,8 @@ struct Memory {
 
 /// A running VM's place: its slot and its memory, both given back when dropped.
 pub struct Slot {
-    _permit: OwnedSemaphorePermit,
+    /// `None` for a VM found running beyond the slots after a restart: it holds memory only.
+    _permit: Option<OwnedSemaphorePermit>,
     mb: u64,
     memory: Arc<Memory>,
 }
@@ -51,7 +52,7 @@ impl Scheduler {
                 let mut reserved = self.memory.reserved_mb.lock().unwrap();
                 if *reserved == 0 || *reserved + mb <= budget_mb {
                     *reserved += mb;
-                    return Slot { _permit: permit, mb, memory: self.memory.clone() };
+                    return Slot { _permit: Some(permit), mb, memory: self.memory.clone() };
                 }
             }
             freed.await;
@@ -63,7 +64,16 @@ impl Scheduler {
     pub fn try_acquire(&self, mb: u64) -> Option<Slot> {
         let permit = self.slots.clone().try_acquire_owned().ok()?;
         *self.memory.reserved_mb.lock().unwrap() += mb;
-        Some(Slot { _permit: permit, mb, memory: self.memory.clone() })
+        Some(Slot { _permit: Some(permit), mb, memory: self.memory.clone() })
+    }
+
+    /// A VM already running when the server starts: a slot if one is left, and its memory counted
+    /// in any case, so queued VMs never start on top of it beyond this Mac's memory.
+    pub fn reattach(&self, mb: u64) -> Slot {
+        self.try_acquire(mb).unwrap_or_else(|| {
+            *self.memory.reserved_mb.lock().unwrap() += mb;
+            Slot { _permit: None, mb, memory: self.memory.clone() }
+        })
     }
 
     /// Memory reserved by the VMs that hold a slot.

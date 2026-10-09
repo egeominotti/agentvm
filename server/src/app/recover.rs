@@ -38,8 +38,9 @@ pub fn recover(ctx: &Arc<AppCtx>) -> HashSet<String> {
             }
             _ => {
                 live.insert(id.to_string());
-                // The VM is already running: it takes a slot now (if any is left), before the queue.
-                let slot = ctx.scheduler.try_acquire(memory_mb);
+                // The VM is already running: it takes a slot now (if any is left) and its memory in
+                // any case, before the queue.
+                let slot = Some(ctx.scheduler.reattach(memory_mb));
                 tracing::info!(task = %id, "found after the restart: supervising it again");
                 tokio::spawn(resume(ctx.clone(), id, slot));
             }
@@ -58,6 +59,10 @@ async fn resume(ctx: Arc<AppCtx>, id: TaskId, _slot: Option<Slot>) {
     let vm = ws.read_pid().and_then(|pid| VmProcess::attach(pid, &ws.events()));
     let result = match vm {
         Some(vm) => {
+            // Stopped by hand before the restart: stop it again (SIGTERM, then SIGKILL).
+            if record.stop_requested {
+                ctx.store.signal_stop(&id);
+            }
             let keychain = ctx.keychain.clone();
             let token = tokio::task::spawn_blocking(move || keychain.read_token())
                 .await
@@ -73,7 +78,8 @@ async fn resume(ctx: Arc<AppCtx>, id: TaskId, _slot: Option<Slot>) {
             } else {
                 VmExit::Error("the VM stopped while agentvm was not running".into())
             };
-            collect(&ctx, &id, &record, &ws, VmEnd::unprompted(exit))
+            let end = VmEnd { stop_requested: record.stop_requested, ..VmEnd::unprompted(exit) };
+            collect(&ctx, &id, &record, &ws, end)
         }
     };
     if let Err(reason) = result {

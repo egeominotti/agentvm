@@ -101,9 +101,9 @@ impl AppCtx {
         Ok(fresh)
     }
 
+    /// Saves the settings and resizes the scheduler in the same order as the saves. Blocking
+    /// (two fsyncs): call it off the async workers.
     pub fn update_settings(&self, new: Settings) -> Result<Settings, UpdateError> {
-        let saved = self.settings.update(new)?;
-        self.scheduler.resize(saved.max_vms);
-        Ok(saved)
+        self.settings.update_then(new, |saved| self.scheduler.resize(saved.max_vms))
     }
 }

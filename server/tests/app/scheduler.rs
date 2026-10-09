@@ -69,3 +69,13 @@ async fn running_vms_count_against_the_memory_of_queued_ones() {
     let _running = s.try_acquire(50 * GB).unwrap();
     assert!(tokio::time::timeout(Duration::from_millis(100), s.acquire(8 * GB, BUDGET)).await.is_err());
 }
+
+/// VMs found running after a restart all count in memory, even beyond the slots (the limit was
+/// lowered before the restart): queued VMs must not start on top of them and push the Mac into swap.
+#[tokio::test]
+async fn running_vms_found_after_a_restart_all_count_in_memory() {
+    let s = agentvm::app::scheduler::Scheduler::new(1);
+    let _a = s.reattach(4096);
+    let _b = s.reattach(4096);
+    assert_eq!(s.reserved_mb(), 8192);
+}

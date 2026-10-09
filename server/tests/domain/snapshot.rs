@@ -67,3 +67,13 @@ fn a_restored_machine_is_named_after_its_snapshot() {
     assert_eq!(title_of_label("Resumed: setup-fail, 03:21"), "setup-fail, 03:21");
     assert_eq!(title_of_label("Spike"), "Spike");
 }
+
+/// The clock set back (a time zone fix, a wrong NTP answer) must not pause automatic snapshots
+/// until it catches up with the last one.
+#[test]
+fn a_clock_set_back_does_not_pause_automatic_snapshots() {
+    let every_30 = AutoSnapshots { every_min: 30, ..Default::default() };
+    let last = 10_000.0;
+    assert!(every_30.due(Some(last), 0.0, last - 3600.0), "an hour back: due at once");
+    assert!(!every_30.due(Some(last), 0.0, last - 30.0), "a few seconds of drift is not a jump");
+}

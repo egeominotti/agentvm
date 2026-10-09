@@ -99,3 +99,13 @@ fn guest_result_parses_guest_json() {
     assert_eq!(r.status, GuestStatus::NoChanges);
     assert_eq!(r.error, None);
 }
+
+/// The guest logs when Claude starts with its own uptime: with the uptime now (from the metrics)
+/// a restarted server knows how long Claude has been running, instead of starting the limit over.
+#[test]
+fn the_start_of_claude_is_read_from_the_guest_log() {
+    use agentvm::domain::outcome::claude_start_uptime;
+    assert_eq!(claude_start_uptime("[123.45s] claude start"), Some(123.45));
+    assert_eq!(claude_start_uptime("[1.6s] job start"), None);
+    assert_eq!(claude_start_uptime("garbage claude start"), None);
+}

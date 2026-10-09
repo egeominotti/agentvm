@@ -215,10 +215,15 @@ pub async fn delete(ctx: &AppCtx, sid: &SnapshotId) -> Result<(), BackupError> {
     .await
 }
 
-/// At start-up (one server per home): partial archives and scratch folders of transfers that a
-/// crash or an error interrupted.
+/// At start-up (one server per home): partial archives, scratch folders of transfers and
+/// snapshots, and repository bundles that a crash or an error interrupted.
 pub fn remove_leftovers(ctx: &AppCtx) {
     let _ = std::fs::remove_dir_all(ctx.config.home.join("tmp"));
+    if let Ok(entries) = std::fs::read_dir(ctx.config.home.join("cache").join("bundles")) {
+        for e in entries.flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".tmp")) {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
     if let Ok(entries) = std::fs::read_dir(ctx.config.home.join("snapshots")) {
         for e in entries.flatten() {
             if e.file_name().to_string_lossy().starts_with('.') {

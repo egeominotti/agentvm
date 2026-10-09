@@ -160,10 +160,21 @@ impl Store {
     /// Signals the stop to the supervisor and updates the state (a queued task stops immediately).
     pub fn request_stop(&self, id: &TaskId) -> Result<TaskState, StoreError> {
         let next = self.apply(id, TaskEvent::StopRequested)?;
+        // Saved with the task: a restart in the middle still stops it.
+        self.update(id, |r| {
+            let changed = !r.stop_requested;
+            r.stop_requested = true;
+            ((), changed)
+        });
+        self.signal_stop(id);
+        Ok(next)
+    }
+
+    /// Tells the task's supervisor to stop its VM (also used to stop again after a restart).
+    pub fn signal_stop(&self, id: &TaskId) {
         if let Some(e) = self.tasks.lock().unwrap().get(id) {
             e.stop.send_replace(true);
         }
-        Ok(next)
     }
 
     pub fn set_activity(&self, id: &TaskId, activity: Option<String>) {

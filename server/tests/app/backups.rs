@@ -89,10 +89,16 @@ fn leftover_temporary_files_are_cleaned_up_at_start() {
     std::fs::create_dir_all(home.path().join("tmp")).unwrap();
     std::fs::write(home.path().join("tmp/upload-ab12.tar.zst"), b"partial").unwrap();
     std::fs::create_dir_all(home.path().join("snapshots/.import-77")).unwrap();
+    // A repository bundle whose packing a crash cut short.
+    std::fs::create_dir_all(home.path().join("cache/bundles")).unwrap();
+    std::fs::write(home.path().join("cache/bundles/abc-def.123-0.tmp"), b"half a bundle").unwrap();
+    std::fs::write(home.path().join("cache/bundles/abc-def.bundle"), b"a whole one").unwrap();
     let id = stored_snapshot(home.path());
     agentvm::app::backups::remove_leftovers(&ctx(home.path()));
     assert!(!home.path().join("tmp/upload-ab12.tar.zst").exists());
     assert!(!home.path().join("snapshots/.import-77").exists());
+    assert!(!home.path().join("cache/bundles/abc-def.123-0.tmp").exists());
+    assert!(home.path().join("cache/bundles/abc-def.bundle").exists(), "a finished bundle was removed");
     assert!(home.path().join("snapshots").join(id.as_str()).join("disk.raw").exists(), "a real snapshot was removed");
 }
 
@@ -120,4 +126,18 @@ async fn an_archive_with_links_or_special_files_is_refused() {
         assert!(result.is_err(), "an archive with {file} -> {target} was imported");
     }
     assert_eq!(ctx.snapshots.list().len(), 1, "only the snapshot made here");
+}
+
+/// A machine waiting in the queue to start from a snapshot needs it: deleting it is refused.
+#[test]
+fn a_snapshot_a_queued_machine_starts_from_cannot_be_deleted() {
+    let (home, repo) = (tempfile::tempdir().unwrap(), crate::helpers::git_repo());
+    let ctx = ctx(home.path());
+    let sid = stored_snapshot(home.path());
+    let mut waiting = crate::helpers::record(&repo);
+    waiting.restore_from = Some(sid.clone());
+    ctx.store.insert(waiting);
+    let err = agentvm::app::snapshots::delete(&ctx, &sid).unwrap_err();
+    assert!(err.to_string().contains("waiting"), "{err}");
+    assert!(ctx.snapshots.get(&sid).is_some());
 }

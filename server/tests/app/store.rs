@@ -204,3 +204,17 @@ fn a_record_without_a_timeline_still_loads() {
     let back: agentvm::app::store::TaskRecord = serde_json::from_value(json).unwrap();
     assert!(back.timeline.is_empty());
 }
+
+/// A stop is saved with the task: after a restart the VM is still stopped (not marked Failed with
+/// its disk kept as "Interrupted").
+#[test]
+fn a_stop_request_survives_a_restart() {
+    let (home, repo) = (tempfile::tempdir().unwrap(), crate::helpers::git_repo());
+    let id = crate::helpers::running_task(home.path(), &repo, true);
+    let jobs = home.path().join("jobs");
+    let store = agentvm::app::store::Store::persistent(jobs.clone());
+    store.insert(agentvm::app::store::Store::load(&jobs).remove(0));
+    store.request_stop(&id).unwrap();
+    let reloaded = agentvm::app::store::Store::load(&jobs).remove(0);
+    assert!(reloaded.stop_requested, "the stop was not saved");
+}

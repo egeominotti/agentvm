@@ -3,7 +3,7 @@
 use crate::adapters::jobdir::JobWorkspace;
 use crate::app::balloon::Balloon;
 use crate::app::context::AppCtx;
-use crate::app::history::{UsageRecorder, usage_file};
+use crate::app::history::SharedUsage;
 use crate::app::proxy::vm_name;
 use crate::app::record::TaskRecord;
 use crate::domain::ids::TaskId;
@@ -21,14 +21,19 @@ pub(super) struct Ticker<'a> {
     history: Downsampler,
     /// The guest's uptime in the last sample: the same again means no new sample.
     last_uptime: Option<u64>,
-    /// Claude's usage over time, for the history.
-    usage: UsageRecorder,
+    /// Claude's usage over time, for the history (shared with the agent's results).
+    usage: SharedUsage,
 }
 
 impl<'a> Ticker<'a> {
-    pub(super) fn new(ctx: &'a AppCtx, id: &'a TaskId, record: &'a TaskRecord, ws: &'a JobWorkspace) -> Self {
+    pub(super) fn new(
+        ctx: &'a AppCtx,
+        id: &'a TaskId,
+        record: &'a TaskRecord,
+        ws: &'a JobWorkspace,
+        usage: SharedUsage,
+    ) -> Self {
         let balloon = Balloon::new(record.memory_mb, ws.memory_target());
-        let usage = UsageRecorder::new(usage_file(ctx, id));
         Ticker { ctx, id, record, ws, balloon, history: Downsampler::default(), last_uptime: None, usage }
     }
 
@@ -47,7 +52,7 @@ impl<'a> Ticker<'a> {
             self.ctx.store.record_metrics(self.id, m);
         }
         if let Some(u) = self.ws.read_usage() {
-            self.usage.record(&u);
+            self.usage.lock().unwrap().record(&u);
             self.ctx.store.set_usage(self.id, u);
         }
     }

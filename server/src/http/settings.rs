@@ -22,7 +22,12 @@ pub async fn get(State(ctx): Ctx) -> Json<SettingsView> {
 }
 
 pub async fn put(State(ctx): Ctx, Json(new): Json<Settings>) -> Result<Json<SettingsView>, ApiError> {
-    ctx.update_settings(new).map_err(ApiError::bad_request)?;
+    // Two fsyncs: off the async workers.
+    let saving = ctx.clone();
+    tokio::task::spawn_blocking(move || saving.update_settings(new))
+        .await
+        .map_err(ApiError::internal)?
+        .map_err(ApiError::bad_request)?;
     Ok(Json(view(&ctx)))
 }
 

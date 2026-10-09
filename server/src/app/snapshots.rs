@@ -39,6 +39,18 @@ pub enum SnapshotError {
     DiskFull(#[from] crate::domain::disk::DiskFull),
     #[error(transparent)]
     Submit(#[from] SubmitError),
+    #[error("a machine waiting to start needs this snapshot: delete it once that machine has started")]
+    InUse,
+}
+
+/// Snapshots machines waiting to start (queued, preparing) will be restored from: never deleted.
+fn needed_to_start(ctx: &AppCtx) -> std::collections::HashSet<String> {
+    ctx.store
+        .list()
+        .into_iter()
+        .filter(|r| matches!(r.state, TaskState::Queued | TaskState::Preparing))
+        .filter_map(|r| r.restore_from.map(|s| s.as_str().to_owned()))
+        .collect()
 }
 
 /// Flushes the guest's disk cache, then clones the disk: equivalent to pulling the plug at that
@@ -51,8 +63,11 @@ pub async fn take_snapshot(ctx: &AppCtx, id: &TaskId, name: Option<String>) -> R
 pub async fn take_auto(ctx: &AppCtx, id: &TaskId, why: &str) -> Result<SnapshotMeta, SnapshotError> {
     let meta = take(ctx, id, None, Some(why)).await?;
     let policy = ctx.settings.get().auto_snapshots;
+    let needed = needed_to_start(ctx);
     for old in policy.to_prune(&ctx.snapshots.list(), id.as_str()) {
-        let _ = ctx.snapshots.delete(&old);
+        if !needed.contains(old.as_str()) {
+            let _ = ctx.snapshots.delete(&old);
+        }
     }
     Ok(meta)
 }
@@ -215,6 +230,9 @@ pub fn list(ctx: &AppCtx) -> Vec<SnapshotMeta> {
 pub fn delete(ctx: &AppCtx, snap: &SnapshotId) -> Result<(), SnapshotError> {
     if ctx.snapshots.get(snap).is_none() {
         return Err(SnapshotError::NoSnapshot);
+    }
+    if needed_to_start(ctx).contains(snap.as_str()) {
+        return Err(SnapshotError::InUse);
     }
     Ok(ctx.snapshots.delete(snap)?)
 }

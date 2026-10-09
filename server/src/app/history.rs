@@ -53,6 +53,8 @@ pub fn usage_file(ctx: &AppCtx, id: &TaskId) -> PathBuf {
     ctx.config.jobs().join(id.as_str()).join("usage.jsonl")
 }
 
+pub type SharedUsage = std::sync::Arc<std::sync::Mutex<UsageRecorder>>;
+
 /// Appends a sample to `<job>/usage.jsonl` each time the usage changes.
 pub struct UsageRecorder {
     file: PathBuf,
@@ -62,8 +64,14 @@ pub struct UsageRecorder {
 impl UsageRecorder {
     /// Picks up from the file's last sample: a restart adds no duplicate.
     pub fn new(file: PathBuf) -> Self {
-        let last = crate::jsonl::read::<UsageSample>(&file).pop();
+        let last = crate::jsonl::last::<UsageSample>(&file);
         UsageRecorder { file, last }
+    }
+
+    /// One recorder per VM, shared by whatever reports its usage (the status line, the agent's
+    /// results): two would each keep their own last sample and write duplicates.
+    pub fn shared(file: PathBuf) -> SharedUsage {
+        std::sync::Arc::new(std::sync::Mutex::new(Self::new(file)))
     }
 
     pub fn record(&mut self, usage: &AgentUsage) {

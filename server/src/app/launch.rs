@@ -98,10 +98,12 @@ fn install_disk(ctx: &AppCtx, record: &TaskRecord, ws: &JobWorkspace) -> Result<
     match &record.restore_from {
         Some(snap) => {
             ws.clone_disk(&ctx.snapshots.disk(snap)).map_err(|e| format!("snapshot disk clone: {e}"))?;
-            ws.copy_efivars(&ctx.snapshots.efivars(snap)).map_err(|e| format!("snapshot EFI variables: {e}"))
+            ws.copy_efivars(&ctx.snapshots.efivars(snap)).map_err(|e| format!("snapshot EFI variables: {e}"))?;
         }
-        None => ws.clone_disk(&ctx.config.golden()).map_err(|e| format!("disk clone: {e}")),
+        None => ws.clone_disk(&ctx.config.golden()).map_err(|e| format!("disk clone: {e}"))?,
     }
+    // Never boot through a link: the VM would write into the image it points to.
+    ws.check_own_disk().map_err(|e| e.to_string())
 }
 
 /// What the guest job reads from `task.json`.

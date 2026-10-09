@@ -6,6 +6,7 @@ pub mod host;
 pub mod jobdir;
 pub mod keychain;
 pub mod lock;
+pub mod orphans;
 pub mod pty;
 pub mod records;
 pub mod releases;

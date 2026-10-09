@@ -8,12 +8,22 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 unsafe extern "C" {
     fn fsync(fd: std::ffi::c_int) -> std::ffi::c_int;
+    fn fcntl(fd: std::ffi::c_int, cmd: std::ffi::c_int, ...) -> std::ffi::c_int;
 }
 
-/// Plain fsync: the file's data reaches the drive. (Rust's `sync_all` is a full-drive flush on
-/// macOS, F_FULLFSYNC: far slower, and it stalls the disk of every VM on the Mac meanwhile.)
+/// macOS: the file's data reaches the drive, ordered before any later write (a rename).
+const F_BARRIERFSYNC: std::ffi::c_int = 85;
+
+/// The file's data is on the drive before anything written after it: a power cut can no longer
+/// keep a rename and lose the data it renamed (plain fsync on macOS does not order them). Not
+/// F_FULLFSYNC (Rust's `sync_all`): a full-drive flush, far slower, stalling every VM's disk.
 pub fn sync_file(file: &std::fs::File) -> std::io::Result<()> {
     // SAFETY: a valid open descriptor for the duration of the call.
+    if unsafe { fcntl(file.as_raw_fd(), F_BARRIERFSYNC) } == 0 {
+        return Ok(());
+    }
+    // A file system without barriers: fsync is the best there is.
+    // SAFETY: as above.
     if unsafe { fsync(file.as_raw_fd()) } == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
 }
 

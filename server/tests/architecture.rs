@@ -50,6 +50,7 @@ fn adapters_do_not_know_each_other_or_outer_layers() {
             "jobdir",
             "keychain",
             "lock",
+            "orphans",
             "pty",
             "records",
             "releases",

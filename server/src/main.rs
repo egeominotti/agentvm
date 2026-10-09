@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use agentvm::adapters::jobdir::cleanup_orphans;
 use agentvm::adapters::keychain::Keychain;
 use agentvm::adapters::lock::InstanceLock;
+use agentvm::adapters::orphans::cleanup_orphans;
 use agentvm::app::supervisor::AppCtx;
 use agentvm::config::Config;
 

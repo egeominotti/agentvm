@@ -96,9 +96,12 @@ impl AutoSnapshots {
         Ok(())
     }
 
-    /// Times are seconds since the epoch. The first one is counted from the VM's start.
+    /// Times are seconds since the epoch. The first one is counted from the VM's start. A last
+    /// snapshot more than a minute in the future means the clock was set back: one is due now,
+    /// instead of none until the clock catches up.
     pub fn due(&self, last_auto: Option<f64>, started_at: f64, now: f64) -> bool {
-        self.every_min > 0 && now - last_auto.unwrap_or(started_at) >= f64::from(self.every_min) * 60.0
+        let since = now - last_auto.unwrap_or(started_at);
+        self.every_min > 0 && (since >= f64::from(self.every_min) * 60.0 || since < -60.0)
     }
 
     /// The automatic snapshots of `task` beyond the newest `keep`.

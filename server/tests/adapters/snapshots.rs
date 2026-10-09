@@ -93,3 +93,39 @@ fn archives_pack_and_unpack_a_folder_exactly() {
     assert_eq!(std::fs::read(out.join("disk.raw")).unwrap(), std::fs::read(src.join("disk.raw")).unwrap());
     assert_eq!(std::fs::read_to_string(out.join("meta.json")).unwrap(), "{\"a\":1}");
 }
+
+/// A snapshot is visible only once whole: while its disk is cloned it is built in a hidden folder
+/// (which a crash leaves for the start-up cleanup), never as a snapshot without its metadata.
+#[test]
+fn a_snapshot_appears_only_once_complete() {
+    use agentvm::adapters::snapshots::SnapshotStore;
+    let tmp = tempfile::tempdir().unwrap();
+    let store = SnapshotStore::new(tmp.path().join("snapshots"));
+    let (disk, efi) = (tmp.path().join("disk.raw"), tmp.path().join("efivars"));
+    std::fs::write(&disk, vec![1u8; 1 << 20]).unwrap();
+    std::fs::write(&efi, b"efi").unwrap();
+    let meta = agentvm::domain::snapshot::SnapshotMeta {
+        id: agentvm::domain::snapshot::SnapshotId::generate(std::time::SystemTime::now(), &[3, 4]),
+        name: "n".into(),
+        source_task: "t".into(),
+        repo: "/r".into(),
+        base_sha: "a".repeat(40),
+        model: "default".into(),
+        claude_version: None,
+        created_at: 1.0,
+        size_mb: 0,
+        cpus: 0,
+        memory_mb: 0,
+        auto: false,
+    };
+    store.create(&meta, &disk, &efi).unwrap();
+    let names: Vec<String> = std::fs::read_dir(tmp.path().join("snapshots"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, vec![meta.id.as_str().to_owned()], "no hidden building folder left behind");
+    assert!(store.get(&meta.id).is_some());
+    // The same id again is refused, as before.
+    assert_eq!(store.create(&meta, &disk, &efi).unwrap_err().kind(), std::io::ErrorKind::AlreadyExists);
+}

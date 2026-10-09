@@ -46,6 +46,10 @@ pub struct TaskRecord {
     /// Claude's cost and tokens (kept across restarts).
     #[serde(default)]
     pub usage: Option<AgentUsage>,
+    /// Force stop asked: kept across restarts, so a VM stopped by hand stays "Stopped" (and its
+    /// disk is not kept as "Interrupted") whatever happens to the server meanwhile.
+    #[serde(default)]
+    pub stop_requested: bool,
     /// Boot timeline: host steps (`host: …`) then the guest job's own log lines.
     #[serde(skip)]
     pub boot_log: Vec<String>,
@@ -99,6 +103,7 @@ impl TaskRecord {
             cpus: 0,
             memory_mb: 0,
             usage: None,
+            stop_requested: false,
             boot_log: Vec::new(),
             ready: false,
             ports: Vec::new(),
