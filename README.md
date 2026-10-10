@@ -377,4 +377,4 @@ and [Geist](https://vercel.com/font) fonts (SIL OFL 1.1); it loads nothing from 
 
 ## License
 
-This repository does not include a license yet.
+[MIT](LICENSE).

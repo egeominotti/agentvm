@@ -3,6 +3,7 @@ name = "agentvm"
 version = "0.1.0"
 edition = "2024"
 description = "Run Claude Code agents in parallel, each in its own disposable Linux VM on Apple Silicon"
+license = "MIT"
 repository = "https://github.com/egeominotti/agentvm"
 readme = "../README.md"
 keywords = ["claude", "ai-agents", "virtualization", "apple-silicon", "sandbox"]
