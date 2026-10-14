@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-15
+
+### Fixed
+
+- Restored native package builds and tests on the stable Swift toolchain used by GitHub Actions.
+
 ## [0.2.0] - 2026-10-15
 
 ### Added
