@@ -31,7 +31,27 @@ so reconnecting keeps the conversation and shell state.
 
 ## Quickstart
 
-Start from source:
+For Apple Silicon Macs running macOS 14 or newer:
+
+1. [Download the DMG](https://github.com/egeominotti/agentvm/releases/download/v0.2.2/agentvm-native-v0.2.2-macos-arm64.dmg).
+2. Open it and drag **agentvm Native.app** to **Applications**.
+3. Eject the disk image and open **agentvm Native** from Applications.
+
+On first launch, if the VM image is missing, open **Settings → VM image**, click
+**Rebuild image** and wait for **Ready**. This prepares Debian once; later
+launches reuse the image.
+
+Connect an account in **Settings → Agent accounts** (**Claude account** for
+Claude Code), or add an API provider in **Settings → Providers**.
+Press **New VM**, choose a repository, coding CLI and account or provider, then
+click **Launch VM**. Models are selected automatically.
+
+[Releases](https://github.com/egeominotti/agentvm/releases/latest) also includes
+the native ZIP and a CLI archive with prebuilt binaries. Release builds are
+ad-hoc signed and are not notarized with an Apple Developer certificate.
+See [native app operations](macos/OPERATIONS.md).
+
+### From source
 
 ```bash
 git clone https://github.com/egeominotti/agentvm.git
@@ -42,23 +62,10 @@ cd agentvm
 It builds what changed, prepares the VM image once, starts the engine and opens
 the dashboard at `http://127.0.0.1:7777`.
 
-Press **New VM**, choose a repository and coding CLI, then **Launch**.
-Models are selected automatically. Connect an account or configure a provider
-once in Settings, then choose **Account** or **API key** when launching.
-
-Source builds require Apple Silicon, macOS 14 or newer, Xcode Command Line Tools,
-[Rust](https://rustup.rs) and [Bun](https://bun.sh). The first image preparation
-downloads Debian and installs guest tools; later launches reuse the image.
+Source builds require Xcode Command Line Tools, [Rust](https://rustup.rs) and
+[Bun](https://bun.sh). The first image preparation downloads Debian and installs
+guest tools; later launches reuse the image.
 Only the selected additional CLI is downloaded into each disposable disk.
-
-For a ready-built app, download the native DMG from
-[Releases](https://github.com/egeominotti/agentvm/releases/latest), open it and drag
-**agentvm Native.app** to **Applications**, then eject the image and open the app.
-The native ZIP is also available: extract it and open **agentvm Native.app**.
-The CLI archive includes `quickstart` and
-prebuilt binaries, so starting it needs no Rust, Swift or Bun installation.
-Release builds are ad-hoc signed and are not notarized with an Apple Developer
-certificate. See [native app operations](macos/OPERATIONS.md).
 
 ## Coding CLIs
 
