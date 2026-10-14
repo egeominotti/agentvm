@@ -17,8 +17,12 @@ struct TelemetryPolicyTests {
 
     @Test("Long series retain endpoints and narrow extrema within a bounded mark count")
     func boundedExtrema() {
-        let points = (0..<1024).map { index in
-            JSON.object(["at": JSON(index), "cpu_pct": JSON(index == 523 ? 999 : index == 601 ? 1 : 100 + index % 20)])
+        let points: [JSON] = (0..<1024).map { index -> JSON in
+            let value: Int
+            if index == 523 { value = 999 }
+            else if index == 601 { value = 1 }
+            else { value = 100 + index % 20 }
+            return JSON.object(["at": JSON(index), "cpu_pct": JSON(value)])
         }
         let sampled = NativeTelemetryPolicy.sample(points: points, key: "cpu_pct", limit: 32)
         #expect(sampled.count <= 32)
@@ -26,7 +30,7 @@ struct TelemetryPolicyTests {
         #expect(sampled.last?.index == 1023)
         #expect(sampled.contains { $0.index == 523 && $0.value == 999 })
         #expect(sampled.contains { $0.index == 601 && $0.value == 1 })
-        let indices = sampled.map(\.index)
+        let indices: [Int] = sampled.map { $0.index }
         #expect(indices == indices.sorted())
         #expect(Set(indices).count == indices.count)
     }

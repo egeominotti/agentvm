@@ -16,6 +16,19 @@ struct AgentVMNativeApp: App {
         #endif
     }
 
+    init() {
+        if CommandLine.arguments.contains("--check-resources") {
+            do {
+                try NativeResourceBundle.verify(in: .main)
+                print("Native app resources verified.")
+                exit(0)
+            } catch {
+                fputs(error.localizedDescription + "\n", stderr)
+                exit(1)
+            }
+        }
+    }
+
     var body: some Scene {
         WindowGroup(title, id: "workspace") {
             Group {

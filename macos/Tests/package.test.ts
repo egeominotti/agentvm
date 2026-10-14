@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readdirSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const app = process.env.AGENTVM_NATIVE_OUTPUT ??
   fileURLToPath(new URL("../dist/agentvm Native.app", import.meta.url));
@@ -26,6 +27,46 @@ test("the packaged application requires an OS that can run every bundled executa
     expect(declared, relative).toBeGreaterThanOrEqual(version(minimum!));
   }
 });
+
+test("a relocated application verifies its terminal resources without starting an engine", () => {
+  relocated((copy, folder) => {
+    const home = join(folder, "unused-engine-home");
+    const result = checkResources(copy, home);
+    expect(result.exitCode, result.stderr.toString()).toBe(0);
+    expect(result.stdout.toString()).toContain("Native app resources verified.");
+    expect(existsSync(home)).toBe(false);
+  });
+});
+
+test("a relocated application cannot mask missing resources with its original build directory", () => {
+  relocated((copy, folder) => {
+    rmSync(join(copy, "Contents/Resources/AgentVMNative_AgentVMNative.bundle"), { recursive: true });
+    const home = join(folder, "unused-engine-home");
+    const result = checkResources(copy, home);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr.toString()).toContain("embedded terminal resources are missing");
+    expect(existsSync(home)).toBe(false);
+  });
+});
+
+function checkResources(copy: string, home: string) {
+  return Bun.spawnSync([join(copy, "Contents/MacOS/AgentVMNative"), "--check-resources"], {
+    // An older executable that ignores the check still cannot connect to the user's engine.
+    env: { ...process.env, AGENTVM_HOME: home, AGENTVM_PORT: "0" },
+    timeout: 5000,
+  });
+}
+
+function relocated(check: (copy: string, folder: string) => void) {
+  const folder = mkdtempSync(join(tmpdir(), "agentvm-package-relocated-"));
+  try {
+    const copy = join(folder, "Relocated.app");
+    cpSync(app, copy, { recursive: true });
+    check(copy, folder);
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+}
 
 function version(value: string): number {
   const [major = 0, minor = 0, patch = 0] = value.split(".").map(Number);

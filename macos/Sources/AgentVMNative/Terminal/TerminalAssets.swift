@@ -2,10 +2,13 @@ import Foundation
 import WebKit
 
 final class TerminalAssets: NSObject, WKURLSchemeHandler {
-    private let root = Bundle.module.resourceURL!.appendingPathComponent("Resources", isDirectory: true)
+    private let root = NativeResourceBundle.resources(in: .main)
 
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
-        guard let url = urlSchemeTask.request.url else { return }
+        guard let url = urlSchemeTask.request.url, let root else {
+            urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
+            return
+        }
         let relative = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let file = root.appendingPathComponent(relative).standardizedFileURL
         guard file.path.hasPrefix(root.path + "/"), let bytes = try? Data(contentsOf: file) else {

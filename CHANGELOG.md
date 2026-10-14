@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-15
+
+### Fixed
+
+- Loaded packaged terminal resources reliably across the Swift toolchains used for local and CI builds.
+- Simplified telemetry test data construction for the stable Swift compiler.
+
 ## [0.2.1] - 2026-10-15
 
 ### Fixed
