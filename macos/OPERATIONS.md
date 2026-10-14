@@ -153,6 +153,30 @@ subscription API keys and provider usage billing remain separate from account
 authentication. Automated verification never imports, replaces or removes shared
 host account connections.
 
+## DMG installation and packaging
+
+Download the Apple Silicon DMG from the GitHub release, open it, and drag
+**agentvm Native.app** onto **Applications**. Eject the disk image before opening
+the installed app. The ZIP contains the same app as an alternative download.
+The release's `SHA256SUMS` covers the DMG, native ZIP and CLI archive.
+
+After building and verifying the native app, create the standard installer image:
+
+```bash
+scripts/package-dmg.sh "macos/dist/agentvm Native.app" \
+  "macos/dist/agentvm-Native-Apple-Silicon.dmg"
+bun test scripts/tests/package-dmg.test.ts
+```
+
+The packager copies the signed bundle into temporary staging with an
+`Applications` shortcut, creates a compressed read-only image, verifies it and
+removes staging. It preserves the source app and its signature. The real-artifact
+test mounts its own image read-only, checks the shortcut and signatures, runs
+`--check-resources` from the mounted app without starting the engine, and detaches
+the image. Set `AGENTVM_DMG_TEST_APP` to check a different verified bundle.
+Set `AGENTVM_DMG_TEST_IMAGE` to verify an existing DMG before uploading it.
+DMG packaging does not change the app's ad-hoc signing or notarization status.
+
 ## Release verification
 
 Run the native decisions and real integration checks against a separate engine:

@@ -45,7 +45,12 @@ jobs:
           tar -cf - --exclude='__pycache__' --exclude='*.pyc' --exclude='guest/tests' guest | tar -xf - -C "dist/$name"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           cp macos/dist/agentvm-Native-Apple-Silicon.zip "dist/agentvm-native-${GITHUB_REF_NAME}-macos-arm64.zip"
-          (cd dist && shasum -a 256 ./*.tar.gz ./*.zip > SHA256SUMS)
+          scripts/package-dmg.sh "macos/dist/agentvm Native.app" "dist/agentvm-native-${GITHUB_REF_NAME}-macos-arm64.dmg"
+          (cd dist && shasum -a 256 ./*.tar.gz ./*.zip ./*.dmg > SHA256SUMS)
+      - name: Verify native DMG installation and resources
+        env:
+          AGENTVM_DMG_TEST_IMAGE: dist/agentvm-native-${{ github.ref_name }}-macos-arm64.dmg
+        run: bun test scripts/tests/package-dmg.test.ts
       - name: Prepare release notes
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -62,9 +67,10 @@ jobs:
               raise SystemExit(f"CHANGELOG.md has no published section for {tag}")
           notes = section.group(1).strip()
           notes += "\n\n### Downloads\n"
-          notes += f"- Native app: `agentvm-native-{tag}-macos-arm64.zip`.\n"
+          notes += f"- Native app installer: `agentvm-native-{tag}-macos-arm64.dmg`. Open it and drag **agentvm Native.app** to **Applications**.\n"
+          notes += f"- Native ZIP alternative: `agentvm-native-{tag}-macos-arm64.zip`. Extract it and open **agentvm Native.app**.\n"
           notes += f"- Prebuilt CLI and MCP server: `agentvm-{tag}-macos-arm64.tar.gz`. Extract it and run `./quickstart`.\n"
-          notes += "- `SHA256SUMS` verifies both archives with `shasum -a 256 -c SHA256SUMS`.\n"
+          notes += "- `SHA256SUMS` verifies all three downloads with `shasum -a 256 -c SHA256SUMS`.\n"
           notes += "\nThe VM image is prepared locally on first launch. See README.md for requirements and setup.\n"
           Path("dist/release-notes.md").write_text(notes)
           PY
@@ -74,8 +80,8 @@ jobs:
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release edit "$GITHUB_REF_NAME" --title "agentvm $GITHUB_REF_NAME" --notes-file dist/release-notes.md
-            gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.zip dist/SHA256SUMS --clobber
+            gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.zip dist/*.dmg dist/SHA256SUMS --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.zip dist/SHA256SUMS \
+            gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.zip dist/*.dmg dist/SHA256SUMS \
               --verify-tag --title "agentvm $GITHUB_REF_NAME" --notes-file dist/release-notes.md
           fi

@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.2.2] - 2026-10-15
 
+### Added
+
+- Downloadable macOS disk images with drag-to-Applications installation and release checksums.
+
 ### Fixed
 
 - Loaded packaged terminal resources reliably across the Swift toolchains used for local and CI builds.

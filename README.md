@@ -51,9 +51,11 @@ Source builds require Apple Silicon, macOS 14 or newer, Xcode Command Line Tools
 downloads Debian and installs guest tools; later launches reuse the image.
 Only the selected additional CLI is downloaded into each disposable disk.
 
-For a ready-built app, download the native ZIP from
-[Releases](https://github.com/egeominotti/agentvm/releases/latest), extract it and
-open **agentvm Native.app**. The CLI archive also includes `quickstart` and
+For a ready-built app, download the native DMG from
+[Releases](https://github.com/egeominotti/agentvm/releases/latest), open it and drag
+**agentvm Native.app** to **Applications**, then eject the image and open the app.
+The native ZIP is also available: extract it and open **agentvm Native.app**.
+The CLI archive includes `quickstart` and
 prebuilt binaries, so starting it needs no Rust, Swift or Bun installation.
 Release builds are ad-hoc signed and are not notarized with an Apple Developer
 certificate. See [native app operations](macos/OPERATIONS.md).
