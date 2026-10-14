@@ -37,6 +37,12 @@ For Apple Silicon Macs running macOS 14 or newer:
 2. Open it and drag **agentvm Native.app** to **Applications**.
 3. Eject the disk image and open **agentvm Native** from Applications.
 
+Or install the app with [Homebrew](https://github.com/egeominotti/homebrew-tap):
+
+```bash
+brew install --cask egeominotti/tap/agentvm
+```
+
 On first launch, if the VM image is missing, open **Settings → VM image**, click
 **Rebuild image** and wait for **Ready**. This prepares Debian once; later
 launches reuse the image.

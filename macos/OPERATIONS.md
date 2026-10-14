@@ -160,6 +160,17 @@ Download the Apple Silicon DMG from the GitHub release, open it, and drag
 the installed app. The ZIP contains the same app as an alternative download.
 The release's `SHA256SUMS` covers the DMG, native ZIP and CLI archive.
 
+Homebrew installs the same DMG through the project's tap:
+
+```bash
+brew install --cask egeominotti/tap/agentvm
+```
+
+The current release is ad-hoc signed and is not notarized. If macOS blocks the
+first launch, use **System Settings → Privacy & Security → Open Anyway** after
+trying to open the app. See [Apple's approval instructions](https://support.apple.com/en-us/102445).
+The tap preserves quarantine and does not change system security settings.
+
 After building and verifying the native app, create the standard installer image:
 
 ```bash
