@@ -37,9 +37,9 @@ jobs:
       - name: Lint
         run: cargo clippy --all-targets -- -D warnings
       - name: Test
-        run: |
-          cargo test -- --skip process::a_quick_command_returns_at_once
-          cargo test --test adapters process::a_quick_command_returns_at_once -- --exact --test-threads=1
+        # The absolute startup benchmark runs in scripts/test.sh on local hardware.
+        # Shared runners cannot provide its sub-15 ms process-launch budget reliably.
+        run: cargo test -- --skip process::a_quick_command_returns_at_once
       # `cargo test` writes the dashboard's API types from the Rust ones: they must be committed.
       - name: Dashboard API types match the server
         working-directory: .
