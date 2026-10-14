@@ -3,17 +3,33 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { Button } from "./Button";
 
-type Props = { children: ReactNode; confirm: string; onConfirm: () => void; disabled?: boolean; size?: "md" | "sm" };
+type Props = {
+  children: ReactNode;
+  confirm: string;
+  confirmationKey?: string;
+  onConfirm: () => void;
+  disabled?: boolean;
+  size?: "md" | "sm";
+};
 
 const ARMED_MS = 4000;
 
-export function ConfirmButton({ children, confirm, onConfirm, disabled, size = "sm" }: Props) {
-  const [armed, setArmed] = useState(false);
+export function ConfirmButton({
+  children,
+  confirm,
+  confirmationKey = confirm,
+  onConfirm,
+  disabled,
+  size = "sm",
+}: Props) {
+  const [confirmed, setConfirmed] = useState<{ text: string; key: string } | null>(null);
+  const armed = confirmed?.text === confirm && confirmed.key === confirmationKey;
+  useEffect(() => setConfirmed(null), [confirm, confirmationKey]);
   useEffect(() => {
-    if (!armed) return;
-    const timer = setTimeout(() => setArmed(false), ARMED_MS);
+    if (!confirmed) return;
+    const timer = setTimeout(() => setConfirmed(null), ARMED_MS);
     return () => clearTimeout(timer);
-  }, [armed]);
+  }, [confirmed]);
   return (
     <Button
       size={size}
@@ -21,8 +37,8 @@ export function ConfirmButton({ children, confirm, onConfirm, disabled, size = "
       className={armed ? "armed" : ""}
       disabled={disabled}
       onClick={() => {
-        if (!armed) return setArmed(true);
-        setArmed(false);
+        if (!armed) return setConfirmed({ text: confirm, key: confirmationKey });
+        setConfirmed(null);
         onConfirm();
       }}
     >

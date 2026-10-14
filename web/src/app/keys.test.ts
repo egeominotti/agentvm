@@ -15,3 +15,11 @@ it("a key typed into a field or a terminal is never a shortcut", () => {
   expect(isTyping(document.body)).toBe(false);
   expect(isTyping(null)).toBe(false);
 });
+
+it("keeps the keyboard with a restty terminal canvas", () => {
+  const term = document.createElement("div");
+  term.className = "term-host";
+  const canvas = document.createElement("canvas");
+  term.append(canvas);
+  expect(isTyping(canvas)).toBe(true);
+});

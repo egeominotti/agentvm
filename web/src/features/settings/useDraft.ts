@@ -6,6 +6,7 @@ import { api } from "../../api/client";
 import type { Settings } from "../../api/generated/Settings";
 import type { SettingsView } from "../../api/generated/SettingsView";
 import { keys } from "../../api/queries";
+import { PendingSaves } from "./saves";
 
 export type SaveState = { kind: "idle" | "saving" | "saved" } | { kind: "error"; message: string };
 export type SetSetting = <K extends keyof Settings>(key: K, value: Settings[K]) => void;
@@ -17,6 +18,7 @@ export function useDraft(initial: Settings | undefined) {
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const latest = useRef(draft);
+  const saves = useRef(new PendingSaves());
   const qc = useQueryClient();
 
   // The first answer from the server becomes the draft; later ones never overwrite your edits.
@@ -27,14 +29,19 @@ export function useDraft(initial: Settings | undefined) {
     }
   }, [initial]);
   const send = async () => {
+    clearTimeout(timer.current);
     timer.current = undefined;
+    const revision = saves.current.start();
+    if (revision === null) return;
     try {
       const saved = await api<SettingsView>("/api/settings", "PUT", latest.current);
       qc.setQueryData(keys.settings, saved);
       qc.invalidateQueries({ queryKey: keys.status });
-      setSave({ kind: "saved" });
+      if (saves.current.isCurrent(revision)) setSave({ kind: "saved" });
     } catch (e) {
-      setSave({ kind: "error", message: (e as Error).message });
+      if (saves.current.isCurrent(revision)) setSave({ kind: "error", message: (e as Error).message });
+    } finally {
+      if (saves.current.finish(revision)) sendRef.current();
     }
   };
   // Leaving the page with a change still waiting sends it now: it is never dropped.
@@ -53,6 +60,7 @@ export function useDraft(initial: Settings | undefined) {
     if (!latest.current) return;
     const next = { ...latest.current, [key]: value };
     latest.current = next;
+    saves.current.edit();
     setDraft(next);
     setSave({ kind: "saving" });
     clearTimeout(timer.current);

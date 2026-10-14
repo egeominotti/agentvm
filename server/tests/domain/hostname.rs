@@ -42,3 +42,27 @@ fn only_the_vms_own_page_is_given_the_inside_origin() {
     );
     assert_eq!(inside_origin("null", public, 5173), "null");
 }
+
+#[test]
+fn redirects_only_rewrite_the_exact_loopback_authority() {
+    use agentvm::domain::hostname::outside_location;
+    let public = "3000.shop-a1b2.localhost:7777";
+    for location in [
+        "http://localhost:3000/login?next=/home#form",
+        "http://127.0.0.1:3000/login?next=/home#form",
+        "//localhost:3000/login?next=/home#form",
+    ] {
+        let scheme = if location.starts_with("http:") { "http:" } else { "" };
+        assert_eq!(outside_location(location, public, 3000), format!("{scheme}//{public}/login?next=/home#form"));
+    }
+    for location in [
+        "http://localhost:30000/login",
+        "http://127.0.0.1:30001/login",
+        "http://localhost:3000.evil.example/login",
+        "https://auth.example/login?next=http://localhost:3000/callback",
+        "/login?next=http://127.0.0.1:3000/callback",
+        "http://localhost:3000@auth.example/login",
+    ] {
+        assert_eq!(outside_location(location, public, 3000), location, "{location}");
+    }
+}

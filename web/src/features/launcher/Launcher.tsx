@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 import { keys, useSettings, useStatus, useTasks } from "../../api/queries";
+import { isTyping } from "../../app/keys";
 import { go } from "../../app/router";
 import { Button } from "../../components/Button";
 import { shortPath } from "../../lib/format";
@@ -41,6 +42,7 @@ export function Launcher() {
   useEffect(() => {
     const show = () => setOpen(true);
     const keyboard = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || isTyping(e.target)) return;
       if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setOpen(true);

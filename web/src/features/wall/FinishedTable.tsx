@@ -88,6 +88,7 @@ export function FinishedTable({ ended }: { ended: TaskDto[] }) {
           </Button>
           <span className="tb-gap" />
           <ConfirmButton
+            confirmationKey={JSON.stringify(selected.map((t) => t.id).toSorted())}
             confirm={`Delete ${plural(selected.length, "machine")} with their logs? Branches stay`}
             disabled={remove.isPending}
             onConfirm={() => remove.mutate(selected.map((t) => t.id))}

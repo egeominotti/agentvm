@@ -51,7 +51,7 @@ pub async fn collect_garbage(ctx: &AppCtx) {
     let _lock = ctx.chunk_lock.lock().await;
     let (chunks, snapshots) = (ctx.chunks.clone(), ctx.snapshots.clone());
     let freed = blocking(move || {
-        let kept: Vec<_> = snapshots.manifests().into_iter().map(|(_, m)| m).collect();
+        let kept: Vec<_> = snapshots.manifests()?.into_iter().map(|(_, m)| m).collect();
         let garbage = unreferenced(chunks.present()?.into_keys(), &kept);
         chunks.remove(&garbage)
     })
@@ -78,10 +78,21 @@ pub async fn restore_disk(ctx: &AppCtx, id: &SnapshotId, dest: PathBuf) -> std::
     .await
 }
 
-/// What each compacted snapshot really costs (MB its deletion frees), and all of them together.
+/// The estimated exclusive chunk cost of each readable compacted snapshot, and the store's total.
 pub fn sizes(ctx: &AppCtx) -> (HashMap<SnapshotId, u64>, u64) {
     let sizes = ctx.chunks.present().unwrap_or_default();
-    let manifests = ctx.snapshots.manifests();
+    // A damaged snapshot's unknown ownership stops garbage collection; reporting still uses
+    // known valid manifests so healthy snapshots retain their size estimates.
+    let manifests: Vec<_> = ctx
+        .snapshots
+        .list()
+        .into_iter()
+        .filter_map(|snapshot| {
+            let manifest = ctx.snapshots.manifest(&snapshot.id)?;
+            manifest.validate().ok()?;
+            Some((snapshot.id, manifest))
+        })
+        .collect();
     let refs: Vec<_> = manifests.iter().map(|(id, m)| (id, m)).collect();
     let own = own_bytes(&refs, &sizes).into_iter().map(|(id, b)| (id.clone(), b >> 20)).collect();
     (own, sizes.values().sum::<u64>() >> 20)

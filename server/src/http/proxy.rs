@@ -55,9 +55,7 @@ pub async fn forward(ctx: Arc<AppCtx>, port: u16, vm: String, mut req: Request) 
     // Redirects to the VM's own localhost come back to the same proxied name.
     if let (Some(loc), Some(public)) = (res.headers().get(header::LOCATION).and_then(|v| v.to_str().ok()), public) {
         let public = public.to_str().unwrap_or_default();
-        let fixed = loc
-            .replace(&format!("//{inside}"), &format!("//{public}"))
-            .replace(&format!("//127.0.0.1:{port}"), &format!("//{public}"));
+        let fixed = crate::domain::hostname::outside_location(loc, public, port);
         if let Ok(v) = HeaderValue::from_str(&fixed) {
             res.headers_mut().insert(header::LOCATION, v);
         }

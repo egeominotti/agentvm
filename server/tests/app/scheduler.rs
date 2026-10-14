@@ -80,6 +80,30 @@ async fn running_vms_found_after_a_restart_all_count_in_memory() {
     assert_eq!(s.reserved_mb(), 8192);
 }
 
+/// Recovered VMs beyond the current limit also occupy concurrency, even after the VM that
+/// originally held the only semaphore permit finishes.
+#[tokio::test]
+async fn recovered_vms_beyond_the_limit_keep_queued_vms_waiting() {
+    let s = Scheduler::new(1);
+    let first = s.reattach(GB);
+    let extra = s.reattach(GB);
+    drop(first);
+    assert!(s.try_acquire(GB).is_none(), "a recovered VM still occupies the only slot");
+    assert!(tokio::time::timeout(Duration::from_millis(50), s.acquire(GB, BUDGET)).await.is_err());
+    drop(extra);
+    assert!(tokio::time::timeout(Duration::from_millis(100), s.acquire(GB, BUDGET)).await.is_ok());
+}
+
+/// Shrinking is visible immediately, before the runtime gets a chance to retire semaphore
+/// permits; otherwise launches submitted in the same turn still use the old limit.
+#[tokio::test]
+async fn shrinking_prevents_new_vms_immediately() {
+    let s = Scheduler::new(3);
+    let _running = s.try_acquire(GB).unwrap();
+    s.resize(1);
+    assert!(s.try_acquire(GB).is_none(), "a VM started above the newly saved limit");
+}
+
 /// Memory this Mac really has free counts too: another agentvm, tests or apps may be using it.
 /// A VM that does not fit waits, and starts once the memory is back (checked every 2 s).
 #[tokio::test]

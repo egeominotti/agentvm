@@ -24,6 +24,16 @@ it("a single point is still drawn, as a dot-sized segment", () => {
   ).toBe("M150.0,20.0h0.1");
 });
 
+it("draws isolated measurements on either side of a gap", () => {
+  expect(
+    linePath(
+      [1, null, 3, 4, null, 6],
+      (i) => i * 10,
+      (v) => 100 - v,
+    ),
+  ).toBe("M0.0,99.0h0.1M20.0,97.0L30.0,96.0M50.0,94.0h0.1");
+});
+
 it("draws a line only from two moments with a value: one alone is no line", () => {
   expect(drawable([], [[]])).toBe(false);
   expect(drawable([1], [[0]])).toBe(false);

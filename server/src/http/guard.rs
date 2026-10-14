@@ -12,6 +12,11 @@ use super::error::ApiError;
 
 pub async fn loopback_only(State(ctx): Ctx, req: Request, next: Next) -> Response {
     let port = ctx.config.port;
+    // Invalid or repeated security headers must not look like absent headers or depend on
+    // which value a downstream handler chooses.
+    if !security_headers_valid(&req) {
+        return ApiError::new(StatusCode::FORBIDDEN, "invalid request security headers").into_response();
+    }
     // `<port>.<vm>.localhost`: a service inside a VM, never the dashboard or its API.
     let host = req.headers().get(header::HOST).and_then(|v| v.to_str().ok());
     if let Some((guest_port, vm)) = host.and_then(|h| crate::domain::hostname::parse_proxy_host(h, port)) {
@@ -23,6 +28,13 @@ pub async fn loopback_only(State(ctx): Ctx, req: Request, next: Next) -> Respons
     let mut res = next.run(req).await;
     deny_framing(&mut res);
     res
+}
+
+fn security_headers_valid(req: &Request) -> bool {
+    ["host", "origin", "sec-fetch-site"].into_iter().all(|name| {
+        let mut values = req.headers().get_all(name).iter();
+        values.next().is_none_or(|value| value.to_str().is_ok() && values.next().is_none())
+    })
 }
 
 fn is_loopback_request(port: u16, req: &Request) -> bool {

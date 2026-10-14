@@ -161,3 +161,117 @@ fn a_backup_restores_only_into_a_clone_of_its_own_project() {
     assert!(err.contains("aaaaaaa"), "restored into a repository without its commit: {err}");
     assert!(ctx.store.list().is_empty(), "a machine was started");
 }
+
+#[tokio::test]
+async fn importing_a_damaged_chunk_never_poisons_the_shared_store() {
+    let (home, other, crafted) =
+        (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let ctx = ctx(home.path());
+    let id = stored_snapshot(home.path());
+    agentvm::app::snapshot_disks::compact(&ctx, &id).await.unwrap();
+    let archive = agentvm::app::backups::export(&ctx, &id).await.unwrap();
+    agentvm::adapters::archive::unpack(&archive, crafted.path()).unwrap();
+    let chunk = std::fs::read_dir(crafted.path().join("chunks")).unwrap().next().unwrap().unwrap().path();
+    std::fs::write(&chunk, zstd::bulk::compress(&vec![8; 1 << 20], 1).unwrap()).unwrap();
+    let damaged = home.path().join("damaged.tar.zst");
+    agentvm::adapters::archive::pack(crafted.path(), &damaged).unwrap();
+
+    let there = crate::helpers::ctx(other.path());
+    assert!(agentvm::app::backups::import(&there, &damaged).await.is_err(), "a chunk whose hash is wrong was imported");
+    assert!(there.snapshots.list().is_empty());
+    assert!(there.chunks.present().unwrap().is_empty(), "the damaged chunk entered the shared store");
+}
+
+#[tokio::test]
+async fn concurrent_imports_into_an_empty_home_each_get_their_own_snapshot() {
+    let (home, other) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let ctx = ctx(home.path());
+    let id = stored_snapshot(home.path());
+    let file = agentvm::app::backups::export(&ctx, &id).await.unwrap();
+    let there = crate::helpers::ctx(other.path());
+    // Hold the adoption lock until every importer has unpacked the same original id.
+    let lock = there.chunk_lock.lock().await;
+    let imports: Vec<_> = (0..4)
+        .map(|_| {
+            let (there, file) = (there.clone(), file.clone());
+            tokio::spawn(async move { agentvm::app::backups::import(&there, &file).await })
+        })
+        .collect();
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    drop(lock);
+    let results = futures::future::join_all(imports).await;
+    for result in results {
+        assert!(result.unwrap().is_ok(), "concurrent imports selected the same snapshot id");
+    }
+    assert_eq!(there.snapshots.list().len(), 4);
+}
+
+#[tokio::test]
+async fn an_export_waits_for_compaction_and_carries_the_complete_disk() {
+    let (home, other) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let ctx = ctx(home.path());
+    let id = stored_snapshot(home.path());
+    let original = std::fs::read(ctx.snapshots.disk(&id)).unwrap();
+    let lock = ctx.chunk_lock.lock().await;
+    let (export_ctx, export_id) = (ctx.clone(), id.clone());
+    let mut exporting = tokio::spawn(async move { agentvm::app::backups::export(&export_ctx, &export_id).await });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(100), &mut exporting).await.is_err(),
+        "an export read the snapshot while its disk representation could change"
+    );
+    // The compactor's real operations, while holding the same lock it holds in production.
+    let manifest = ctx.chunks.pack(&ctx.snapshots.disk(&id)).unwrap();
+    ctx.snapshots.compacted(&id, &manifest).unwrap();
+    drop(lock);
+    let archive = exporting.await.unwrap().unwrap();
+    let there = crate::helpers::ctx(other.path());
+    let imported = agentvm::app::backups::import(&there, &archive).await.unwrap();
+    assert!(!there.snapshots.has_raw_disk(&imported.id));
+    let restored = other.path().join("restored.raw");
+    agentvm::app::snapshot_disks::restore_disk(&there, &imported.id, restored.clone()).await.unwrap();
+    assert!(std::fs::read(restored).unwrap() == original, "the exported disk lost data during compaction");
+}
+
+#[tokio::test]
+#[ignore = "needs the dev S3 server: scripts/dev-s3.sh up"]
+async fn simultaneous_restores_of_an_s3_backup_each_produce_a_complete_snapshot() {
+    struct TempKeychain(std::path::PathBuf);
+    impl Drop for TempKeychain {
+        fn drop(&mut self) {
+            let _ = std::process::Command::new("security").arg("delete-keychain").arg(&self.0).output();
+        }
+    }
+    let home = tempfile::tempdir().unwrap();
+    let keychain = TempKeychain(home.path().join("none.keychain-db"));
+    assert!(
+        std::process::Command::new("security")
+            .args(["create-keychain", "-p", "x"])
+            .arg(&keychain.0)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let ctx = ctx(home.path());
+    let cfg = agentvm::domain::s3::S3Config {
+        endpoint: "http://127.0.0.1:9100".into(),
+        region: "us-east-1".into(),
+        bucket: "agentvm-backups".into(),
+        prefix: format!("restore-{}", home.path().file_name().unwrap().to_string_lossy()),
+        access_key: "agentvm".into(),
+        path_style: true,
+    };
+    ctx.keychain.write_s3_secret(&agentvm::secret::Secret::new("agentvm-local-secret".into())).unwrap();
+    ctx.settings.set_s3(Some(cfg)).unwrap();
+    let id = stored_snapshot(home.path());
+    agentvm::app::backups::backup(&ctx, &id).await.unwrap();
+    ctx.snapshots.delete(&id).unwrap();
+    let results = futures::future::join_all((0..4).map(|_| agentvm::app::backups::restore(&ctx, &id))).await;
+    agentvm::app::backups::delete(&ctx, &id).await.unwrap();
+    assert!(results.iter().all(Result::is_ok), "{results:?}");
+    assert_eq!(ctx.snapshots.list().len(), 4);
+    for result in results {
+        let snapshot = result.unwrap();
+        assert_eq!(std::fs::read(ctx.snapshots.disk(&snapshot.id)).unwrap(), vec![7; 4 << 20]);
+    }
+    assert!(std::fs::read_dir(home.path().join("tmp")).unwrap().next().is_none(), "downloads left files behind");
+}

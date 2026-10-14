@@ -47,3 +47,24 @@ fn the_conversation_is_read_from_the_copied_sessions() {
     assert!(!page.more);
     assert!(conversation(&ctx, &id, &page.cursor).unwrap().entries.is_empty());
 }
+
+/// An oversized tool output is skipped, but it still consumes the page's byte budget: the
+/// entries after it must be requested immediately even when the first page has no entries.
+#[test]
+fn skipped_large_lines_still_report_more_conversation() {
+    use agentvm::app::history::conversation;
+    let (home, repo) = (tempfile::tempdir().unwrap(), crate::helpers::git_repo());
+    let id = crate::helpers::running_task(home.path(), &repo, true);
+    let ctx = crate::helpers::ctx(home.path());
+    ctx.store.insert(agentvm::app::store::Store::load(&home.path().join("jobs")).remove(0));
+    let claude = home.path().join("jobs").join(id.as_str()).join("share/claude");
+    std::fs::create_dir_all(&claude).unwrap();
+    let later = serde_json::json!({"type": "user", "message": {"content": "Continue"}});
+    std::fs::write(claude.join("s.jsonl"), format!("{}\n{later}\n", "x".repeat(5 << 20))).unwrap();
+    let page = conversation(&ctx, &id, &Default::default()).unwrap();
+    assert!(page.entries.is_empty());
+    assert!(page.more, "the next conversation entry is still waiting after the skipped output");
+    let next = conversation(&ctx, &id, &page.cursor).unwrap();
+    assert_eq!(next.entries.len(), 1);
+    assert!(!next.more);
+}

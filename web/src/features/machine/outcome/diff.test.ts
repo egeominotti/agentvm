@@ -26,3 +26,17 @@ it("splits a unified diff into files with their counts", () => {
 it("an empty diff has no files", () => {
   expect(parseDiff("")).toEqual([]);
 });
+
+it("keeps changed text that resembles file headers inside a hunk", () => {
+  const text = [
+    "diff --git a/notes.txt b/notes.txt",
+    "--- a/notes.txt",
+    "+++ b/notes.txt",
+    "@@ -1 +1 @@",
+    "--- old heading",
+    "+++ new heading",
+  ].join("\n");
+  expect(parseDiff(text)).toEqual([
+    { path: "notes.txt", add: 1, del: 1, lines: ["@@ -1 +1 @@", "--- old heading", "+++ new heading"] },
+  ]);
+});

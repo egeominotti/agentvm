@@ -11,16 +11,22 @@ pub struct Scheduler {
     memory: Arc<Memory>,
 }
 
-/// Memory reserved by the VMs holding a slot, and a signal when some is given back.
+/// Every active VM's memory and place in the concurrency limit, including recovered VMs.
 #[derive(Default)]
 struct Memory {
-    reserved_mb: Mutex<u64>,
+    allocation: Mutex<Allocation>,
     freed: Notify,
+}
+
+#[derive(Default)]
+struct Allocation {
+    reserved_mb: u64,
+    active: usize,
 }
 
 /// A running VM's place: its slot and its memory, both given back when dropped.
 pub struct Slot {
-    /// `None` for a VM found running beyond the slots after a restart: it holds memory only.
+    /// `None` for a recovered VM beyond the limit: it still counts in memory and concurrency.
     _permit: Option<OwnedSemaphorePermit>,
     mb: u64,
     memory: Arc<Memory>,
@@ -28,7 +34,10 @@ pub struct Slot {
 
 impl Drop for Slot {
     fn drop(&mut self) {
-        *self.memory.reserved_mb.lock().unwrap() -= self.mb;
+        let mut allocation = self.memory.allocation.lock().unwrap();
+        allocation.reserved_mb -= self.mb;
+        allocation.active -= 1;
+        drop(allocation);
         self.memory.freed.notify_waiters();
     }
 }
@@ -56,11 +65,14 @@ impl Scheduler {
             tokio::pin!(freed);
             freed.as_mut().enable();
             {
-                let mut reserved = self.memory.reserved_mb.lock().unwrap();
-                let fits_here = *reserved == 0 || *reserved + mb <= budget_mb;
+                let mut allocation = self.memory.allocation.lock().unwrap();
+                let fits_slot = allocation.active < self.concurrency();
+                let fits_here = allocation.active == 0
+                    || allocation.reserved_mb.checked_add(mb).is_some_and(|total| total <= budget_mb);
                 let fits_mac = host_free_mb().is_none_or(|free| free >= mb);
-                if fits_here && fits_mac {
-                    *reserved += mb;
+                if fits_slot && fits_here && fits_mac {
+                    allocation.reserved_mb += mb;
+                    allocation.active += 1;
                     return Slot { _permit: Some(permit), mb, memory: self.memory.clone() };
                 }
             }
@@ -74,8 +86,13 @@ impl Scheduler {
     /// A slot right now for a VM that is already running (found after a restart): its memory
     /// counts at once, whatever the budget. `None` when all slots are taken.
     pub fn try_acquire(&self, mb: u64) -> Option<Slot> {
+        let mut allocation = self.memory.allocation.lock().unwrap();
+        if allocation.active >= self.concurrency() {
+            return None;
+        }
         let permit = self.slots.clone().try_acquire_owned().ok()?;
-        *self.memory.reserved_mb.lock().unwrap() += mb;
+        allocation.reserved_mb += mb;
+        allocation.active += 1;
         Some(Slot { _permit: Some(permit), mb, memory: self.memory.clone() })
     }
 
@@ -83,14 +100,16 @@ impl Scheduler {
     /// in any case, so queued VMs never start on top of it beyond this Mac's memory.
     pub fn reattach(&self, mb: u64) -> Slot {
         self.try_acquire(mb).unwrap_or_else(|| {
-            *self.memory.reserved_mb.lock().unwrap() += mb;
+            let mut allocation = self.memory.allocation.lock().unwrap();
+            allocation.reserved_mb += mb;
+            allocation.active += 1;
             Slot { _permit: None, mb, memory: self.memory.clone() }
         })
     }
 
     /// Memory reserved by the VMs that hold a slot.
     pub fn reserved_mb(&self) -> u64 {
-        *self.memory.reserved_mb.lock().unwrap()
+        self.memory.allocation.lock().unwrap().reserved_mb
     }
 
     pub fn concurrency(&self) -> usize {
@@ -100,9 +119,12 @@ impl Scheduler {
     /// Growing frees slots at once; shrinking takes slots away as running VMs finish.
     pub fn resize(&self, n: usize) {
         let n = n.max(1);
+        let allocation = self.memory.allocation.lock().unwrap();
         let current = self.concurrency.swap(n, Ordering::SeqCst);
+        drop(allocation);
         if n > current {
             self.slots.add_permits(n - current);
+            self.memory.freed.notify_waiters();
         } else if n < current {
             let slots = self.slots.clone();
             tokio::spawn(async move {

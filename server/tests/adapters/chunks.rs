@@ -104,3 +104,36 @@ fn chunks_no_snapshot_uses_are_removed() {
     assert!(store.present().unwrap().is_empty());
     assert!(store.unpack(&manifest, &tmp.path().join("gone.raw")).is_err());
 }
+
+#[test]
+fn malformed_chunk_positions_never_extend_or_overlap_the_disk() {
+    let tmp = tempfile::tempdir().unwrap();
+    let disk = tmp.path().join("disk.raw");
+    std::fs::write(&disk, vec![7; MB as usize]).unwrap();
+    let store = ChunkStore::new(tmp.path().join("chunks"));
+    let manifest = store.pack(&disk).unwrap();
+    for duplicate in [false, true] {
+        let mut invalid = manifest.clone();
+        if duplicate {
+            invalid.chunks.push(invalid.chunks[0].clone());
+        } else {
+            invalid.chunks[0].0 = 1;
+        }
+        let dest = tmp.path().join(format!("invalid-{duplicate}.raw"));
+        assert!(store.unpack(&invalid, &dest).is_err(), "invalid manifest was restored: {invalid:?}");
+        assert!(!dest.exists(), "a malformed manifest left a disk behind");
+    }
+}
+
+#[test]
+fn a_chunk_must_have_the_exact_length_declared_by_its_manifest() {
+    let tmp = tempfile::tempdir().unwrap();
+    let disk = tmp.path().join("disk.raw");
+    std::fs::write(&disk, vec![9; 4096]).unwrap();
+    let store = ChunkStore::new(tmp.path().join("chunks"));
+    let mut manifest = store.pack(&disk).unwrap();
+    manifest.size = MB;
+    let dest = tmp.path().join("short.raw");
+    assert!(store.unpack(&manifest, &dest).is_err(), "a short chunk silently filled the missing data with zeros");
+    assert!(!dest.exists());
+}

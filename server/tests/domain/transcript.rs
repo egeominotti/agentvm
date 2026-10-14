@@ -17,6 +17,13 @@ fn a_prompt_is_a_user_entry() {
 }
 
 #[test]
+fn an_assistant_message_with_string_content_keeps_its_role() {
+    let entries = parse_line(&line(json!({"type": "assistant", "timestamp": "t1",
+        "message": {"role": "assistant", "content": "The tests pass."}})));
+    assert_eq!(entries[0].kind, EntryKind::Assistant { text: "The tests pass.".into() });
+}
+
+#[test]
 fn assistant_blocks_carry_their_message_and_usage() {
     let usage = json!({"input_tokens": 12, "output_tokens": 340, "cache_read_input_tokens": 5000, "cache_creation_input_tokens": 0});
     let text = parse_line(&line(

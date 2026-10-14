@@ -12,14 +12,23 @@ export function Shortcuts() {
     let recent: string[] = [];
     let last = 0;
     const keydown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || isTyping(e.target)) {
+        recent = [];
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
         e.preventDefault();
+        recent = [];
         window.dispatchEvent(new Event(TOGGLE_PANEL_EVENT));
         return;
       }
-      if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) {
+        recent = [];
+        return;
+      }
       if (e.key === "?") {
         e.preventDefault();
+        recent = [];
         setHelp(true);
         return;
       }

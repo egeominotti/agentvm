@@ -41,3 +41,18 @@ pub fn proxy_url(port: u16, vm: &str, server_port: u16) -> String {
 pub fn inside_origin(origin: &str, public: &str, port: u16) -> String {
     if origin == format!("http://{public}") { format!("http://localhost:{port}") } else { origin.to_owned() }
 }
+
+/// Redirects to a VM's own loopback service return to its public proxy name.
+pub fn outside_location(location: &str, public: &str, port: u16) -> String {
+    let Some(prefix) = ["http://", "https://", "//"].into_iter().find(|p| location.starts_with(p)) else {
+        return location.to_owned();
+    };
+    let rest = &location[prefix.len()..];
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..end];
+    if authority.eq_ignore_ascii_case(&format!("localhost:{port}")) || authority == format!("127.0.0.1:{port}") {
+        format!("{prefix}{public}{}", &rest[end..])
+    } else {
+        location.to_owned()
+    }
+}

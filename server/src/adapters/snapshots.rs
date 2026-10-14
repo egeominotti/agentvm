@@ -121,13 +121,27 @@ impl SnapshotStore {
     }
 
     /// Every compacted snapshot's manifest: what the chunk store must keep.
-    pub fn manifests(&self) -> Vec<(SnapshotId, Manifest)> {
-        let Ok(entries) = fs::read_dir(&self.root) else { return Vec::new() };
-        entries
-            .flatten()
-            .filter_map(|e| SnapshotId::parse(&e.file_name().to_string_lossy()))
-            .filter_map(|id| self.manifest(&id).map(|m| (id, m)))
-            .collect()
+    pub fn manifests(&self) -> io::Result<Vec<(SnapshotId, Manifest)>> {
+        let entries = match fs::read_dir(&self.root) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(e),
+        };
+        let mut out = Vec::new();
+        for entry in entries {
+            let entry = entry?;
+            let Some(id) = SnapshotId::parse(&entry.file_name().to_string_lossy()) else { continue };
+            let bytes = match fs::read(self.dir(&id).join(MANIFEST)) {
+                Ok(bytes) => bytes,
+                Err(e) if e.kind() == io::ErrorKind::NotFound && self.has_raw_disk(&id) => continue,
+                Err(e) => return Err(e),
+            };
+            // An unreadable manifest still owns chunks: stopping cleanup preserves its disk.
+            let manifest: Manifest = serde_json::from_slice(&bytes)?;
+            manifest.validate().map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            out.push((id, manifest));
+        }
+        Ok(out)
     }
 
     /// Instant copy of its raw disk to `dest` (a snapshot not compacted yet).

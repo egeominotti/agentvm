@@ -58,7 +58,11 @@ pub fn parse_line(line: &str) -> Vec<HistoryEntry> {
         usage: serde_json::from_value(message["usage"].clone()).ok().filter(|u: &TurnUsage| *u != TurnUsage::default()),
     };
     if let Some(text) = message["content"].as_str() {
-        return vec![entry(EntryKind::User { text: clip(text) })];
+        let kind = match role {
+            "user" => EntryKind::User { text: clip(text) },
+            _ => EntryKind::Assistant { text: clip(text) },
+        };
+        return vec![entry(kind)];
     }
     let blocks = message["content"].as_array().map(Vec::as_slice).unwrap_or_default();
     blocks

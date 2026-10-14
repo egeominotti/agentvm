@@ -33,11 +33,16 @@ pub struct NotFound;
 pub fn conversation(ctx: &AppCtx, id: &TaskId, cursor: &Cursor) -> Result<Conversation, NotFound> {
     ctx.store.get(id).ok_or(NotFound)?;
     let dir = ctx.config.jobs().join(id.as_str()).join("share/claude");
-    let (lines, cursor) = crate::adapters::transcripts::read_new(&dir, cursor, PAGE_BYTES);
-    let read: u64 = lines.iter().map(|l| l.len() as u64 + 1).sum();
+    let (lines, next) = crate::adapters::transcripts::read_new(&dir, cursor, PAGE_BYTES);
+    // Skipped oversized lines consumed the budget too. A smaller offset means a session was
+    // rewritten and read from the beginning, rather than backwards from the old cursor.
+    let read = next.0.iter().fold(0u64, |total, (name, offset)| {
+        let before = cursor.0.get(name).copied().unwrap_or(0);
+        total.saturating_add(offset.checked_sub(before).unwrap_or(*offset))
+    });
     Ok(Conversation {
         entries: lines.iter().flat_map(|l| parse_line(l)).collect(),
-        cursor,
+        cursor: next,
         more: read >= PAGE_BYTES / 2,
     })
 }

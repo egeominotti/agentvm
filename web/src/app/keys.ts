@@ -25,7 +25,7 @@ export function goTarget(keys: string[]): string | null {
 export function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable || target.contentEditable === "true") return true;
-  if (target.closest(".xterm")) return true;
+  if (target.closest(".term-host, .xterm")) return true;
   return (
     target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
   );

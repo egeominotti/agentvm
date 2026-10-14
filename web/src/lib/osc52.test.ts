@@ -23,3 +23,16 @@ it("ignores a clipboard query and anything that is not base64", () => {
   expect(s.push("\x1b]52;c;!!not base64!!\x07")).toEqual([]);
   expect(s.push("plain output without any sequence")).toEqual([]);
 });
+
+it("keeps a clipboard sequence split at every possible boundary", () => {
+  const whole = `before\x1b]52;c;${b64("split prefix ✓")}\x1b\\after`;
+  for (let split = 1; split < whole.length; split++) {
+    const scanner = new Osc52Scanner();
+    const found = [...scanner.push(whole.slice(0, split)), ...scanner.push(whole.slice(split))];
+    expect(found, `split at ${split}`).toEqual(["split prefix ✓"]);
+  }
+});
+
+it("ignores a sequence missing the clipboard target separator", () => {
+  expect(new Osc52Scanner().push(`\x1b]52;${b64("not a write")}\x07`)).toEqual([]);
+});

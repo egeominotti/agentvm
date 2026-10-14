@@ -16,7 +16,17 @@ export class Osc52Scanner {
     const found: string[] = [];
     for (;;) {
       const start = text.indexOf(START);
-      if (start < 0) break;
+      if (start < 0) {
+        // A socket may split even the introducer: keep only its matching suffix.
+        for (let length = Math.min(START.length - 1, text.length); length > 0; length--) {
+          const tail = text.slice(-length);
+          if (START.startsWith(tail)) {
+            this.pending = tail;
+            break;
+          }
+        }
+        break;
+      }
       const bel = text.indexOf("\x07", start);
       const st = text.indexOf("\x1b\\", start);
       const end = bel < 0 ? st : st < 0 ? bel : Math.min(bel, st);
@@ -26,8 +36,8 @@ export class Osc52Scanner {
         break;
       }
       const body = text.slice(start + START.length, end);
-      const data = body.slice(body.indexOf(";") + 1);
-      const decoded = decode(data);
+      const separator = body.indexOf(";");
+      const decoded = separator < 0 ? null : decode(body.slice(separator + 1));
       if (decoded !== null) found.push(decoded);
       text = text.slice(end + (text[end] === "\x07" ? 1 : 2));
     }

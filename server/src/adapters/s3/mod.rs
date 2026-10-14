@@ -131,18 +131,29 @@ impl S3Client {
     }
 
     pub fn put_bytes(&self, key: &str, bytes: &[u8]) -> Result<(), S3Error> {
-        let tmp = std::env::temp_dir().join(format!("agentvm-s3-{}-{}", std::process::id(), key.replace('/', "_")));
-        std::fs::write(&tmp, bytes).map_err(S3Error::Spawn)?;
-        let result = self.put_file(key, &tmp).map(drop);
+        let tmp = transfer_file(&std::env::temp_dir());
+        let result = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+            .and_then(|mut file| file.write_all(bytes))
+            .map_err(S3Error::Spawn)
+            .and_then(|_| self.put_file(key, &tmp).map(drop));
         let _ = std::fs::remove_file(&tmp);
         result
     }
 
     pub fn get_file(&self, key: &str, file: &Path) -> Result<(), S3Error> {
-        let tmp = file.with_extension("part");
+        let tmp = transfer_file(file.parent().unwrap_or(Path::new(".")));
         let result = self.curl(key, &["-o".as_ref(), tmp.as_os_str(), self.cfg.object_url(key).as_ref()]);
         match result {
-            Ok(_) => std::fs::rename(&tmp, file).map_err(S3Error::Spawn),
+            Ok(_) => {
+                let result = std::fs::rename(&tmp, file).map_err(S3Error::Spawn);
+                if result.is_err() {
+                    let _ = std::fs::remove_file(&tmp);
+                }
+                result
+            }
             Err(e) => {
                 // With -o the error body went to the file: read the S3 error code from there.
                 let body = std::fs::read_to_string(&tmp).unwrap_or_default();
@@ -207,6 +218,13 @@ impl S3Client {
             }
         }
     }
+}
+
+/// Every transfer owns its scratch file, even when object keys or destination stems coincide.
+fn transfer_file(dir: &Path) -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    dir.join(format!(".agentvm-s3-{}-{}.part", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)))
 }
 
 fn between(text: &str, tag: &str) -> Option<String> {

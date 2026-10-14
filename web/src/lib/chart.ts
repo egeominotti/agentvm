@@ -15,9 +15,9 @@ export function linePath(values: (number | null)[], x: (i: number) => number, y:
     if (v == null) return;
     const p = `${x(i).toFixed(1)},${y(v).toFixed(1)}`;
     d += (i > 0 && values[i - 1] != null ? "L" : "M") + p;
+    if (values[i - 1] == null && values[i + 1] == null) d += "h0.1";
   });
-  const points = values.filter((v) => v != null).length;
-  return points === 1 ? `${d}h0.1` : d;
+  return d;
 }
 
 /** Whether a chart has a line to draw: at least one series with values at two moments. */

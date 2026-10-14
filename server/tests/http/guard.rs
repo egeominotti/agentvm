@@ -1,7 +1,7 @@
 //! Protection against DNS rebinding, cross-origin requests, framing and proxied names.
 
 use axum::body::Body;
-use axum::http::{Request, StatusCode};
+use axum::http::{HeaderValue, Request, StatusCode};
 
 use tower::ServiceExt;
 
@@ -111,4 +111,27 @@ async fn the_api_refuses_requests_from_other_sites_even_without_an_origin() {
 async fn a_link_from_another_site_opens_the_dashboard() {
     let res = status_of(fetch_from("cross-site", "navigate", "/")).await;
     assert_ne!(res, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn malformed_security_headers_are_rejected_instead_of_treated_as_missing() {
+    for name in ["origin", "sec-fetch-site"] {
+        let mut req = get("127.0.0.1:7777");
+        req.headers_mut().insert(name, HeaderValue::from_bytes(&[0xff]).unwrap());
+        assert_eq!(status_of(req).await, StatusCode::FORBIDDEN, "{name}");
+    }
+}
+
+#[tokio::test]
+async fn ambiguous_security_headers_are_rejected() {
+    for (name, first, second) in [
+        ("host", "127.0.0.1:7777", "evil.example"),
+        ("origin", "http://127.0.0.1:7777", "http://evil.example"),
+        ("sec-fetch-site", "same-origin", "cross-site"),
+    ] {
+        let mut req = get("127.0.0.1:7777");
+        req.headers_mut().insert(name, HeaderValue::from_str(first).unwrap());
+        req.headers_mut().append(name, HeaderValue::from_str(second).unwrap());
+        assert_eq!(status_of(req).await, StatusCode::FORBIDDEN, "{name}");
+    }
 }

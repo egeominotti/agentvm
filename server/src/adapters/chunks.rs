@@ -63,21 +63,13 @@ impl ChunkStore {
     /// Writes the disk of `m` to `dest` (a new file, sparse where the disk is empty). Every chunk
     /// is checked against its hash: a damaged one fails the restore and leaves nothing behind.
     pub fn unpack(&self, m: &Manifest, dest: &Path) -> io::Result<()> {
-        if m.chunk != CHUNK {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "unknown chunk size"));
-        }
+        m.validate().map_err(invalid)?;
         let file = fs::OpenOptions::new().write(true).create_new(true).open(dest)?;
         let result = (|| {
             file.set_len(m.size)?;
             parallel(m.chunks.len(), |i| {
                 let (index, id) = &m.chunks[i];
-                let data = zstd::bulk::decompress(&fs::read(self.path(id))?, CHUNK as usize)?;
-                if blake3::hash(&data).to_hex().as_str() != id.as_str() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("chunk {} is damaged", id.as_str()),
-                    ));
-                }
+                let data = self.read(id, (m.size - index * CHUNK).min(CHUNK) as usize)?;
                 // Only the parts holding data: the restored disk stays as sparse as the original.
                 for (n, part) in data.chunks(SPARSE_GRAIN).enumerate() {
                     if part.iter().any(|b| *b != 0) {
@@ -92,6 +84,23 @@ impl ChunkStore {
             let _ = fs::remove_file(dest);
         }
         result
+    }
+
+    /// Checks a manifest and all its chunks before an imported snapshot becomes visible.
+    pub fn verify(&self, m: &Manifest) -> io::Result<()> {
+        m.validate().map_err(invalid)?;
+        parallel(m.chunks.len(), |i| {
+            let (index, id) = &m.chunks[i];
+            self.read(id, (m.size - index * CHUNK).min(CHUNK) as usize).map(drop)
+        })
+    }
+
+    fn read(&self, id: &ChunkId, expected: usize) -> io::Result<Vec<u8>> {
+        let data = checked_chunk(id, &self.path(id))?;
+        if data.len() != expected {
+            return Err(invalid(format!("chunk {} has the wrong length", id.as_str())));
+        }
+        Ok(data)
     }
 
     /// Every chunk stored, with its size on disk.
@@ -127,15 +136,19 @@ impl ChunkStore {
         self.path(id)
     }
 
-    /// Takes in a chunk file from an import, if this store lacks it (its content is checked
-    /// against its name when it is restored).
+    /// Takes in a chunk file from an import after checking its content against its name. A
+    /// damaged import must never occupy the name another snapshot's pack would reuse.
     pub fn adopt(&self, id: &ChunkId, file: &Path) -> io::Result<()> {
+        checked_chunk(id, file)?;
         let dest = self.path(id);
         if dest.exists() {
             return Ok(());
         }
-        fs::create_dir_all(dest.parent().expect("chunk in a folder"))?;
-        fs::rename(file, dest)
+        let dir = dest.parent().expect("chunk in a folder");
+        fs::create_dir_all(dir)?;
+        crate::atomic_file::sync_file(&File::open(file)?)?;
+        fs::rename(file, &dest)?;
+        crate::atomic_file::sync_file(&File::open(dir)?)
     }
 
     /// Compressed and written under a temporary name, then renamed: a chunk file is whole or absent.
@@ -146,10 +159,20 @@ impl ChunkStore {
         }
         let dir = dest.parent().expect("chunk in a folder");
         fs::create_dir_all(dir)?;
-        let tmp = dir.join(format!(".{}.{:?}", id.as_str(), std::thread::current().id()));
-        fs::write(&tmp, zstd::bulk::compress(data, LEVEL)?)?;
-        fs::rename(&tmp, &dest)
+        crate::atomic_file::write(&dest, &zstd::bulk::compress(data, LEVEL)?)
     }
+}
+
+fn invalid(message: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message.into())
+}
+
+fn checked_chunk(id: &ChunkId, file: &Path) -> io::Result<Vec<u8>> {
+    let data = zstd::bulk::decompress(&fs::read(file)?, CHUNK as usize)?;
+    if blake3::hash(&data).to_hex().as_str() != id.as_str() {
+        return Err(invalid(format!("chunk {} is damaged", id.as_str())));
+    }
+    Ok(data)
 }
 
 /// Runs `job(0..n)` on every core; the first error stops the others.

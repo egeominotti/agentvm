@@ -7,11 +7,14 @@ const HEADER = /^(index |--- |\+\+\+ |new file mode|deleted file mode|similarity
 export function parseDiff(text: string): DiffFile[] {
   const files: DiffFile[] = [];
   let cur: DiffFile | null = null;
+  let inHunk = false;
   for (const line of text.split("\n")) {
     if (line.startsWith("diff --git")) {
       cur = { path: line.match(/ b\/(.+)$/)?.[1] ?? line, add: 0, del: 0, lines: [] };
       files.push(cur);
-    } else if (cur && !HEADER.test(line)) {
+      inHunk = false;
+    } else if (cur && (inHunk || !HEADER.test(line))) {
+      if (line.startsWith("@@")) inHunk = true;
       if (line.startsWith("+")) cur.add++;
       else if (line.startsWith("-")) cur.del++;
       cur.lines.push(line);

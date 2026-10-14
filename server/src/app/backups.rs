@@ -148,12 +148,10 @@ pub async fn list(ctx: &AppCtx) -> Result<Vec<RemoteBackup>, BackupError> {
 /// Downloads a backup and adds it to the local snapshots.
 pub async fn restore(ctx: &AppCtx, sid: &SnapshotId) -> Result<SnapshotMeta, BackupError> {
     let s3 = s3_client(ctx).await?;
-    let file = temp_dir(ctx)?.join(format!("{sid}.download.{ARCHIVE}"));
-    let (key, out) = (s3.config().key(&format!("{sid}.{ARCHIVE}")), file.clone());
+    let file = temp_file(ctx, &format!("{sid}.download.{ARCHIVE}"))?;
+    let (key, out) = (s3.config().key(&format!("{sid}.{ARCHIVE}")), file.path().to_path_buf());
     blocking(move || s3.get_file(&key, &out).map_err(|e| BackupError::S3(e.to_string()))).await?;
-    let result = import(ctx, &file).await;
-    let _ = std::fs::remove_file(&file);
-    result
+    import(ctx, file.path()).await
 }
 
 pub async fn delete(ctx: &AppCtx, sid: &SnapshotId) -> Result<(), BackupError> {

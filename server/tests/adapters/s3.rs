@@ -146,3 +146,67 @@ fn a_truncated_download_is_an_error_not_a_file() {
     assert!(s3.get_file("t/backup.tar.zst", &file).is_err());
     assert!(!file.exists(), "a truncated backup was put in place");
 }
+
+#[test]
+#[ignore = "needs the dev S3 server: scripts/dev-s3.sh up"]
+fn concurrent_byte_uploads_keep_objects_with_colliding_key_names_separate() {
+    let s3 = dev_s3();
+    s3.ensure_bucket().unwrap();
+    let keys = [s3.config().key("collision/a_b"), s3.config().key("collision_a/b")];
+    let data = [vec![17; 2 << 20], vec![29; 2 << 20]];
+    let start = std::sync::Barrier::new(2);
+    let results = std::thread::scope(|scope| {
+        let threads: Vec<_> = (0..2)
+            .map(|i| {
+                let (s3, start, keys, data) = (&s3, &start, &keys, &data);
+                scope.spawn(move || {
+                    start.wait();
+                    s3.put_bytes(&keys[i], &data[i])
+                })
+            })
+            .collect();
+        threads.into_iter().map(|thread| thread.join().unwrap()).collect::<Vec<_>>()
+    });
+    let downloaded: Vec<_> = keys.iter().map(|key| s3.get_bytes(key)).collect();
+    for key in &keys {
+        s3.delete(key).unwrap();
+    }
+    assert!(results.iter().all(Result::is_ok), "{results:?}");
+    for (i, bytes) in downloaded.into_iter().enumerate() {
+        assert!(bytes.unwrap() == data[i], "an object's bytes came from the other upload");
+    }
+}
+
+#[test]
+#[ignore = "needs the dev S3 server: scripts/dev-s3.sh up"]
+fn concurrent_downloads_with_the_same_stem_keep_their_own_files() {
+    let s3 = dev_s3();
+    s3.ensure_bucket().unwrap();
+    let keys = [s3.config().key("downloads/a"), s3.config().key("downloads/b")];
+    let data = [vec![43; 2 << 20], vec![59; 2 << 20]];
+    for (key, bytes) in keys.iter().zip(&data) {
+        s3.put_bytes(key, bytes).unwrap();
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let files = [dir.path().join("backup.raw"), dir.path().join("backup.zst")];
+    let start = std::sync::Barrier::new(2);
+    let results = std::thread::scope(|scope| {
+        let threads: Vec<_> = (0..2)
+            .map(|i| {
+                let (s3, start, keys, files) = (&s3, &start, &keys, &files);
+                scope.spawn(move || {
+                    start.wait();
+                    s3.get_file(&keys[i], &files[i])
+                })
+            })
+            .collect();
+        threads.into_iter().map(|thread| thread.join().unwrap()).collect::<Vec<_>>()
+    });
+    for key in &keys {
+        s3.delete(key).unwrap();
+    }
+    assert!(results.iter().all(Result::is_ok), "{results:?}");
+    for (file, bytes) in files.iter().zip(&data) {
+        assert!(&std::fs::read(file).unwrap() == bytes, "a file's bytes came from the other download");
+    }
+}

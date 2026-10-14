@@ -84,6 +84,7 @@ export function LocalSnapshots({ list, loaded, error, s3Ready }: Props) {
             </Button>
           ) : null}
           <ConfirmButton
+            confirmationKey={JSON.stringify(selected.map((s) => s.id).toSorted())}
             confirm={`Delete ${plural(selected.length, "snapshot")} for good?`}
             disabled={remove.isPending}
             onConfirm={() => remove.mutate(selected.map((s) => s.id))}

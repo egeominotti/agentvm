@@ -101,3 +101,41 @@ async fn an_exported_snapshot_restores_elsewhere() {
     assert_eq!(std::fs::read(&back).unwrap(), std::fs::read(&source).unwrap());
     let _ = std::fs::remove_file(archive);
 }
+
+#[tokio::test]
+async fn a_damaged_manifest_never_makes_its_chunks_garbage() {
+    let (home, work) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let ctx = ctx(home.path());
+    let efivars = work.path().join("efivars");
+    std::fs::write(&efivars, b"efi").unwrap();
+    let id = take(&ctx, &disk(work.path(), 1), &efivars);
+    compact(&ctx, &id).await.unwrap();
+    let before = ctx.chunks.present().unwrap();
+    assert!(!before.is_empty());
+    std::fs::write(ctx.snapshots.folder(&id).join("disk.manifest.json"), b"{partial").unwrap();
+    collect_garbage(&ctx).await;
+    assert_eq!(ctx.chunks.present().unwrap(), before, "garbage collection destroyed the damaged snapshot's disk");
+}
+
+#[tokio::test]
+async fn one_damaged_manifest_does_not_hide_the_cost_of_healthy_snapshots() {
+    use std::io::Read;
+    let (home, work) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let ctx = ctx(home.path());
+    let efivars = work.path().join("efivars");
+    std::fs::write(&efivars, b"efi").unwrap();
+    let damaged = take(&ctx, &disk(work.path(), 1), &efivars);
+    compact(&ctx, &damaged).await.unwrap();
+    // Incompressible data gives the healthy snapshot a visible cost in whole MB.
+    let source = work.path().join("random.raw");
+    let mut bytes = vec![0; 2 << 20];
+    std::fs::File::open("/dev/urandom").unwrap().read_exact(&mut bytes).unwrap();
+    std::fs::write(&source, bytes).unwrap();
+    let healthy = take(&ctx, &source, &efivars);
+    compact(&ctx, &healthy).await.unwrap();
+    let expected = agentvm::app::snapshot_disks::sizes(&ctx).0[&healthy];
+    assert!(expected > 0);
+    std::fs::write(ctx.snapshots.folder(&damaged).join("disk.manifest.json"), b"{partial").unwrap();
+    let actual = agentvm::app::snapshots::list(&ctx).into_iter().find(|s| s.id == healthy).unwrap();
+    assert_eq!(actual.size_mb, expected, "the healthy snapshot fell back to its metadata-only size");
+}

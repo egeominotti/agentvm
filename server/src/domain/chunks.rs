@@ -50,6 +50,23 @@ impl Manifest {
     pub fn ids(&self) -> impl Iterator<Item = &ChunkId> {
         self.chunks.iter().map(|(_, id)| id)
     }
+
+    /// Positions are unique and inside the disk, so restoring cannot overlap data or grow it.
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.chunk != CHUNK {
+            return Err("unknown chunk size");
+        }
+        let mut seen = HashSet::new();
+        for (index, _) in &self.chunks {
+            if *index >= self.size.div_ceil(CHUNK) {
+                return Err("chunk outside the disk");
+            }
+            if !seen.insert(*index) {
+                return Err("duplicate chunk position");
+            }
+        }
+        Ok(())
+    }
 }
 
 /// The chunks of `present` that no manifest uses (safe to delete).
