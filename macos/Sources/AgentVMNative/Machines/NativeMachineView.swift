@@ -74,7 +74,7 @@ struct NativeMachineView: View {
             NotificationCenter.default.post(name: Notification.Name("AgentVMNativeSessionSelected"), object: nil,
                 userInfo: ["id": id, "session": value])
         }
-        .confirmationDialog(destructive == "stop" ? "Force stop this VM? Its unsaved disk is kept in Snapshots." : "Delete its logs and Claude history? Its branch stays.", isPresented: $confirmDestructive) {
+        .confirmationDialog(destructive == "stop" ? "Force stop this VM? Its unsaved disk is kept in Snapshots." : "Delete its logs and agent history? Its branch stays.", isPresented: $confirmDestructive) {
             Button(destructive == "stop" ? "Force stop" : "Delete permanently", role: .destructive) {
                 Task {
                     if destructive == "stop" { _ = await store.perform("\(base)/stop") }
@@ -95,7 +95,7 @@ struct NativeMachineView: View {
           HStack(spacing: 8) {
             ForEach(["claude", "shell"] + extras, id: \.self) { name in
                 HStack(spacing: 4) {
-                    Button(NativeMachineLogic.shellLabel(name)) {
+                    Button(NativeAgentPresentation.terminalLabel(name, task: task)) {
                         mounted.insert(name)
                         session = name
                     }.buttonStyle(.bordered).tint(session == name ? .accentColor : .secondary)
@@ -131,9 +131,9 @@ struct NativeMachineView: View {
                 VStack(spacing: 12) {
                     Image(systemName: "sparkles").font(.largeTitle)
                     Text("Automatic task").font(.title2.bold())
-                    Text("Follow Claude's work in the details panel.").foregroundStyle(.secondary)
+                    Text("Follow \(NativeAgentPresentation.name(task)) in the details panel.").foregroundStyle(.secondary)
                     Text(task["prompt"].text).textSelection(.enabled).padding()
-                    Button("Show Claude's conversation") {
+                    Button(NativeAgentPresentation.showsClaudeAnalytics(task) ? "Show conversation" : "Show agent output") {
                         details = true
                         inspectorTab = "claude"
                     }

@@ -19,6 +19,8 @@ final class NativeStore: ObservableObject {
     @Published var busy: Set<String> = []
     @Published var launcherPresented = false
     @Published var route: NativeRoute = .machines
+    @Published var agentCatalog: JSON = .null
+    @Published var agentCatalogState: NativeAgentCatalogState = .loading
 
     let api: NativeAPI
     private var refreshTask: Task<Void, Never>?
@@ -28,8 +30,17 @@ final class NativeStore: ObservableObject {
     private var settingsTask: Task<Void, Never>?
     private var pendingSettings: JSON?
     private var counts: [String: Int] = [:]
+    private var accountLoginStates: [String: NativeAccountLoginState] = [:]
+    var agentCatalogTask: Task<Void, Never>?
 
     init(baseURL: URL) { api = NativeAPI(baseURL: baseURL) }
+
+    func accountLoginState(_ account: String) -> NativeAccountLoginState {
+        if let state = accountLoginStates[account] { return state }
+        let state = NativeAccountLoginState()
+        accountLoginStates[account] = state
+        return state
+    }
 
     func refresh() async {
         if let refreshTask { await refreshTask.value; return }
@@ -120,6 +131,7 @@ final class NativeStore: ObservableObject {
             let result = try await api.request(path, method: method, body: body)
             notice = success
             await refresh()
+            if path.hasPrefix("/api/settings/providers/") { await refreshAgents() }
             if path.contains("snapshots") || path.contains("backups") || path.contains("storage") {
                 await refreshSnapshots()
             }

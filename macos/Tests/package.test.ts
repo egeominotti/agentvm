@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readdirSync } from "node:fs";
 
 const app = process.env.AGENTVM_NATIVE_OUTPUT ??
   fileURLToPath(new URL("../dist/agentvm Native.app", import.meta.url));
@@ -13,7 +14,8 @@ test("the packaged application requires an OS that can run every bundled executa
   expect(metadata.exitCode).toBe(0);
   const declared = version(metadata.stdout.toString().trim());
   for (const relative of [
-    "MacOS/AgentVMNative", "Resources/runtime/bin/agentvm-server", "Resources/runtime/bin/agentvm-vm",
+    "MacOS/AgentVMNative", ...readdirSync(join(app, "Contents/Resources/runtime/bin"))
+      .map(name => `Resources/runtime/bin/${name}`),
   ]) {
     const loadCommands = Bun.spawnSync(["/usr/bin/otool", "-l", join(app, "Contents", relative)]);
     expect(loadCommands.exitCode).toBe(0);

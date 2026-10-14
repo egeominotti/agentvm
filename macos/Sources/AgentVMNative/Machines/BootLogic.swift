@@ -34,13 +34,14 @@ enum NativeBootLogic {
             steps.append(NativeBootStep(label: "Repository setup (.agentvm/setup.sh)", done: end != nil,
                 detail: failed ? "Failed; see setup.log" : end == nil ? "Running" : timing(end), failed: failed))
         }
-        if let install = event("installing Claude Code") {
-            let installed = event("Claude Code ")
+        let agentName = NativeAgentPresentation.name(task)
+        if let install = event("installing \(agentName)") {
+            let installed = event("\(agentName) ")
             steps.append(NativeBootStep(label: install.1.replacingOccurrences(of: "installing", with: "Installing"),
                 done: installed != nil, detail: timing(installed)))
         }
         let ready = event(task["interactive"].flag ? "terminal ready" : "network ready")
-        steps.append(NativeBootStep(label: task["interactive"].flag ? "Claude Code ready" : "Agent started",
+        steps.append(NativeBootStep(label: task["interactive"].flag ? "\(agentName) ready" : "Agent started",
             done: task["ready"].flag || ready != nil, detail: timing(ready)))
         return steps
     }

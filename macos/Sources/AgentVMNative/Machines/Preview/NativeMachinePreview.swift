@@ -33,7 +33,7 @@ struct NativeMachinePreview: View {
         }
         .clipped().background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
         .background(NativePreviewVisibility(changed: feed.setVisible))
-        .accessibilityElement(children: .ignore).accessibilityLabel("Live Claude terminal preview")
+        .accessibilityElement(children: .ignore).accessibilityLabel("Live \(NativeAgentPresentation.name(task)) terminal preview")
         .accessibilityValue(feed.screen.text.isEmpty ? fallback : feed.screen.text)
         .onChange(of: phase, initial: true) { _, value in feed.setActive(value == .active) }
         .onChange(of: live, initial: true) { _, value in feed.setLive(value) }
@@ -41,7 +41,7 @@ struct NativeMachinePreview: View {
     }
 
     private var fallback: String {
-        if !task["interactive"].flag { return "Automatic task\nOpen this machine to follow Claude's work." }
+        if !task["interactive"].flag { return "Automatic task\nOpen this machine to follow its output." }
         if live { return feed.message }
         return task["boot_log"].items.suffix(5).map(\.text).joined(separator: "\n")
     }

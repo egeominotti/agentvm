@@ -22,9 +22,9 @@ enum NativeQA {
                 throw RuntimeError.message("QA routes must name machines, snapshots or settings.")
             }
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try appWindow().makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            try await foreground()
             await store.refreshSnapshots()
+            await store.refreshAgents()
             if ProcessInfo.processInfo.environment["AGENTVM_NATIVE_QA_CONTROLS_ONLY"] != "1" {
                 for theme in ["light", "dark"] {
                     UserDefaults.standard.set(theme, forKey: "native.appearance")
@@ -58,7 +58,9 @@ enum NativeQA {
             try Data("Native layouts, settings and real VM terminal passed.\n".utf8)
                 .write(to: folder.appendingPathComponent("result.txt"))
         } catch {
-            try? Data(error.localizedDescription.utf8).write(to: folder.appendingPathComponent("failure.txt"))
+            let window = try? appWindow()
+            let activity = "active=\(NSApp.isActive), keyWindow=\(window?.isKeyWindow ?? false), visible=\(window?.isVisible ?? false)"
+            try? Data("\(error.localizedDescription)\n\(activity)\n".utf8).write(to: folder.appendingPathComponent("failure.txt"))
         }
     }
 
@@ -78,9 +80,17 @@ enum NativeQA {
             try command.run(); command.waitUntilExit()
             guard command.terminationStatus == 0 else { throw RuntimeError.message("QA repository could not be created.") }
         }
-        let created = try await store.api.request("/api/tasks", method: "POST", body: .object([
+        var submission: [String: JSON] = [
             "repo_path": .string(repo.path), "interactive": .bool(true), "cpus": JSON(2), "memory_mb": JSON(2048)
-        ]))
+        ]
+        if ProcessInfo.processInfo.environment["AGENTVM_NATIVE_QA_AGENT_KIND"] == "custom" {
+            guard store.agentCatalogState == .supported else {
+                throw RuntimeError.message("Custom CLI verification requires the current engine.")
+            }
+            submission["agent"] = .object(["kind": .string("custom"),
+                "custom": .object(["name": .string("Bash"), "interactive": .string("bash")])])
+        }
+        let created = try await store.api.request("/api/tasks", method: "POST", body: .object(submission))
         let id = created["id"].text
         guard !id.isEmpty else { throw RuntimeError.message("QA VM was not created.") }
         let owned = try await store.api.request("/api/tasks/\(id)")
@@ -107,7 +117,7 @@ enum NativeQA {
                     store.route = .machines
                     for layout in ["grid", "list"] {
                         UserDefaults.standard.set(layout, forKey: "native.machineLayout")
-                        if layout == "grid" { try await previewCheck() }
+                        if layout == "grid" { try await previewCheck(context: "\(theme)-\(width)-grid") }
                         try await Task.sleep(for: .milliseconds(300))
                         try await capture(folder.appendingPathComponent("\(theme)-\(width)-machines-\(layout).png"))
                     }
@@ -138,17 +148,24 @@ enum NativeQA {
         }
     }
 
-    private static func previewCheck() async throws {
+    private static func previewCheck(context: String) async throws {
+        try await foreground()
+        var latest = "No statistics received."
         for _ in 0..<100 {
-            let stats = try? await evaluate(NativePreviewHub.shared.webView, "return window.nativePreview?.stats()")
-            if let stats = stats as? [String: Any], let measured = stats["nonblank"] as? Int,
-               let instances = stats["activeWasmInstances"] as? Int, measured > 0 && instances == 1 { return }
+            do {
+                let stats = try await evaluate(NativePreviewHub.shared.webView, "return window.nativePreview?.stats()")
+                latest = String(describing: stats)
+                if let stats = stats as? [String: Any], let measured = stats["nonblank"] as? Int,
+                   let instances = stats["activeWasmInstances"] as? Int, measured > 0 && instances == 1 { return }
+            } catch { latest = error.localizedDescription }
             try await Task.sleep(for: .milliseconds(100))
         }
-        throw RuntimeError.message("The live VM preview did not render through the shared terminal core.")
+        let window = try appWindow()
+        throw RuntimeError.message("The live VM preview did not render (\(context)); active=\(NSApp.isActive), keyWindow=\(window.isKeyWindow), stats=\(latest).")
     }
 
     private static func typeCommand(_ view: WKWebView, text: String) async throws {
+        try await foreground()
         _ = try await evaluate(view, "window.nativeTerminal.paste(text); window.webkit.messageHandlers.nativeTerminal.postMessage({type: 'input', text: '\\r'});",
                                arguments: ["text": text])
     }
@@ -181,6 +198,7 @@ enum NativeQA {
     }
 
     private static func shellWebView() async throws -> WKWebView {
+        try await foreground()
         for _ in 0..<200 {
             for view in webViews(try appWindow().contentView!) {
                 guard view.identifier?.rawValue == "shell" else { continue }
@@ -214,6 +232,17 @@ enum NativeQA {
             throw RuntimeError.message("Native window unavailable.")
         }
         return window
+    }
+
+    private static func foreground() async throws {
+        let window = try appWindow()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        for _ in 0..<40 {
+            if NSApp.isActive && window.isKeyWindow { return }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        throw RuntimeError.message("The verification app did not become active; active=\(NSApp.isActive), keyWindow=\(window.isKeyWindow).")
     }
 
     private static func capture(_ destination: URL) async throws {

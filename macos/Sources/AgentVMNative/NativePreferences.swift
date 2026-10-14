@@ -34,7 +34,7 @@ final class NativeAttention {
         guard let previous = waiting, UserDefaults.standard.bool(forKey: "native.notifications") else { return }
         for task in tasks where current.contains(task.id) && !previous.contains(task.id) {
             let content = UNMutableNotificationContent()
-            content.title = "Claude is waiting"
+            content.title = "\(NativeAgentPresentation.name(task)) is waiting"
             content.body = task.title
             content.sound = .default
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: task.id, content: content, trigger: nil))

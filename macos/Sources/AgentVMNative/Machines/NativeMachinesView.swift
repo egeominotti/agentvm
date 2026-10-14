@@ -108,7 +108,7 @@ struct NativeMachinesView: View {
         .background(NativePreviewRuntimeView().frame(width: 1, height: 1).opacity(0)
             .allowsHitTesting(false).accessibilityHidden(true))
         .onChange(of: section) { _, _ in filter = "all" }
-        .confirmationDialog("Delete \(deletionIDs.count) machines with their logs and Claude history? Their branches stay.", isPresented: $confirmDelete) {
+        .confirmationDialog("Delete \(deletionIDs.count) machines with their logs and agent history? Their branches stay.", isPresented: $confirmDelete) {
             Button("Delete logs permanently", role: .destructive) {
                 let ids = deletionIDs
                 Task {

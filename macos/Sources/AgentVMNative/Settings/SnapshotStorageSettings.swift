@@ -28,15 +28,15 @@ struct NativeStoragePane: View {
         Form {
             Section("On this Mac") {
                 ForEach([( "vm_disks_mb", "Running VM disks"), ("snapshots_mb", "Snapshots"),
-                         ("golden_mb", "VM image"), ("jobs_mb", "Logs and Claude history")], id: \.0) { part in
+                         ("golden_mb", "VM image"), ("jobs_mb", "Logs and agent history")], id: \.0) { part in
                     LabeledContent(part.1, value: NativeSettingsPolicy.size(store.storage[part.0].integer))
                 }
                 LabeledContent("Machine folders", value: "\(store.storage["jobs"].integer)")
-                NativeSettingsNote(text: "Closed VM disks are deleted. Interrupted disks remain in Snapshots; logs and Claude history stay until removed.")
+                NativeSettingsNote(text: "Closed VM disks are deleted. Interrupted disks remain in Snapshots; logs and agent history stay until removed.")
                 Button("Refresh disk usage") { Task { await load() } }
             }
             Section("Delete logs of closed machines") {
-                NativeSettingsNote(text: "This permanently removes closed machines' diagnostics and Claude history.")
+                NativeSettingsNote(text: "This permanently removes closed machines' diagnostics and agent history.")
                 Button("Delete closed machine logs…", role: .destructive) { confirmCleanup = true }
                     .disabled(store.busy.contains("/api/storage/cleanup"))
                 NativeSettingsError(message: store.error)

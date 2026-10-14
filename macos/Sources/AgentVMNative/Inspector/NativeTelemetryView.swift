@@ -97,8 +97,8 @@ struct NativeMachineFacts: View {
     let task: JSON
     private var facts: [(String, String)] {
         [
-            ("State", NativeMachineLogic.status(task)), ("Model", task["model"].text),
-            ("Claude Code", task["claude_version"].isNull ? "Image version" : task["claude_version"].text),
+            ("State", NativeMachineLogic.status(task)), ("Model", NativeAgentPresentation.model(task)),
+            ("Agent", NativeAgentPresentation.name(task)), ("CLI version", NativeAgentPresentation.version(task)),
             ("Resources", "\(task["cpus"].integer) vCPUs, \(MachineFormat.memory(task["memory_mb"].number))"),
             ("Repository", task["repo"].text), ("Branch", task["branch"].text),
             ("From commit", String(task["base_sha"].text.prefix(10))), ("Age", MachineFormat.age(task)), ("Id", task["id"].text)

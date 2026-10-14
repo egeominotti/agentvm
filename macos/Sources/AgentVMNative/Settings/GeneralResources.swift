@@ -2,32 +2,20 @@ import SwiftUI
 
 struct NativeGeneralPane: View {
     @ObservedObject var store: NativeStore
-    @State private var custom = false
-    @State private var modelID = ""
-
-    private var modelSelection: Binding<String> {
-        Binding(get: {
-            let model = store.settings["model"].text
-            return custom || !NativeSettingsPolicy.models.contains { $0.0 == model } ? "custom" : model
-        }, set: { value in
-            custom = value == "custom"
-            if !custom { store.nativeSetSetting(["model"], .string(value)) }
-        })
-    }
 
     var body: some View {
         Form {
             Section("Agent") {
-                Picker("Default model", selection: modelSelection) {
-                    ForEach(NativeSettingsPolicy.models, id: \.0) { model in Text(model.1).tag(model.0) }
-                    Text("Another model ID…").tag("custom")
+                if !store.agentCatalog.isNull {
+                    NativeAgentDefaultsFields(store: store)
+                } else if store.agentCatalogState == .legacy {
+                    LabeledContent("Default coding CLI", value: "Claude Code")
+                    NativeAgentCatalogStatus(store: store)
+                } else {
+                    NativeAgentCatalogStatus(store: store)
                 }
-                if modelSelection.wrappedValue == "custom" {
-                    HStack {
-                        TextField("Model ID", text: $modelID).onSubmit(saveModel)
-                        Button("Save model", action: saveModel).disabled(modelID.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-                }
+            }
+            Section("Workspace defaults") {
                 TextField("Default repository", text: store.nativeText(["default_repo"], nullable: true))
                 Button("Choose repository folder…") {
                     if let folder = NativeFilePanels.folder() {
@@ -39,14 +27,9 @@ struct NativeGeneralPane: View {
                         value: Binding(get: { max(1, store.settings["timeout_s"].integer / 60) },
                                        set: { store.nativeSetSetting(["timeout_s"], .number(Double($0 * 60))) }),
                         in: 1...1440)
-                NativeSettingsNote(text: "Tasks without a terminal stop at this limit. Interactive terminals never time out.")
+                NativeSettingsNote(text: "Repository and timeout changes save automatically. Tasks without a terminal stop at this limit. Interactive terminals never time out.")
             }
-        }.task { modelID = store.settings["model"].text }
-    }
-
-    private func saveModel() {
-        let value = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !value.isEmpty { store.nativeSetSetting(["model"], .string(value)) }
+        }
     }
 }
 

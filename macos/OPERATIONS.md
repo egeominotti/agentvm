@@ -25,7 +25,7 @@ role-based access and a multi-user server are not provided by this local app.
 
 ## Snapshots and recovery
 
-Snapshots preserve the VM disk, installed packages and Claude's conversation.
+Snapshots preserve the VM disk, installed packages and the selected agent's history.
 Local snapshots share compressed chunks. The size shown for an individual
 snapshot estimates its exclusive chunk cost, rather than its full portable size.
 An export or S3 backup includes every chunk needed to restore, including shared
@@ -120,6 +120,38 @@ values, peaks and selected readings use the complete API response. This bounds r
 work without replacing recorded measurements with averages.
 Measure request counts, response time, CPU and memory on the actual workload
 before setting a production concurrency or retention policy.
+
+The CLI and account integration subsequently collected 196 native tests in 50
+suites without failures in 23.123 seconds, with four actual Ghostty checks. One existing delayed terminal-input
+check was intentionally skipped to preserve an active verification VM; the
+committed baseline had already passed that check against a real delayed socket.
+The new real public-provider/default/custom-command roundtrip restored its owned
+profile and left all credential availability flags unchanged. A completed real
+custom Bash task loaded its literal output through one finite request in 0.110
+seconds, without opening SSE. Active output batches updates at most five times
+per second, keeps 500 entries within approximately 1 MB, and pauses when inactive.
+Completed output drains cursor pages and supports the engine's legacy journal
+import. Interactive CLI output stays in the terminal; its runner does not create
+a normalized event stream. Claude's recorded billing view applies to Claude tasks.
+
+A larger real custom task emitted 601 literal lines. The native feed loaded its
+retained 500 records across five requests in 0.133 seconds, showing 498 ordered
+text entries and the final state, with 107 earlier records reported as omitted.
+The read-only account-route checks passed against the current debug engine and
+inspected five account statuses without beginning authentication or changing
+credentials. The release artifact has a separate runtime and UI verification gate.
+The account-aware source build also produced 68 independently reviewed captures:
+all fourteen Settings sections and three root routes at both widths and themes.
+Manual controls verified account/API transitions, new provider drafts, twenty
+resizes and a public defaults Save/restore with unchanged credential flags.
+
+Account login metadata stays in memory across pane navigation. Polling follows
+the visible active pane, stops at expiry or its finite bound, and rejects late
+responses and errors belonging to cleared or replaced sessions. Pending checks
+publish no workspace changes. Service capabilities control Import and Sign in;
+subscription API keys and provider usage billing remain separate from account
+authentication. Automated verification never imports, replaces or removes shared
+host account connections.
 
 ## Release verification
 

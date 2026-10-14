@@ -28,4 +28,18 @@ struct BootLogicTests {
         #expect(NativeBootLogic.steps(task).contains { $0.failed && $0.done })
         #expect(NativeBootLogic.steps(task).last?.done == true)
     }
+
+    @Test("Selected CLI installation and readiness use its own guest evidence")
+    func selectedAgentReadiness() {
+        let task = JSON.object([
+            "agent": .object(["kind": .string("gemini")]),
+            "status": .object(["state": .string("running")]), "interactive": .bool(true),
+            "boot_log": .array([.string("[0.6s] installing Gemini CLI 0.64.0"),
+                                .string("[1.1s] Gemini CLI 0.64.0"), .string("[1.2s] terminal ready")])
+        ])
+        let steps = NativeBootLogic.steps(task)
+        #expect(steps.contains { $0.label == "Installing Gemini CLI 0.64.0" && $0.done && $0.detail == "1.1 s" })
+        #expect(steps.last?.label == "Gemini CLI ready")
+        #expect(steps.last?.done == true)
+    }
 }

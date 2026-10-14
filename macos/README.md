@@ -13,8 +13,8 @@ helper, API, Keychain credentials and `~/AgentVMs` data as the dashboard.
 
 Requires Apple Silicon, Xcode Command Line Tools, Rust and Bun.
 The native UI targets macOS 14 and Swift 5.9+. The packaged minimum macOS version
-is derived from every included executable; the shared VM helper built on this
-Mac requires macOS 27. The verified environment is macOS 27 with Swift 6.4 and
+is derived from every included executable. The helper targets macOS 14; packaging
+checks the actual build's requirement. The verified environment is macOS 27 with Swift 6.4 and
 the selected stable macOS SDK. Native tests require Swift 6+ and use Swift Testing.
 
 ```bash
@@ -38,17 +38,42 @@ selected with `AGENTVM_NATIVE_OUTPUT`; `AGENTVM_NATIVE_SDK` selects an installed
 ## Features
 
 - Grid/list machines, search, state filters, sorting and finished-machine cleanup.
-- Folder or git-link launcher, repository checks, branches, models, Claude Code
-  versions, CPU/memory selection, interactive and automatic tasks.
-- Claude and up to nine shell sessions, clipboard, file upload, ports and Tailscale.
+- Folder or git-link launcher, repository checks, branches, CLI versions,
+  CPU/memory selection, interactive and automatic tasks.
+- Claude Code, Codex, Gemini CLI, OpenCode, Qwen Code, GitHub Copilot CLI, Kilo CLI,
+  Aider, Goose and reusable custom commands through the shared engine catalog.
+- Agent and up to nine shell sessions, clipboard, file upload, ports and Tailscale.
 - Save, close, force stop, push, snapshots, schedules, outcomes and branch diffs.
-- CPU, memory, disk, network and process telemetry, usage, conversations and logs.
+- CPU, memory, disk, network and process telemetry, normalized agent output and logs;
+  Claude tasks retain their conversation and billing views.
 - Snapshot grouping/search, restore/resume, export/import, batch deletion and S3.
-- All engine settings, Keychain accounts, S3 providers, storage and image management.
+- Engine settings, inference provider configuration and credentials, reusable custom
+  commands, Keychain accounts, S3, storage and image management.
+- A bundled native stdio MCP server and a copyable client configuration in Settings.
 - Native light/dark appearance, notifications, menu bar and launch at login.
 
 Keyboard shortcuts: Command-K opens New VM, Command-comma opens Settings,
 Command-1 shows Machines, Command-2 shows Snapshots and Command-R refreshes.
+
+Provider selection respects each CLI's supported API protocol and saved endpoint
+overrides. The engine resolves models automatically; native launch requests never
+carry a saved model ID. Incompatible providers are validated before launch.
+Missing credentials can be saved later; General edits remain local until Save.
+Provider credentials stay on the host. Closing a terminal view leaves the guest
+session running. An older engine without the catalog retains the Claude workflow.
+
+Account authentication and provider API credentials are separate choices. The
+catalog lists eligible Claude, ChatGPT, Google Code Assist, GitHub Copilot and Kilo
+connections for each CLI. Agent accounts supports host-login import and browser
+sign-in where the engine advertises those capabilities; Claude retains its
+existing setup-token pane. Pending login codes and status survive navigation in
+memory, while polling pauses when inactive and stops at expiry. Alibaba Coding
+Plan and OpenCode Go/Go Plus use subscription API keys; OpenCode Zen uses usage
+billing. Provider names, endpoints and compatibility come from the engine catalog.
+
+The MCP entry points at the server included inside this app and the current
+workspace endpoint. It contains no credentials. See [the MCP interface](../docs/mcp.md)
+and [CLI support](../docs/cli-support.md) for engine capabilities and limits.
 
 ## Verification
 
@@ -88,6 +113,8 @@ AGENTVM_NATIVE_OUTPUT='/path/to/agentvm Native Verified.app' macos/verify.sh --p
 For a focused layout check without creating a VM, add `--layouts-only`; set
 `AGENTVM_NATIVE_QA_ROUTES=snapshots` to capture only that route in light/dark at
 both widths. This mode does not perform the terminal or preview checks.
+`AGENTVM_NATIVE_QA_AGENT_KIND=custom` runs the real terminal/preview check with
+the guest's Bash executable through the custom CLI path, without paid inference.
 Screen captures use ScreenCaptureKit on macOS 14.4+.
 QA builds also expose a Verification menu: Command-Option-7 selects 780×900 and
 Command-Option-8 selects 1400×900. These commands resize and center the app's own

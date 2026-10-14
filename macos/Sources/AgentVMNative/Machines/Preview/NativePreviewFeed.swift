@@ -4,7 +4,7 @@ import Foundation
 @MainActor
 final class NativePreviewFeed: ObservableObject {
     @Published private(set) var screen = NativePreviewFrame.empty
-    @Published private(set) var message = "Opening the live Claude terminal…"
+    @Published private(set) var message = "Opening the live agent terminal…"
     private let api: NativeAPI
     private let id: String
     private let hub = NativePreviewHub.shared

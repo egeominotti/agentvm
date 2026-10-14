@@ -9,6 +9,9 @@ struct NativeMachineCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 NativeMachineStatus(task: task)
+                if !NativeAgentPresentation.showsClaudeAnalytics(task) {
+                    Text(NativeAgentPresentation.name(task)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
                 Spacer()
                 if NativeMachineLogic.ended(task) {
                     Toggle("Select", isOn: $selected).labelsHidden().toggleStyle(.checkbox)
@@ -74,7 +77,7 @@ struct NativeMachineRow: View {
             Text(task["branch"].text).font(.caption.monospaced()).lineLimit(1).frame(maxWidth: 170)
             NativeMachineNumbers(task: task).frame(width: 190)
             age.frame(width: 75)
-            openButton
+            openButton.fixedSize()
         }
     }
 
@@ -89,7 +92,9 @@ struct NativeMachineRow: View {
     private var title: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(NativeMachineLogic.title(task)).font(.headline).lineLimit(1)
-            Text(task["repo"].text).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(task["repo"].text)
+            Text(NativeAgentPresentation.showsClaudeAnalytics(task) ? task["repo"].text
+                 : "\(NativeAgentPresentation.name(task)) · \(task["repo"].text)")
+                .font(.caption).foregroundStyle(.secondary).lineLimit(1).help(task["repo"].text)
         }.frame(maxWidth: .infinity, alignment: .leading).layoutPriority(1)
     }
 
@@ -126,7 +131,9 @@ struct NativeMachineNumbers: View {
                 Label("\(Int(task["metrics"]["cpu_pct"].number.rounded()))%", systemImage: "cpu")
                 Label(MachineFormat.memory(task["metrics"]["mem_used_mb"].number), systemImage: "memorychip")
             }
-            if !task["usage"].isNull { Text(MachineFormat.money(task["usage"]["cost_usd"].number)) }
+            if NativeAgentPresentation.showsClaudeAnalytics(task), !task["usage"].isNull {
+                Text(MachineFormat.money(task["usage"]["cost_usd"].number))
+            }
         }.font(.caption).foregroundStyle(.secondary)
     }
 }

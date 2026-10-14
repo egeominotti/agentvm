@@ -77,6 +77,9 @@ struct NativeWorkspace: View {
                 do { try await Task.sleep(for: .seconds(NativePollingPolicy.overviewSeconds(active: phase == .active))) } catch { break }
             }
         }
+        .task(id: store.connected) {
+            if store.connected { await store.refreshAgents() }
+        }
         .onChange(of: phase) { _, value in
             if value == .active { Task { await store.refresh() } }
         }

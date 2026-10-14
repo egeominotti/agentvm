@@ -20,7 +20,14 @@ if [ "${AGENTVM_NATIVE_QA_BUILD:-0}" = 1 ]; then
   /usr/libexec/PlistBuddy -c 'Add :AgentVMNativeQAEnabled bool true' "$APP/Contents/Info.plist"
 fi
 cp -R "$PRODUCTS/AgentVMNative_AgentVMNative.bundle" "$APP/Contents/Resources/"
-for name in agentvm-server agentvm-vm; do
+RUNTIME_BINARIES=(agentvm-server agentvm-vm)
+if [ -f bin/agentvm-mcp ]; then
+  RUNTIME_BINARIES+=(agentvm-mcp)
+else
+  # A reused bundle must not retain an MCP server from a different engine build.
+  bun -e 'const { unlinkSync, existsSync } = require("node:fs"); const p = process.argv[1]; if (existsSync(p)) unlinkSync(p);' "$APP/Contents/Resources/runtime/bin/agentvm-mcp"
+fi
+for name in "${RUNTIME_BINARIES[@]}"; do
   # Signed Mach-O files must get a new inode; overwriting one invalidates macOS's signature cache.
   cp "bin/$name" "$APP/Contents/Resources/runtime/bin/$name.new"
   mv -f "$APP/Contents/Resources/runtime/bin/$name.new" "$APP/Contents/Resources/runtime/bin/$name"
@@ -39,10 +46,15 @@ for size in 16 32 128 256 512; do
   sips -z "$retina" "$retina" "$ROOT/macos/dist/AppIcon.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
-for file in "$APP/Contents/MacOS/AgentVMNative" "$APP/Contents/Resources/runtime/bin/agentvm-server" "$APP/Contents/Resources/runtime/bin/agentvm-vm"; do
+ARM64_BINARIES=("$APP/Contents/MacOS/AgentVMNative")
+for name in "${RUNTIME_BINARIES[@]}"; do ARM64_BINARIES+=("$APP/Contents/Resources/runtime/bin/$name"); done
+for file in "${ARM64_BINARIES[@]}"; do
   [ "$(lipo -archs "$file")" = arm64 ] || { echo "not a pure arm64 binary: $file" >&2; exit 1; }
 done
 codesign --force --sign - "$APP/Contents/Resources/runtime/bin/agentvm-server"
+if [ -f "$APP/Contents/Resources/runtime/bin/agentvm-mcp" ]; then
+  codesign --force --sign - "$APP/Contents/Resources/runtime/bin/agentvm-mcp"
+fi
 # The helper keeps its virtualization entitlement when copied into the app.
 codesign --verify --strict "$APP/Contents/Resources/runtime/bin/agentvm-vm"
 codesign --force --sign - "$APP"

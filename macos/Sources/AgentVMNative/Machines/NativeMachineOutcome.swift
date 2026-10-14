@@ -34,7 +34,7 @@ struct NativeMachineOutcome: View {
                 default: EmptyView()
                 }
                 if let kept {
-                    GroupBox("Its disk was kept with unsaved work and Claude's conversation") {
+                    GroupBox("Its disk was kept with unsaved work and agent history") {
                         Button("Resume in a new VM", systemImage: "arrow.counterclockwise") {
                             Task {
                                 if let created = await store.restoreSnapshot(kept.id), !created["id"].text.isEmpty {

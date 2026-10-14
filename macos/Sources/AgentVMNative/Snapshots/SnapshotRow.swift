@@ -12,8 +12,8 @@ struct NativeSnapshotRow: View {
     private var base: String { "/api/snapshots/\(snapshot.id)" }
     private var restoring: Bool { store.busy.contains(base + "/restore") }
     private var details: String {
-        let model = snapshot["model"].text
-        let label = NativeSettingsPolicy.models.first { $0.0 == model }?.1 ?? model
+        let model = NativeAgentPresentation.model(snapshot)
+        let label = NativeAgentPresentation.showsClaudeAnalytics(snapshot) ? model : "\(NativeAgentPresentation.name(snapshot)) · \(model)"
         guard snapshot["cpus"].integer > 0 else { return label }
         return "\(label) · \(snapshot["cpus"].integer) vCPUs · \(NativeSettingsPolicy.size(snapshot["memory_mb"].integer))"
     }
@@ -88,7 +88,7 @@ struct NativeSnapshotRow: View {
                     store.route = .machine(result["id"].text)
                 }
             }
-        }.disabled(restoring).help("Starts a new VM from this point; Claude continues its conversation")
+        }.disabled(restoring).help("Starts a new VM from this point with its saved CLI and files")
     }
 
     private var actions: some View {

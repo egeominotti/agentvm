@@ -1,6 +1,7 @@
 // The shared helper's deployment target depends on its build host.
 // Declare the actual bundled requirement so Launch Services can reject unsupported systems.
 import { join } from "node:path";
+import { readdirSync } from "node:fs";
 
 const app = process.argv[2];
 if (!app) throw new Error("usage: bun macos/package-metadata.ts <application>");
@@ -10,7 +11,8 @@ const versions = [run([
 ]).trim()];
 
 for (const relative of [
-  "MacOS/AgentVMNative", "Resources/runtime/bin/agentvm-server", "Resources/runtime/bin/agentvm-vm",
+  "MacOS/AgentVMNative", ...readdirSync(join(app, "Contents/Resources/runtime/bin"))
+    .map(name => `Resources/runtime/bin/${name}`),
 ]) {
   const commands = run(["/usr/bin/otool", "-l", join(app, "Contents", relative)]);
   const minimum = commands.match(/\bminos\s+([\d.]+)/)?.[1] ??

@@ -6,7 +6,6 @@ struct NativeLauncherView: View {
     @State private var repo = ""
     @State private var check: JSON = .null
     @State private var branch = ""
-    @State private var model = "default"
     @State private var version = ""
     @State private var cpus = 4
     @State private var memory = 4096
@@ -15,9 +14,23 @@ struct NativeLauncherView: View {
     @State private var launchError: String?
     @State private var launching = false
     @State private var initialized = false
-    @State private var releases: [String] = []
-    @State private var customModel = false
+    @State private var versionCatalog = NativeClaudeVersionCatalog()
     @State private var customVersion = false
+    @State private var selection: JSON = .object(["kind": .string("claude")])
+    @State private var custom: JSON = .null
+    @State private var rememberedProviders: [String: String] = [:]
+
+    private var supported: Bool { store.agentCatalogState == .supported }
+    private var catalog: JSON { supported ? store.agentCatalog : .null }
+    private var selectedKind: String { supported ? NativeAgentPolicy.kind(selection) : "claude" }
+    private var versionSelectionReady: Bool { initialized && (supported || store.agentCatalogState == .legacy) }
+    private var launchSelection: JSON {
+        var current = selection
+        if NativeAgentPolicy.kind(current) == "custom" { current["custom"] = custom }
+        current["version"] = version.isEmpty ? .null : .string(version)
+        return current
+    }
+    private var agentName: String { NativeAgentPolicy.displayName(supported ? launchSelection : .null, catalog: catalog) }
 
     private var recent: [String] {
         NativeLauncherLogic.recent([store.settings["default_repo"].text]
@@ -25,8 +38,14 @@ struct NativeLauncherView: View {
             + store.tasks.map { $0["repo"].text })
     }
     private var blocker: String? {
-        NativeLauncherLogic.blocker(status: store.status, connected: store.connected, repo: repo, check: check,
-                                   interactive: interactive, prompt: prompt)
+        if !store.connected { return "Connecting to agentvm…" }
+        if !store.status["golden"].flag { return "Build the VM image in Settings → VM image." }
+        if case .loading = store.agentCatalogState { return "Loading coding CLIs…" }
+        if case .failed(let error) = store.agentCatalogState { return error }
+        if let error = NativeAgentPolicy.readiness(selection: launchSelection, catalog: catalog, legacyToken: store.status["token"].flag,
+                                                  interactive: interactive) { return error }
+        return NativeLauncherLogic.blocker(status: store.status, connected: store.connected, repo: repo, check: check,
+                                          interactive: interactive, prompt: prompt, requireClaudeToken: false, agentName: agentName)
     }
 
     var body: some View {
@@ -59,29 +78,14 @@ struct NativeLauncherView: View {
                         }
                     }
                 }
-                Section("Claude and resources") {
-                    Picker("Model", selection: Binding(get: { customModel ? "__custom" : model }, set: {
-                        customModel = $0 == "__custom"
-                        if !customModel { model = $0 }
-                    })) {
-                        Text("Default (Opus)").tag("default")
-                        Text("Opus").tag("opus")
-                        Text("Sonnet").tag("sonnet")
-                        Text("Haiku").tag("haiku")
-                        Text("Custom model ID…").tag("__custom")
+                Section("Agent and resources") {
+                    NativeAgentFields(catalog: catalog, supported: supported, releases: versionCatalog.releases, selection: $selection,
+                                      version: $version, custom: $custom, customVersion: $customVersion,
+                                      rememberedProviders: $rememberedProviders, configureProviders: configureProviders,
+                                      configureAccounts: configureAccounts)
+                    if versionSelectionReady, let error = versionCatalog.visibleError(kind: selectedKind) {
+                        Text("Could not load Claude versions: \(error)").font(.caption).foregroundStyle(.red)
                     }
-                    if customModel { TextField("Model ID", text: $model) }
-                    Picker("Claude Code version", selection: Binding(get: { customVersion ? "__custom" : version }, set: {
-                        customVersion = $0 == "__custom"
-                        if !customVersion { version = $0 }
-                    })) {
-                        Text("Image version").tag("")
-                        Text("Latest").tag("latest")
-                        Text("Stable").tag("stable")
-                        ForEach(releases, id: \.self) { Text($0).tag($0) }
-                        Text("Exact version…").tag("__custom")
-                    }
-                    if customVersion { TextField("Exact version", text: $version, prompt: Text("2.1.294")) }
                     Stepper("vCPUs: \(cpus)", value: $cpus, in: 1...max(1, store.limits["cpus"].integer))
                         .accessibilityIdentifier("launcher.cpus")
                     Picker("Memory", selection: $memory) {
@@ -92,7 +96,7 @@ struct NativeLauncherView: View {
                     resourceHint
                     Toggle("Interactive terminal", isOn: $interactive).accessibilityIdentifier("launcher.interactive")
                     if !interactive {
-                        Text("Task for Claude").font(.headline)
+                        Text("Task for \(agentName)").font(.headline)
                         TextEditor(text: $prompt).frame(minHeight: 90).border(.quaternary)
                         Text("Automatic tasks run without a terminal and stop at the time limit in Settings.")
                             .font(.caption).foregroundStyle(.secondary)
@@ -104,30 +108,61 @@ struct NativeLauncherView: View {
                 if let blocker { Text(blocker).font(.callout).foregroundStyle(.secondary) }
                 Spacer()
                 Button(launching ? "Launching…" : "Launch VM") { Task { await launch() } }
-                    .buttonStyle(.borderedProminent).disabled(blocker != nil || launching || model.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .buttonStyle(.borderedProminent).disabled(blocker != nil || launching)
                     .keyboardShortcut(.return, modifiers: .command)
                     .accessibilityIdentifier("launcher.launch")
+                if case .failed = store.agentCatalogState {
+                    Button("Retry") { Task { await store.refreshAgents() } }.accessibilityIdentifier("launcher.catalog.retry")
+                }
             }
         }
         .padding(22).frame(width: 660, height: interactive ? 610 : 740)
-        .onChange(of: store.settings["model"].text, initial: true) { _, value in
-            guard !initialized, !value.isEmpty else { return }
-            initialized = true
-            model = value
-            customModel = !["default", "opus", "sonnet", "haiku"].contains(value)
-            cpus = max(1, store.settings["cpus"].integer)
-            memory = max(1024, store.settings["memory_mb"].integer)
-            repo = recent.first ?? ""
+        .onChange(of: store.settings, initial: true) { _, _ in initialize() }
+        .onChange(of: store.agentCatalogState, initial: true) { _, state in
+            if state == .legacy && initialized && NativeAgentPolicy.kind(selection) != "claude" {
+                selection = .object(["kind": .string("claude")])
+                version = ""
+                customVersion = false
+            }
+            initialize()
         }
         .onChange(of: repo) { _, _ in branch = ""; check = .null }
         .task(id: repo) { await checkRepository() }
-        .task {
-            do {
-                let result = try await store.api.request("/api/claude/versions")
-                if !Task.isCancelled { releases = result["versions"].items.map(\.text) }
-            } catch is CancellationError { }
-            catch { if !Task.isCancelled { launchError = error.localizedDescription } }
-        }
+        .task { await store.refreshAgents() }
+        .task(id: "\(versionSelectionReady)/\(selectedKind)") { await loadClaudeVersions() }
+    }
+
+    private func loadClaudeVersions() async {
+        guard versionCatalog.shouldLoad(kind: selectedKind, initialized: versionSelectionReady) else { return }
+        do {
+            let result = try await store.api.request("/api/claude/versions")
+            if !Task.isCancelled { versionCatalog.receive(result["versions"].items.map(\.text)) }
+        } catch is CancellationError { }
+        catch { if !Task.isCancelled { versionCatalog.fail(error.localizedDescription) } }
+    }
+
+    private func initialize() {
+        guard !initialized, !store.settings.isNull, store.agentCatalogState == .supported || store.agentCatalogState == .legacy else { return }
+        initialized = true
+        selection = supported && !store.settings["agent"].isNull ? store.settings["agent"] : .object(["kind": .string("claude")])
+        custom = NativeAgentPolicy.initialCustom(settings: store.settings)
+        version = supported ? selection["version"].text : ""
+        customVersion = !["", "latest", "stable"].contains(version)
+        cpus = max(1, store.settings["cpus"].integer)
+        memory = max(1024, store.settings["memory_mb"].integer)
+        repo = recent.first ?? ""
+    }
+
+    private func configureProviders() {
+        UserDefaults.standard.set("providers", forKey: "native.settingsSection")
+        store.launcherPresented = false
+        store.route = .settings
+    }
+
+    private func configureAccounts() {
+        UserDefaults.standard.set("accounts", forKey: "native.settingsSection")
+        store.launcherPresented = false
+        store.route = .settings
     }
 
     private var repositoryStatus: some View {
@@ -202,11 +237,11 @@ struct NativeLauncherView: View {
         launchError = nil
         defer { launching = false }
         let path = repo.trimmingCharacters(in: .whitespacesAndNewlines)
-        let body = JSON.object([
+        let base = JSON.object([
             "repo_path": .string(path), "prompt": .string(interactive ? "" : prompt), "branch": branch.isEmpty ? .null : .string(branch),
-            "interactive": .bool(interactive), "model": .string(model.trimmingCharacters(in: .whitespaces)),
-            "claude_version": version.isEmpty ? .null : .string(version), "cpus": .number(Double(cpus)), "memory_mb": .number(Double(memory))
+            "interactive": .bool(interactive), "cpus": .number(Double(cpus)), "memory_mb": .number(Double(memory))
         ])
+        let body = NativeAgentPolicy.launchBody(base: base, selection: launchSelection, version: version, supported: supported, catalog: catalog)
         guard let created = await store.perform("/api/tasks", body: body), !created["id"].text.isEmpty else {
             launchError = store.error
             return

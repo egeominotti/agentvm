@@ -23,7 +23,7 @@ struct NativeSettingsView: View {
                 }
             }
         }
-        .task { await store.refresh() }
+        .task { await store.refresh(); await store.refreshAgents() }
     }
 
     private var compactNavigation: some View {
@@ -63,7 +63,7 @@ struct NativeSettingsView: View {
                 Text(NativeSettingsPolicy.catalog.first { $0.id == section }?.title ?? "General").font(.title2.bold())
                 Spacer()
                 if store.busy.contains("/api/settings") { ProgressView().controlSize(.small) }
-                if ["general", "resources", "tailscale", "snapshots", "image"].contains(section) {
+                if ["resources", "tailscale", "snapshots", "image"].contains(section) {
                     Text("Changes save automatically").font(.caption).foregroundStyle(.secondary)
                 }
             }.padding()
@@ -82,12 +82,16 @@ struct NativeSettingsView: View {
         case "resources": NativeResourcesPane(store: store)
         case "preferences": NativePreferencesPane()
         case "account": NativeAccountPane(store: store)
+        case "accounts": NativeAccountsSettingsPane(store: store)
+        case "providers": NativeProvidersPane(store: store)
+        case "custom_cli": NativeCustomCLIPane(store: store)
         case "git": NativeGitPane(store: store)
         case "tailscale": NativeTailscalePane(store: store)
         case "snapshots": NativeSnapshotSettingsPane(store: store)
         case "backups": NativeBackupSettingsPane(store: store)
         case "storage": NativeStoragePane(store: store)
         case "image": NativeImagePane(store: store)
+        case "mcp": NativeMCPSettingsPane(store: store)
         default: NativeGeneralPane(store: store)
         }
     }

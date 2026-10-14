@@ -57,6 +57,36 @@ struct NativeAPI: Sendable {
         return text
     }
 
+    func events(_ path: String, receive: @Sendable (NativeSSERecord) async -> Bool) async throws {
+        var request = try makeRequest(path, method: "GET")
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 60
+        try await transfer {
+            let (bytes, response) = try await session.bytes(for: request)
+            defer { bytes.task.cancel() }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if !(200..<300).contains(status) {
+                var errorBody = Data()
+                for try await byte in bytes {
+                    errorBody.append(byte)
+                    if errorBody.count >= 64 << 10 { break }
+                }
+                try validate(response, data: errorBody)
+            }
+            try validate(response, data: Data())
+            let contentType = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? ""
+            guard contentType.lowercased().hasPrefix("text/event-stream") else {
+                throw NativeAPIError(status: nil, message: "The server did not return an event stream.")
+            }
+            // AsyncBytes.lines can allocate an unbounded line before the caller sees it.
+            var decoder = NativeSSEDecoder()
+            for try await byte in bytes {
+                try Task.checkCancellation()
+                if let record = try decoder.append(byte), !(await receive(record)) { return }
+            }
+        }
+    }
+
     func upload(_ path: String, file: URL, headers: [String: String] = [:]) async throws -> JSON {
         var request = try makeRequest(path, method: "POST")
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")

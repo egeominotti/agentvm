@@ -17,7 +17,7 @@ struct NativePreferencesPane: View {
                 NativeSettingsNote(text: "Saved for this native application. Terminals follow the chosen appearance.")
             }
             Section("Notifications") {
-                Toggle("Notify when Claude is waiting", isOn: $notifications)
+                Toggle("Notify when an agent is waiting", isOn: $notifications)
                     .onChange(of: notifications) { _, enabled in
                         guard enabled else { return }
                         Task {
@@ -46,6 +46,8 @@ struct NativeSecretField: View {
     let label: String
     let placeholder: String
     let saved: Bool
+    var savedMessage = "Saved in the macOS Keychain"
+    var saveEnabled = true
     let save: @MainActor (String) async -> Bool
     var remove: (@MainActor () async -> Bool)?
     @State private var value = ""
@@ -54,7 +56,7 @@ struct NativeSecretField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if saved { Label("Saved in the macOS Keychain", systemImage: "checkmark.shield").foregroundStyle(.green) }
+            if saved { Label(savedMessage, systemImage: "checkmark.shield").foregroundStyle(.green) }
             HStack {
                 SecureField(saved ? "Paste a replacement" : placeholder, text: $value)
                     .accessibilityLabel(label)
@@ -63,7 +65,7 @@ struct NativeSecretField: View {
                     value = ""
                     saving = true
                     Task { _ = await save(secret); saving = false }
-                }.disabled(saving || value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }.disabled(!saveEnabled || saving || value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 if saved, remove != nil {
                     Button("Remove", role: .destructive) { confirmRemove = true }.disabled(saving)
                 }

@@ -17,13 +17,19 @@ enum NativeSettingsPolicy {
     static let intervals = [0, 1, 5, 10, 15, 30, 60, 120, 240]
     static let catalog: [NativeSettingSection] = [
         .init(id: "general", title: "General", group: "Workspace", symbol: "gearshape",
-              keywords: "model default repository time limit timeout agent"),
+              keywords: "coding cli agent provider model version default repository time limit timeout"),
         .init(id: "resources", title: "Resources", group: "Workspace", symbol: "cpu",
               keywords: "vms cpu cores memory ram concurrency"),
         .init(id: "preferences", title: "Preferences", group: "Workspace", symbol: "sun.max",
               keywords: "theme light dark appearance notifications"),
+        .init(id: "custom_cli", title: "Custom CLI", group: "Workspace", symbol: "terminal",
+              keywords: "custom cli install commands interactive headless resume placeholders"),
         .init(id: "account", title: "Claude account", group: "Accounts & access", symbol: "person.crop.circle",
               keywords: "token subscription keychain claude"),
+        .init(id: "accounts", title: "Agent accounts", group: "Accounts & access", symbol: "person.crop.circle.badge.checkmark",
+              keywords: "chatgpt google copilot kilo goose subscription login import device code host authentication"),
+        .init(id: "providers", title: "Providers", group: "Accounts & access", symbol: "key.horizontal",
+              keywords: "inference credentials api endpoint keychain openai anthropic google gemini openrouter local"),
         .init(id: "git", title: "Git access", group: "Accounts & access", symbol: "arrow.triangle.branch",
               keywords: "github gitlab token private repositories"),
         .init(id: "tailscale", title: "Tailscale", group: "Accounts & access", symbol: "network",
@@ -35,7 +41,9 @@ enum NativeSettingsPolicy {
         .init(id: "storage", title: "Storage", group: "Data", symbol: "internaldrive",
               keywords: "disk space logs cleanup delete"),
         .init(id: "image", title: "VM image", group: "System", symbol: "opticaldisc",
-              keywords: "golden debian rebuild claude code version")
+              keywords: "golden debian rebuild claude code version"),
+        .init(id: "mcp", title: "MCP", group: "System", symbol: "link",
+              keywords: "mcp setup model context protocol tools client configuration")
     ]
 
     static func sections(matching query: String) -> [NativeSettingSection] {

@@ -30,14 +30,15 @@ enum NativeLauncherLogic {
         return sha.isEmpty ? reference : "\(reference) · \(sha)"
     }
 
-    static func blocker(status: JSON, connected: Bool, repo: String, check: JSON, interactive: Bool, prompt: String) -> String? {
+    static func blocker(status: JSON, connected: Bool, repo: String, check: JSON, interactive: Bool, prompt: String,
+                        requireClaudeToken: Bool = true, agentName: String = "Claude") -> String? {
         if !connected { return "Connecting to agentvm…" }
         if !status["golden"].flag { return "Build the VM image in Settings → VM image." }
-        if !status["token"].flag { return "Connect your Claude account in Settings → Claude account." }
+        if requireClaudeToken && !status["token"].flag { return "Connect your Claude account in Settings → Claude account." }
         if repo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Choose a repository." }
         if check.isNull { return "Checking the repository…" }
         if !check["ok"].flag { return check["error"].text.isEmpty ? "Choose a git repository with at least one commit." : check["error"].text }
-        if !interactive && prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Write a task for Claude." }
+        if !interactive && prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Write a task for \(agentName)." }
         return nil
     }
 

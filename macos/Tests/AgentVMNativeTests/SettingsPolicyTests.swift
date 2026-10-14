@@ -26,7 +26,21 @@ struct SettingsPolicyTests {
     @Test
     func testSearchRequiresAllWordsAcrossTitleAndKeywords() {
         #expect(NativeSettingsPolicy.sections(matching: "private TOKEN").map(\.id) == ["git"])
-        #expect(NativeSettingsPolicy.sections(matching: "   ").count == 10)
+        #expect(NativeSettingsPolicy.sections(matching: "   ").count == 14)
         #expect(NativeSettingsPolicy.sections(matching: "memory bucket").isEmpty)
+    }
+
+    @Test
+    func testInferenceProvidersAndCustomCommandsAreDiscoverableWithoutHidingClaudeAccount() {
+        #expect(NativeSettingsPolicy.sections(matching: "inference credentials").map(\.id) == ["providers"])
+        #expect(NativeSettingsPolicy.sections(matching: "custom install").map(\.id) == ["custom_cli"])
+        #expect(NativeSettingsPolicy.sections(matching: "MCP setup").map(\.id) == ["mcp"])
+        #expect(NativeSettingsPolicy.catalog.contains { $0.id == "account" && $0.title == "Claude account" })
+    }
+
+    @Test
+    func testDefaultCodingCLISearchFindsTheGeneralPage() {
+        #expect(NativeSettingsPolicy.sections(matching: "default CLI").map(\.id) == ["general"])
+        #expect(NativeSettingsPolicy.sections(matching: "coding agent").map(\.id) == ["general"])
     }
 }

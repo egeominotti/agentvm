@@ -34,7 +34,7 @@ struct NativeSnapshotsView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Snapshots").font(.largeTitle.bold())
-                    Text("Whole VMs saved with files, packages and Claude's conversation.").foregroundStyle(.secondary)
+                    Text("Whole VMs saved with files, packages and agent history.").foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button(importing ? "Importing…" : "Import…", systemImage: "square.and.arrow.down") {
