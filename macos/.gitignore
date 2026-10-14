@@ -1,0 +1,5 @@
+.build/
+dist/
+Sources/AgentVMNative/Resources/terminal.js
+Sources/AgentVMNative/Resources/terminal.css
+Sources/AgentVMNative/Resources/fonts/
