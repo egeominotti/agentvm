@@ -18,3 +18,7 @@ it("shows a reason without the console's control codes, and without the kept-dis
   expect(text).toContain("Debian GNU/Linux 13 agentvm hvc0");
   expect(text).not.toContain("Its disk is kept");
 });
+
+it("explains a non-Claude agent process failure", () => {
+  expect(explain("agent_exit: 2")).toEqual(["Agent stopped with an error", "Diagnostics show what it printed."]);
+});

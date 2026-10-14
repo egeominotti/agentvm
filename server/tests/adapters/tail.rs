@@ -73,3 +73,74 @@ async fn an_oversized_line_is_skipped_not_held_in_memory() {
     assert!(got[1].len() < 200 && got[1].contains("skipped"), "{}", &got[1][..got[1].len().min(200)]);
     assert_eq!(got[2], "after");
 }
+
+#[tokio::test]
+async fn tail_resumes_complete_bytes_and_retains_legitimate_repeated_text() {
+    use agentvm::adapters::tail::{Cursor, tail_records};
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("stream.jsonl");
+    std::fs::write(&path, b"same\n").unwrap();
+    let (_, stop) = tokio::sync::watch::channel(true);
+    let first = tail_records(path.clone(), Cursor::default(), stop).collect::<Vec<_>>().await;
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].cursor.offset, 5);
+    use std::io::Write;
+    std::fs::OpenOptions::new().append(true).open(&path).unwrap().write_all(b"same\n").unwrap();
+    let (_, stop) = tokio::sync::watch::channel(true);
+    let second = tail_records(path, first[0].cursor.clone(), stop).collect::<Vec<_>>().await;
+    assert_eq!(second.len(), 1);
+    assert_eq!(second[0].line, "same");
+    assert_eq!(second[0].cursor.offset, 10);
+}
+
+#[tokio::test]
+async fn tail_resets_for_rewritten_or_replaced_files_even_when_the_new_file_is_longer() {
+    use agentvm::adapters::tail::{Cursor, tail_records};
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("stream.jsonl");
+    std::fs::write(&path, b"old\n").unwrap();
+    let (_, stop) = tokio::sync::watch::channel(true);
+    let old = tail_records(path.clone(), Cursor::default(), stop).collect::<Vec<_>>().await;
+    std::fs::write(&path, b"rewritten-longer\n").unwrap();
+    let (_, stop) = tokio::sync::watch::channel(true);
+    let rewritten = tail_records(path.clone(), old[0].cursor.clone(), stop).collect::<Vec<_>>().await;
+    assert_eq!(rewritten[0].line, "rewritten-longer");
+    let replacement = tmp.path().join("replacement");
+    std::fs::write(&replacement, b"replacement-longer-than-before\n").unwrap();
+    std::fs::rename(replacement, &path).unwrap();
+    let (_, stop) = tokio::sync::watch::channel(true);
+    let replaced = tail_records(path, rewritten[0].cursor.clone(), stop).collect::<Vec<_>>().await;
+    assert_eq!(replaced[0].line, "replacement-longer-than-before");
+}
+
+#[tokio::test]
+async fn tail_does_not_checkpoint_an_unfinished_line() {
+    use agentvm::adapters::tail::{Cursor, tail_records};
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("stream.jsonl");
+    std::fs::write(&path, b"complete\npartial").unwrap();
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+    let records = tail_records(path, Cursor::default(), stop_rx);
+    let mut records = std::pin::pin!(records);
+    let first = records.next().await.unwrap();
+    assert_eq!(first.cursor.offset, 9);
+    assert!(tokio::time::timeout(Duration::from_millis(100), records.next()).await.is_err());
+    stop_tx.send(true).unwrap();
+    assert_eq!(records.next().await.unwrap().line, "partial");
+}
+
+#[tokio::test]
+async fn a_live_follower_detects_a_longer_rewrite_before_reading_new_bytes() {
+    use agentvm::adapters::tail::{Cursor, tail_records};
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("stream.jsonl");
+    std::fs::write(&path, b"old\n").unwrap();
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+    let records = tail_records(path.clone(), Cursor::default(), stop_rx);
+    let mut records = std::pin::pin!(records);
+    assert_eq!(records.next().await.unwrap().line, "old");
+    std::fs::write(&path, b"new-and-longer\n").unwrap();
+    let record = tokio::time::timeout(Duration::from_secs(2), records.next()).await.unwrap().unwrap();
+    assert_eq!(record.line, "new-and-longer");
+    stop_tx.send(true).unwrap();
+}

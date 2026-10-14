@@ -5,7 +5,7 @@ import { Icon } from "../../components/Icon";
 import { isExtraShell, sessionLabel } from "../../lib/shells";
 import type { Sessions } from "./useSessions";
 
-export function SessionTabs({ s }: { s: Sessions }) {
+export function SessionTabs({ s, agentName = "Claude" }: { s: Sessions; agentName?: string }) {
   const keys = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
     e.preventDefault();
@@ -26,7 +26,7 @@ export function SessionTabs({ s }: { s: Sessions }) {
             onClick={() => s.pick(name)}
           >
             <Icon name={name === "claude" ? "spark" : "terminal"} />
-            {sessionLabel(name)}
+            {name === "claude" ? agentName : sessionLabel(name)}
           </button>
           {isExtraShell(name) ? (
             <button

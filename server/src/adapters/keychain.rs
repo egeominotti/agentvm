@@ -6,6 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::secret::Secret;
+mod accounts;
+mod providers;
 
 /// A locked Keychain may wait for an unlock dialog nobody answers: never block on it forever.
 const KEYCHAIN_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
@@ -27,8 +29,14 @@ pub enum KeychainError {
     Missing,
     #[error("that does not look like a Claude token (expected sk-ant-…)")]
     InvalidToken,
+    #[error("could not read the credential from the Keychain: {0}")]
+    ReadFailed(String),
+    #[error("could not remove the credential from the Keychain: {0}")]
+    DeleteFailed(String),
     #[error("could not save the token in the Keychain: {0}")]
     WriteFailed(String),
+    #[error("provider API key must be a nonempty value without whitespace, quotes or backslashes")]
+    InvalidProviderKey,
     #[error("no S3 secret key saved yet")]
     MissingS3Secret,
     #[error("the S3 secret key contains unsupported characters")]
@@ -165,14 +173,25 @@ impl Keychain {
     }
 
     fn read(&self, service: &str) -> Option<Secret> {
+        self.read_checked(service).ok().flatten().filter(|secret| !secret.expose().is_empty())
+    }
+
+    /// A missing item differs from a read failure when the previous state must be restored.
+    fn read_checked(&self, service: &str) -> Result<Option<Secret>, KeychainError> {
         let mut cmd = Command::new("security");
         cmd.args(["find-generic-password", "-s", service, "-w"]);
         if let Some(kc) = &self.keychain {
             cmd.arg(kc);
         }
-        let out = crate::process::output(&mut cmd, KEYCHAIN_LIMIT).ok()?;
-        let value = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-        (out.status.success() && !value.is_empty()).then(|| Secret::new(value))
+        let out =
+            crate::process::output(&mut cmd, KEYCHAIN_LIMIT).map_err(|e| KeychainError::ReadFailed(e.to_string()))?;
+        if out.status.success() {
+            return Ok(Some(Secret::new(String::from_utf8_lossy(&out.stdout).trim().to_owned())));
+        }
+        if missing_item(&out) {
+            return Ok(None);
+        }
+        Err(KeychainError::ReadFailed(security_failure(&out)))
     }
 
     /// Already absent is fine: the secret is gone either way.
@@ -182,8 +201,13 @@ impl Keychain {
         if let Some(kc) = &self.keychain {
             cmd.arg(kc);
         }
-        crate::process::output(&mut cmd, KEYCHAIN_LIMIT).map_err(|e| KeychainError::WriteFailed(e.to_string()))?;
-        Ok(())
+        let out =
+            crate::process::output(&mut cmd, KEYCHAIN_LIMIT).map_err(|e| KeychainError::DeleteFailed(e.to_string()))?;
+        if out.status.success() || missing_item(&out) {
+            Ok(())
+        } else {
+            Err(KeychainError::DeleteFailed(security_failure(&out)))
+        }
     }
 
     /// `value` is already quoted when needed; it reaches `security` on stdin.
@@ -222,4 +246,12 @@ fn valid_host(host: &str) -> bool {
         && host.len() <= 253
         && host.contains('.')
         && host.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'.' || c == b'-')
+}
+
+fn missing_item(out: &std::process::Output) -> bool {
+    out.status.code() == Some(44)
+        && String::from_utf8_lossy(&out.stderr).contains("The specified item could not be found in the keychain")
+}
+fn security_failure(out: &std::process::Output) -> String {
+    format!("{} ({})", String::from_utf8_lossy(&out.stderr).trim(), out.status)
 }

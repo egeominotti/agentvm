@@ -4,6 +4,7 @@ import { type DragEvent, useEffect, useRef, useState } from "react";
 import { useTask, useTasks } from "../../api/queries";
 import { TOGGLE_PANEL_EVENT } from "../../app/keys";
 import { useToast } from "../../components/Toast";
+import { agentLabel, analyticsAvailable } from "../../lib/agents";
 import { isEnded } from "../../lib/task";
 import { useMachineActions } from "./actions";
 import { BootMark, BootPanel } from "./BootPanel";
@@ -53,8 +54,8 @@ export function MachineView({ id }: { id: string }) {
   // an automatic task has no terminal, so its conversation is the way to follow it.
   useEffect(() => {
     if (state === "failed") setTab("diagnostics");
-    else if (ended || t?.interactive === false) setTab("claude");
-  }, [state, ended, t?.interactive]);
+    else if (ended || t?.interactive === false) setTab(analyticsAvailable(t?.agent) ? "claude" : "output");
+  }, [state, ended, t?.interactive, t?.agent]);
 
   // ⌘J anywhere shows or hides the details.
   useEffect(() => {
@@ -156,7 +157,9 @@ export function MachineView({ id }: { id: string }) {
                 <div className="overlay-note">
                   <BootMark />
                   <b>An automatic task: no terminal</b>
-                  <span>Follow Claude's work in the Claude panel.</span>
+                  <span>
+                    Follow {agentLabel(t.agent)} in the {analyticsAvailable(t.agent) ? "Claude" : "Output"} panel.
+                  </span>
                 </div>
               </div>
             ) : state === "collecting" ? (

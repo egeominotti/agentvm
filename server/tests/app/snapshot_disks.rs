@@ -32,6 +32,7 @@ fn take(ctx: &agentvm::app::supervisor::AppCtx, disk: &Path, efivars: &Path) -> 
         source_task: "t".into(),
         repo: "/r".into(),
         base_sha: "a".repeat(40),
+        agent: Default::default(),
         model: "default".into(),
         claude_version: None,
         created_at: 1.0,

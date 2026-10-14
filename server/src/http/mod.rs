@@ -1,5 +1,7 @@
 //! HTTP interface: JSON API, SSE events and dashboard. Thin by design: a handler reads the
 //! request, calls an app use case and shapes its answer; `error` maps app errors to statuses.
+mod accounts;
+mod agents;
 mod assets;
 mod backups;
 mod diagnostics;
@@ -26,3 +28,7 @@ pub use router::router;
 
 /// What every handler gets: the application.
 type Ctx = axum::extract::State<std::sync::Arc<crate::app::supervisor::AppCtx>>;
+
+mod control;
+
+mod output;

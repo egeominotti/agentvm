@@ -10,9 +10,11 @@ use crate::domain::task::{StateAt, TaskState};
 use crate::guestfs;
 
 /// The logs worth reading, in the order a person reads them: (title, path in the job folder).
-const LOGS: [(&str, &str); 5] = [
+const LOGS: [(&str, &str); 7] = [
     ("Job (inside the VM)", "share/job.log"),
     ("setup.sh", "share/setup.log"),
+    ("CLI installation", "share/install.log"),
+    ("Agent errors", "share/agent.err"),
     ("Claude's errors", "share/claude.err"),
     ("Boot console", "console.log"),
     ("VM process events", "vm.events"),

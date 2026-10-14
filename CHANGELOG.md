@@ -6,6 +6,36 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-15
+
+### Added
+
+- Native macOS workspace, settings, snapshots and terminal previews sharing the engine.
+- Nine coding CLI integrations plus reusable custom commands, with pinned ARM64 installers.
+- Separate account and API authentication, with host account import and browser sign-in.
+- ChatGPT, Google Code Assist, GitHub Copilot and Kilo account connections alongside Claude.
+- Alibaba Coding Plan and OpenCode Go subscription-key presets, plus OpenCode Zen usage billing.
+- Host-only provider credentials, a private inference relay and automatic model selection.
+- Native stdio MCP with 43 tools for VM lifecycle, processes, files, terminals and artifacts.
+- Finite, redacted agent output with stable cursors and recovery across engine restarts.
+- Packaged native app, MCP binary and CLI releases with checksums.
+
+### Changed
+
+- Removed Model ID entry from launchers and settings; API/MCP overrides remain optional.
+- Kept quickstart to one command and enabled direct startup from prebuilt archives.
+- Preserved each running VM's provider configuration across settings edits and restarts.
+- Improved native resize behavior, terminal updates and narrow dashboard layouts.
+
+### Fixed
+
+- Prevented early terminal attachment from interrupting CLI installation.
+- Preserved output sequence metadata when compacted journals exceed the bounded reader.
+- Fixed tmux targeting and empty session lists during guest startup.
+- Fixed concurrent terminal reconnects that could leave a newly opened terminal blank.
+
+## Initial implementation
+
 ### Added
 - Every terminal is its own Debian 13 arm64 VM on Virtualization.framework, booted in ~3 s from a
   copy-on-write clone of a golden image, with interactive Claude Code running as root.

@@ -22,6 +22,7 @@ fn stored_snapshot_of(home: &std::path::Path, auto: bool) -> agentvm::domain::sn
         source_task: "t".into(),
         repo: "/r".into(),
         base_sha: "a".repeat(40),
+        agent: Default::default(),
         model: "default".into(),
         claude_version: None,
         created_at: 1.0,

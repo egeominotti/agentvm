@@ -18,10 +18,10 @@ fresh() {
 }
 
 helper() {
-  fresh bin/agentvm-vm vm-helper && return 0
+  fresh bin/agentvm-vm vm-helper scripts/build.sh && return 0
   # Always a new file + rename: overwriting a signed binary on the same inode
   # makes macOS kill (SIGKILL) the processes started afterwards.
-  swiftc -O -target "arm64-apple-macos$(sw_vers -productVersion | cut -d. -f1)" vm-helper/*.swift -o bin/agentvm-vm.new
+  swiftc -O -target arm64-apple-macos14 vm-helper/*.swift -o bin/agentvm-vm.new
   codesign -s - -f --entitlements vm-helper/vz.entitlements bin/agentvm-vm.new
   mv -f bin/agentvm-vm.new bin/agentvm-vm
 }
@@ -42,11 +42,13 @@ wait $D || { echo "the dashboard (web/) did not build" >&2; exit 1; }
 
 cargo build --release --quiet --target aarch64-apple-darwin --manifest-path server/Cargo.toml
 # Replaced only when it changed: a server already running from it is not restarted for nothing.
-if ! cmp -s server/target/aarch64-apple-darwin/release/agentvm-server bin/agentvm-server; then
-  cp server/target/aarch64-apple-darwin/release/agentvm-server bin/agentvm-server.new
-  mv -f bin/agentvm-server.new bin/agentvm-server
-fi
-for b in bin/agentvm-vm bin/agentvm-server; do
+for binary in agentvm-server agentvm-mcp; do
+  if ! cmp -s "server/target/aarch64-apple-darwin/release/$binary" "bin/$binary"; then
+    cp "server/target/aarch64-apple-darwin/release/$binary" "bin/$binary.new"
+    mv -f "bin/$binary.new" "bin/$binary"
+  fi
+done
+for b in bin/agentvm-vm bin/agentvm-server bin/agentvm-mcp; do
   [ "$(lipo -archs "$b")" = arm64 ] || { echo "$b is not a pure arm64 binary: $(lipo -archs "$b")" >&2; exit 1; }
 done
-echo "build ok (arm64): bin/agentvm-vm bin/agentvm-server"
+echo "build ok (arm64): bin/agentvm-vm bin/agentvm-server bin/agentvm-mcp"

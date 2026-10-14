@@ -78,7 +78,7 @@ final class VsockBridge {
         }
     }
 
-    private static func pump(from: Int32, to: Int32) {
+    static func pump(from: Int32, to: Int32) {
         var buf = [UInt8](repeating: 0, count: 65536)
         while true {
             let n = read(from, &buf, buf.count)

@@ -12,7 +12,7 @@ export function Snapshots({ s, set }: { s: Settings; set: SetSetting }) {
   return (
     <Page
       title="Snapshots"
-      description="Running VMs saved whole (files, installed packages, Claude's conversation), compressed into chunks they share: a snapshot usually adds a few megabytes."
+      description="Running VMs saved whole (files, installed packages, the agent's conversation), compressed into chunks they share: a snapshot usually adds a few megabytes."
     >
       <Panel title="Automatic snapshots" description="A VM can have its own interval, in its ⋯ menu.">
         <Row label="Snapshot running VMs" htmlFor="set-every">

@@ -5,12 +5,14 @@ import { type PointerEvent as ReactPointerEvent, useState } from "react";
 import type { TaskDto } from "../../../api/generated/TaskDto";
 import { IconButton } from "../../../components/Button";
 import { Icon } from "../../../components/Icon";
+import { analyticsAvailable } from "../../../lib/agents";
 import { isEnded } from "../../../lib/task";
 import { ClaudeTab } from "./ClaudeTab";
 import { DiagnosticsTab } from "./DiagnosticsTab";
+import { OutputTab } from "./OutputTab";
 import { TelemetryTab } from "./TelemetryTab";
 
-export type InspectorTab = "telemetry" | "claude" | "diagnostics";
+export type InspectorTab = "telemetry" | "claude" | "output" | "diagnostics";
 
 const WIDTH_KEY = "agentvm.inspector.width";
 const MIN = 280;
@@ -38,6 +40,8 @@ type Props = { task: TaskDto; tab: InspectorTab; onTab: (t: InspectorTab) => voi
 export function Inspector({ task: t, tab, onTab, onClose }: Props) {
   const [width, setWidth] = useState(storedWidth);
   const live = !isEnded(t);
+  const claude = analyticsAvailable(t.agent);
+  const workTab = claude ? "claude" : "output";
 
   const drag = (e: ReactPointerEvent<HTMLDivElement>) => {
     const start = e.clientX;
@@ -77,10 +81,14 @@ export function Inspector({ task: t, tab, onTab, onClose }: Props) {
         }}
         title="Drag, or use the arrow keys, to resize"
       />
-      <Tabs.Root value={tab} onValueChange={(v) => onTab(v as InspectorTab)} className="inspector-tabs">
+      <Tabs.Root
+        value={tab === "claude" || tab === "output" ? workTab : tab}
+        onValueChange={(v) => onTab(v as InspectorTab)}
+        className="inspector-tabs"
+      >
         <Tabs.List className="tabs" aria-label="Details">
           <Tabs.Trigger value="telemetry">Telemetry</Tabs.Trigger>
-          <Tabs.Trigger value="claude">Claude</Tabs.Trigger>
+          <Tabs.Trigger value={workTab}>{claude ? "Claude" : "Output"}</Tabs.Trigger>
           <Tabs.Trigger value="diagnostics">Diagnostics</Tabs.Trigger>
           {/* On narrow screens the panel covers the toolbar button that opened it. */}
           <IconButton className="inspector-close" aria-label="Close the details" onClick={onClose}>
@@ -90,8 +98,12 @@ export function Inspector({ task: t, tab, onTab, onClose }: Props) {
         <Tabs.Content value="telemetry" className="tab-body">
           <TelemetryTab task={t} />
         </Tabs.Content>
-        <Tabs.Content value="claude" className="tab-body">
-          <ClaudeTab id={t.id} live={live} interactive={t.interactive} />
+        <Tabs.Content value={workTab} className="tab-body">
+          {claude ? (
+            <ClaudeTab id={t.id} live={live} interactive={t.interactive} />
+          ) : (
+            <OutputTab id={t.id} live={live} />
+          )}
         </Tabs.Content>
         <Tabs.Content value="diagnostics" className="tab-body">
           <DiagnosticsTab id={t.id} ended={!live} />

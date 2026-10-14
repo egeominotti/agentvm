@@ -165,6 +165,7 @@ fn meta_for(record: &TaskRecord, name: String, auto: bool, now: SystemTime) -> S
         source_task: record.id.to_string(),
         repo: record.repo.as_path().display().to_string(),
         base_sha: record.base_sha.as_str().to_owned(),
+        agent: record.agent.clone(),
         model: record.model.as_str().to_owned(),
         claude_version: record.claude_version.clone(),
         created_at: now.duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0),
@@ -215,8 +216,12 @@ pub fn restore(ctx: &Arc<AppCtx>, snap: &SnapshotId) -> Result<TaskId, SnapshotE
             prompt: String::new(),
             base_ref: Some(&meta.base_sha),
             interactive: true,
+            agent: Some(meta.agent.clone()),
             model: Model::parse(&meta.model).ok(),
-            claude_version: None,
+            claude_version: meta
+                .claude_version
+                .as_deref()
+                .and_then(|v| crate::domain::settings::ClaudeVersion::parse(v).ok()),
             restore_from: Some(snap.clone()),
             cpus: (meta.cpus > 0).then_some(meta.cpus),
             memory_mb: (meta.memory_mb > 0).then_some(meta.memory_mb),

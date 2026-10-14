@@ -1,4 +1,5 @@
 // The boot of a machine as steps, from its boot log: real events with real timings.
+import { agentLabel } from "../../lib/agents";
 import type { TaskDto } from "../../api/generated/TaskDto";
 
 export type BootStep = { label: string; done: boolean; failed?: boolean; detail: string };
@@ -31,9 +32,9 @@ export function bootSteps(t: TaskDto): { steps: BootStep[]; current: number } {
     const detail = end ? (failed ? "failed, see setup.log" : secs(end)) : "running";
     steps.push({ label: "Repository setup (.agentvm/setup.sh)", done: !!end, failed, detail });
   }
-  const install = seen(/^installing Claude Code/);
+  const install = seen(/^installing /);
   if (install) {
-    const installed = seen(/^Claude Code \d/);
+    const installed = guest.find((g) => g.at >= install.at && g.text.startsWith(`${agentLabel(t.agent)} `));
     steps.push({
       label: install.text.replace(/^installing/, "Installing"),
       done: !!installed,
@@ -42,7 +43,7 @@ export function bootSteps(t: TaskDto): { steps: BootStep[]; current: number } {
   }
   const ready = seen(t.interactive ? /^terminal ready/ : /^network ready/);
   steps.push({
-    label: t.interactive ? "Claude Code ready" : "Agent started",
+    label: t.interactive ? `${agentLabel(t.agent)} ready` : "Agent started",
     done: t.ready || !!ready,
     detail: secs(ready),
   });

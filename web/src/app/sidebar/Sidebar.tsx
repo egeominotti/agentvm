@@ -1,9 +1,11 @@
 // The sidebar: new VM, the sections, the machines that are running, and this Mac's load.
 
-import { useStatus, useTasks } from "../../api/queries";
+import { useAgentCatalog, useSettings, useStatus, useTasks } from "../../api/queries";
 import { Icon, type IconName } from "../../components/Icon";
 import { Logo } from "../../components/Logo";
 import { openLauncher } from "../../features/launcher/open";
+import { CLAUDE_AGENT } from "../../lib/agents";
+import { selectedAccount } from "../../lib/accounts";
 import { isEnded } from "../../lib/task";
 import type { Route } from "../router";
 import { HostGauges } from "./HostGauges";
@@ -18,6 +20,9 @@ const SECTIONS: [Route["name"], string, string, IconName][] = [
 export function Sidebar({ route }: { route: Route }) {
   const tasks = useTasks().data ?? [];
   const status = useStatus().data;
+  const defaultAgent = useSettings().data?.settings.agent;
+  const catalog = useAgentCatalog().data;
+  const claudeConnected = catalog?.accounts?.find((a) => a.id === "claude")?.connected ?? status?.token;
   const live = tasks.filter((t) => !isEnded(t)).length;
   const focused = route.name === "machine" ? route.id : null;
   return (
@@ -31,9 +36,9 @@ export function Sidebar({ route }: { route: Route }) {
         <span>New VM</span>
         <kbd>⌘K</kbd>
       </button>
-      {status && !status.token ? (
-        <a className="alert" href="#/settings">
-          Claude token missing
+      {status && !claudeConnected && selectedAccount(defaultAgent ?? CLAUDE_AGENT) === "claude" ? (
+        <a className="alert" href={catalog?.accounts ? "#/settings/accounts" : "#/settings/account"}>
+          Claude account missing
         </a>
       ) : null}
       {status && !status.golden ? (

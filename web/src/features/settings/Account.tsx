@@ -10,7 +10,10 @@ export function Account() {
   const qc = useQueryClient();
   const save = useMutation({
     mutationFn: (token: string) => api("/api/settings/token", "PUT", { token }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.status }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: keys.status });
+      await qc.invalidateQueries({ queryKey: keys.agents });
+    },
   });
   return (
     <Page

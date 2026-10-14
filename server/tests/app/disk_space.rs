@@ -14,6 +14,7 @@ fn new_task(repo: &str) -> NewTask<'_> {
         prompt: "x".into(),
         base_ref: None,
         interactive: false,
+        agent: Default::default(),
         model: None,
         claude_version: None,
         restore_from: None,

@@ -17,6 +17,9 @@ fn defaults() -> Settings {
         s3: None,
         auto_snapshots: Default::default(),
         tailscale: Default::default(),
+        agent: Default::default(),
+        providers: Default::default(),
+        custom_cli: None,
     }
 }
 
@@ -87,4 +90,22 @@ fn defaults_are_fitted_to_the_mac() {
     let fitted = d.fitted(&small);
     assert!(fitted.validate(&small).is_ok(), "{fitted:?}");
     assert_eq!((fitted.cpus, fitted.memory_mb, fitted.timeout_s), (4, 1024, 60));
+}
+
+#[test]
+fn unrelated_invalid_resources_keep_custom_and_provider_backed_selections() {
+    let host = HostLimits { cpus: 8, ram_mb: 65536 };
+    for agent in [json!({"kind":"custom"}), json!({"kind":"codex","provider":"custom"})] {
+        let mut saved = serde_json::to_value(defaults()).unwrap();
+        saved["cpus"] = json!(99);
+        saved["agent"] = agent.clone();
+        saved["custom_cli"] = json!({"name":"Example","interactive":"example {prompt}"});
+        saved["providers"] =
+            json!({"custom":{"endpoint":"https://example.org/v1","protocol":"openai","requires_key":false}});
+        let (s, reset) = recover(&saved, &defaults(), &host);
+        assert_eq!(reset, vec!["cpus"]);
+        assert_eq!(serde_json::to_value(&s.agent).unwrap()["kind"], agent["kind"]);
+        assert_eq!(s.cpus, 4);
+        assert!(s.validate(&host).is_ok());
+    }
 }

@@ -47,7 +47,9 @@ impl IntoResponse for ApiError {
 impl From<SubmitError> for ApiError {
     fn from(e: SubmitError) -> Self {
         let code = match e {
-            SubmitError::NoGolden(_) | SubmitError::Token(_) => StatusCode::SERVICE_UNAVAILABLE,
+            SubmitError::NoGolden(_) | SubmitError::Token(_) | SubmitError::Credential(_) => {
+                StatusCode::SERVICE_UNAVAILABLE
+            }
             SubmitError::DiskFull(_) => StatusCode::INSUFFICIENT_STORAGE,
             _ => StatusCode::BAD_REQUEST,
         };

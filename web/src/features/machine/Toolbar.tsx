@@ -6,6 +6,7 @@ import { Button, IconButton } from "../../components/Button";
 import { Icon } from "../../components/Icon";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "../../components/Menu";
 import { StatusMark } from "../../components/StatusMark";
+import { agentLabel } from "../../lib/agents";
 import { isEnded, shortId, titleOf } from "../../lib/task";
 import type { MachineActions } from "./actions";
 import { SessionTabs } from "./SessionTabs";
@@ -37,7 +38,7 @@ export function Toolbar({ task: t, sessions, actions: a, inspector, onInspector 
       <span className="tb-id" title={t.id}>
         #{shortId(t)}
       </span>
-      {terminal ? <SessionTabs s={sessions} /> : null}
+      {terminal ? <SessionTabs s={sessions} agentName={agentLabel(t.agent)} /> : null}
       <span className="tb-gap" />
       {terminal ? (
         <>
@@ -96,7 +97,7 @@ export function Toolbar({ task: t, sessions, actions: a, inspector, onInspector 
           <MenuItem
             icon="trash"
             danger
-            confirm="Delete its logs and Claude's history? Its branch stays"
+            confirm="Delete its logs and history? Its branch stays"
             onSelect={() => a.remove.mutate()}
           >
             Delete this machine
@@ -110,7 +111,7 @@ export function Toolbar({ task: t, sessions, actions: a, inspector, onInspector 
       <IconButton
         aria-pressed={inspector}
         aria-label="Details panel"
-        title="Telemetry, Claude's history and diagnostics"
+        title="Telemetry, agent output and diagnostics"
         onClick={onInspector}
       >
         <Icon name="panel" />

@@ -11,8 +11,8 @@ export function EmptyState() {
       <Logo className="empty-mark" size={56} />
       <h1>Every terminal is a sealed machine.</h1>
       <p>
-        Launch a VM and Claude Code opens inside it with root and every permission, on a fresh clone of your repository.
-        Nothing it does can touch your Mac.
+        Launch a VM and Your coding CLI opens inside it with root and every permission, on a fresh clone of your
+        repository. Nothing it does can touch your Mac.
       </p>
       <Button variant="primary" onClick={openLauncher}>
         <Icon name="plus" />
@@ -20,10 +20,10 @@ export function EmptyState() {
       </Button>
       <ol>
         <li>
-          <b>Pick a repository</b> and, if you like, a first task for Claude.
+          <b>Pick a repository</b> and, if you like, a first task for your agent.
         </li>
         <li>
-          <b>Work with Claude</b> in the VM's terminal, or in a root shell next to it.
+          <b>Work with your agent</b> in the VM's terminal, or in a root shell next to it.
         </li>
         <li>
           <b>Save</b> copies the work to a branch agent/… in your repository.

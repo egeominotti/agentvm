@@ -38,7 +38,7 @@ export function RunningView({ live }: { live: TaskDto[] }) {
       <div className="empty-panel">
         <Icon name="machines" />
         <b>Nothing running</b>
-        <p>Launch a VM from a folder or a git link: Claude Code opens in it in about two seconds.</p>
+        <p>Launch a VM from a folder or a git link: Your coding CLI opens in it in about two seconds.</p>
         <Button variant="primary" onClick={openLauncher}>
           <Icon name="plus" />
           New VM

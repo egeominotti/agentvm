@@ -19,7 +19,7 @@ guard args.count == 3, args[1] == "--config" else {
 let runner: Runner
 do {
     let config = try VMConfig.load(args[2])
-    runner = Runner(configuration: try MachineFactory.make(config), ptySocket: config.ptySocket, balloon: config.balloon,
+    runner = Runner(configuration: try MachineFactory.make(config), ptySocket: config.ptySocket, agentSocket: config.agentSocket, balloon: config.balloon,
                     memoryMB: config.memoryMB)
 } catch {
     Events.fail("invalid configuration: \(error)")

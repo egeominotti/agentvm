@@ -18,6 +18,9 @@ fn settings_file_roundtrips_and_is_absent_at_first() {
         s3: None,
         auto_snapshots: Default::default(),
         tailscale: Default::default(),
+        agent: Default::default(),
+        providers: Default::default(),
+        custom_cli: None,
     };
     settings_file::save(&path, &s).unwrap();
     assert_eq!(settings_file::load(&path), settings_file::Saved::Json(serde_json::to_value(&s).unwrap()));

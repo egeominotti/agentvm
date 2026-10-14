@@ -16,6 +16,9 @@ fn defaults() -> Settings {
         s3: None,
         auto_snapshots: Default::default(),
         tailscale: Default::default(),
+        agent: Default::default(),
+        providers: Default::default(),
+        custom_cli: None,
     }
 }
 
@@ -68,4 +71,63 @@ async fn the_scheduler_follows_the_settings_saved_last() {
         }
         assert_eq!(ctx.scheduler.concurrency(), ctx.settings.get().max_vms);
     }
+}
+
+#[test]
+fn general_agent_or_provider_switch_resets_an_unchanged_model() {
+    use agentvm::domain::agents::{AgentKind, AgentSelection};
+    use agentvm::domain::providers::Provider;
+    let home = tempfile::tempdir().unwrap();
+    let ctx = crate::helpers::ctx(home.path());
+    let mut old = ctx.settings.get();
+    old.model = Model::parse("opus").unwrap();
+    ctx.update_settings(old).unwrap();
+    let mut switched = ctx.settings.get();
+    switched.agent = AgentSelection { kind: AgentKind::Qwen, provider: Some(Provider::Local), ..Default::default() };
+    assert_eq!(ctx.update_settings(switched).unwrap().model.as_str(), "default");
+    let mut custom = ctx.settings.get();
+    custom.model = Model::parse("qwen-coder").unwrap();
+    ctx.update_settings(custom).unwrap();
+    let mut provider_switched = ctx.settings.get();
+    provider_switched.agent.provider = Some(Provider::Openai);
+    assert_eq!(ctx.update_settings(provider_switched).unwrap().model.as_str(), "default");
+    let saved: Settings = serde_json::from_slice(&std::fs::read(home.path().join("settings.json")).unwrap()).unwrap();
+    assert_eq!(saved.model.as_str(), "default");
+}
+
+#[test]
+fn agent_switch_preserves_a_different_explicit_model() {
+    use agentvm::domain::agents::{AgentKind, AgentSelection};
+    use agentvm::domain::providers::Provider;
+    let home = tempfile::tempdir().unwrap();
+    let ctx = crate::helpers::ctx(home.path());
+    let mut old = ctx.settings.get();
+    old.model = Model::parse("opus").unwrap();
+    ctx.update_settings(old).unwrap();
+    let mut switched = ctx.settings.get();
+    switched.agent = AgentSelection { kind: AgentKind::Qwen, provider: Some(Provider::Local), ..Default::default() };
+    switched.model = Model::parse("qwen-coder").unwrap();
+    assert_eq!(ctx.update_settings(switched).unwrap().model.as_str(), "qwen-coder");
+}
+
+#[test]
+fn selected_provider_protocol_change_resets_the_saved_model() {
+    use agentvm::app::agents::update_provider;
+    use agentvm::domain::agents::{AgentKind, AgentSelection};
+    use agentvm::domain::providers::{ApiProtocol, Provider, ProviderConfig};
+    let home = tempfile::tempdir().unwrap();
+    let ctx = crate::helpers::ctx(home.path());
+    let config = ProviderConfig {
+        endpoint: "http://127.0.0.1:1234/v1".into(),
+        protocol: ApiProtocol::Openai,
+        requires_key: false,
+    };
+    update_provider(&ctx, Provider::Custom, config.clone(), None).unwrap();
+    let mut configured = ctx.settings.get();
+    configured.agent = AgentSelection { kind: AgentKind::Qwen, provider: Some(Provider::Custom), ..Default::default() };
+    configured.model = Model::parse("qwen-coder").unwrap();
+    ctx.update_settings(configured).unwrap();
+    update_provider(&ctx, Provider::Custom, ProviderConfig { protocol: ApiProtocol::Anthropic, ..config }, None)
+        .unwrap();
+    assert_eq!(ctx.settings.get().model.as_str(), "default");
 }

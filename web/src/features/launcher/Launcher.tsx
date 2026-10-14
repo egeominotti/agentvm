@@ -4,10 +4,11 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
-import { keys, useSettings, useStatus, useTasks } from "../../api/queries";
+import { keys, useAgentCatalog, useSettings, useStatus, useTasks } from "../../api/queries";
 import { isTyping } from "../../app/keys";
 import { go } from "../../app/router";
 import { Button } from "../../components/Button";
+import { CLAUDE_AGENT, launchDefaults, launchReadiness } from "../../lib/agents";
 import { shortPath } from "../../lib/format";
 import { type Choice, Options } from "./Options";
 import { NEW_VM_EVENT } from "./open";
@@ -24,6 +25,7 @@ export function Launcher() {
   const [busy, setBusy] = useState(false);
   const settings = useSettings().data;
   const status = useStatus().data;
+  const catalog = useAgentCatalog();
   const tasks = useTasks().data ?? [];
   const qc = useQueryClient();
   const check = useSettledCheck(repo);
@@ -66,24 +68,39 @@ export function Launcher() {
     setRepo((r) => r || lastRepo || "");
   }, [open, lastRepo]);
   useEffect(() => {
-    if (!open || !settings) return;
+    if (!open || !settings || catalog.isPending) return;
     const s = settings.settings;
-    setChoice((c) => c ?? { model: s.model, version: "", cpus: s.cpus, memoryMb: s.memory_mb });
-  }, [open, settings]);
+    setChoice(
+      (c) =>
+        c ?? {
+          ...launchDefaults(catalog.data ? s.agent : CLAUDE_AGENT, s.custom_cli),
+          version: "",
+          cpus: s.cpus,
+          memoryMb: s.memory_mb,
+        },
+    );
+  }, [open, settings, catalog.data, catalog.isPending]);
 
+  const readiness = choice
+    ? launchReadiness(choice.agent, catalog.data ?? undefined, !!status?.token)
+    : "Loading launch options…";
   const blocker = !status
     ? "Connecting to agentvm…"
     : !status.golden
       ? "The VM image is missing: build it in Settings › VM image."
-      : !status.token
-        ? "Connect your Claude account in Settings › Claude account."
-        : !repo.trim()
-          ? "Choose a repository."
-          : !check
-            ? "Checking the repository…"
-            : !check.ok
-              ? "Choose a git repository with at least one commit."
-              : null;
+      : catalog.error
+        ? `Could not read provider settings: ${catalog.error.message}`
+        : catalog.isPending
+          ? "Reading CLI catalog…"
+          : readiness
+            ? readiness
+            : !repo.trim()
+              ? "Choose a repository."
+              : !check
+                ? "Checking the repository…"
+                : !check.ok
+                  ? "Choose a git repository with at least one commit."
+                  : null;
 
   const launch = async (e?: FormEvent) => {
     e?.preventDefault();
@@ -96,8 +113,8 @@ export function Launcher() {
         prompt: "",
         branch: branch || null,
         interactive: true,
-        model: choice.model,
-        claude_version: choice.version || null,
+        agent: choice.agent,
+        claude_version: choice.agent.kind === "claude" ? choice.version || null : null,
         cpus: choice.cpus,
         memory_mb: choice.memoryMb,
       });

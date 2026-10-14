@@ -48,6 +48,7 @@ pub(crate) fn config(ws: &JobWorkspace) -> VmConfig {
         memory_mb: 2048,
         seed_iso: None,
         pty_socket: None,
+        agent_socket: None,
         balloon: None,
         direct: None,
     }

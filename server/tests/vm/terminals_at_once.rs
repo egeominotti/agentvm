@@ -24,6 +24,10 @@ async fn forty_terminals_opened_at_once_all_answer() {
         base_sha: base,
         timeout_s: 60,
         interactive: true,
+        agent: Default::default(),
+        agent_endpoint: None,
+        agent_native_defaults: None,
+        agent_protocol: None,
         model: None,
         claude_version: None,
         restore: false,
@@ -41,11 +45,19 @@ async fn forty_terminals_opened_at_once_all_answer() {
             let socket = ws.pty_socket();
             async move {
                 // Half of them read-only, as the wall's previews are.
-                let mut pty = PtyConnection::open_with(&socket, "shell", 80, 24, i % 2 == 0).await.ok()?;
-                tokio::time::timeout(Duration::from_secs(8), pty.recv()).await.ok()?.ok()?.map(|_| ())
+                let mut pty = PtyConnection::open_with(&socket, "shell", 80, 24, i % 2 == 0)
+                    .await
+                    .map_err(|e| format!("client {i} open: {e}"))?;
+                match tokio::time::timeout(Duration::from_secs(8), pty.recv()).await {
+                    Ok(Ok(Some(_))) => Ok(()),
+                    Ok(Ok(None)) => Err(format!("client {i} closed before initial output")),
+                    Ok(Err(e)) => Err(format!("client {i} read: {e}")),
+                    Err(_) => Err(format!("client {i} timed out before initial output")),
+                }
             }
         });
-        let answered = futures::future::join_all(opens).await.iter().filter(|r| r.is_some()).count();
-        assert_eq!(answered, 40, "round {round}: only {answered} of 40 terminals answered");
+        let results = futures::future::join_all(opens).await;
+        let errors = results.into_iter().filter_map(Result::err).collect::<Vec<_>>();
+        assert!(errors.is_empty(), "round {round}: {errors:?}");
     }
 }

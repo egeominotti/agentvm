@@ -1,0 +1,25 @@
+
+Additional JSON routes available through agentvm_api:
+PUT /api/settings/token body {token:string}; host Keychain save only.
+GET /api/settings/git; PUT /api/settings/git/{host} body {token:string}; DELETE /api/settings/git/{host}.
+GET /api/settings/s3; PUT /api/settings/s3 body {config:object,secret:string}; POST /api/settings/s3/test.
+GET/PUT/DELETE /api/settings/tailscale; PUT body {key:string}.
+POST/DELETE /api/tasks/{id}/tailscale.
+POST /api/tasks/{id}/control/exec body {argv:string[],cwd?:string,stdin?:string,timeout_s?:1..1800,output_limit?:1..1048576}.
+GET/DELETE /api/tasks/{id}/control/exec/{exec_id}; outputs are base64 with truncation flags.
+POST /api/tasks/{id}/control/files body {op:list|stat|read|write|mkdir|remove|rename,path:string,offset?:number,size?:number,data?:base64,destination?:string,truncate?:bool,recursive?:bool,parents?:bool,exist_ok?:bool,limit?:number}.
+POST /api/tasks/{id}/control/terminal body {op:list|create|capture|input|resize,session?:claude|shell|shell-2..shell-9,text?:string,keys?:string[],cols?:number,rows?:number,lines?:number,cwd?:string}.
+File reads/writes are at most 1 MiB per chunk. Guest relative paths use /root/work. Literal terminal text and literal argv never pass through the control service's shell. Use agentvm_shell explicitly for scripts.
+Launch body: {repo_path:string,prompt?:string,interactive?:bool,base_ref?:string,branch?:string,model?:string,agent?:{kind:claude|codex|gemini|opencode|qwen|copilot|kilo|aider|goose|custom,auth?:account|api,account_kind?:claude|chatgpt|google|copilot|kilo,provider?:openai|anthropic|google|openrouter|local|custom|alibabacodingplan|opencodego|opencodezen,version?:string,custom?:object},cpus?:number,memory_mb?:number,tailscale?:bool,claude_version?:string}.
+Every tool returns {status,data} or a caller-visible tool error. Credentials are write-only through host APIs. Inference credentials remain on the host; enabling Tailscale sends its join key to the guest.
+Archive GET /api/snapshots/{id}/export, POST /api/snapshots/import and POST /api/tasks/{id}/upload use agentvm_transfer with an explicit absolute local_path; bytes stream without entering MCP results. Export refuses to overwrite an existing host file.
+SSE /api/changes and /api/tasks/{id}/events and websocket /api/tasks/{id}/pty are streaming transports; use finite task reads and structured terminal tools from MCP.
+Structured control requires a newly launched VM with the current runtime. Existing VMs keep their legacy lifecycle controls.
+
+GET /api/tasks/{id}/output?cursor=0&limit=100 returns {items:[{seq,item:{type:agent|state,data:object}}],next_cursor,more,dropped}. Cursor is the last consumed sequence (exclusive). Limits are 1..500. dropped counts unavailable sequence IDs; for a truncated legacy raw stream it reports at least one missing event because the prefix is not scanned. Normalized events and their sequence IDs survive daemon restarts. agentvm_output accepts id,cursor,limit directly.
+
+GET /api/agents returns CLI descriptors with eligible accounts, provider protocols, and account connection statuses/capabilities. GET /api/settings/accounts/{kind} returns a single account status. Account kinds: claude, chatgpt, google, copilot, kilo.
+POST /api/settings/accounts/{kind}/import imports a supported host CLI login when can_import is true. POST /api/settings/accounts/{kind}/login starts browser/device authorization when can_login is true and returns {id,verification_url,user_code,expires_in}. Show the URL/code to the user; poll GET /api/settings/accounts/{kind}/login/{id} for status pending|connected|failed and optional error. The user completes authorization in the browser.
+DELETE /api/settings/accounts/{kind} disconnects AgentVM; imported host CLI credentials are preserved. Claude uses PUT /api/settings/token with a claude setup-token credential; its generic login/import capabilities are false.
+Launch authentication: auth:account uses account_kind and omits provider; auth:api uses provider and omits account_kind. Eligible account defaults: Claude->claude, Codex/OpenCode->chatgpt, Gemini->google, Copilot->copilot, Kilo->kilo, Goose->claude (also supports chatgpt). Qwen, Aider and Custom use provider access. Missing auth preserves legacy Claude-account/other-CLI-provider behavior. Models are selected automatically unless an optional model override is supplied.
+Alibaba Coding Plan and OpenCode Go are subscription-key providers; OpenCode Zen uses usage billing. Choose the matching preset/key rather than inferring billing from account versus API transport. Native account credentials and provider keys remain host-only.

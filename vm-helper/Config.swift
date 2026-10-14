@@ -12,6 +12,7 @@ struct VMConfig: Decodable {
     let seedISO: URL?
     /// Unix socket to forward to the vsock port of the PTY server in the guest.
     let ptySocket: URL?
+    let agentSocket: URL?
     /// File with the memory (MB) the VM may keep; followed with the memory balloon.
     let balloon: URL?
     /// Booted straight into this kernel, with its initrd and command line, skipping EFI and GRUB.
@@ -24,6 +25,7 @@ struct VMConfig: Decodable {
         case memoryMB = "memory_mb"
         case seedISO = "seed_iso"
         case ptySocket = "pty_socket"
+        case agentSocket = "agent_socket"
         case balloon, kernel, initrd, cmdline
     }
 
@@ -38,6 +40,7 @@ struct VMConfig: Decodable {
         memoryMB = try c.decode(UInt64.self, forKey: .memoryMB)
         seedISO = try c.decodeIfPresent(String.self, forKey: .seedISO).map { URL(fileURLWithPath: $0) }
         ptySocket = try c.decodeIfPresent(String.self, forKey: .ptySocket).map { URL(fileURLWithPath: $0) }
+        agentSocket = try c.decodeIfPresent(String.self, forKey: .agentSocket).map { URL(fileURLWithPath: $0) }
         balloon = try c.decodeIfPresent(String.self, forKey: .balloon).map { URL(fileURLWithPath: $0) }
         kernel = try c.decodeIfPresent(String.self, forKey: .kernel).map { URL(fileURLWithPath: $0) }
         initrd = try c.decodeIfPresent(String.self, forKey: .initrd).map { URL(fileURLWithPath: $0) }

@@ -1,5 +1,8 @@
 //! Pure core: types and decisions, no I/O.
+pub mod account_proxy;
+pub mod accounts;
 pub mod agent_event;
+pub mod agent_proxy;
 pub mod boot;
 pub mod branches;
 pub mod chunks;
@@ -25,3 +28,10 @@ pub mod telemetry;
 pub mod terminal_session;
 pub mod transcript;
 pub mod usage;
+
+pub mod agents;
+pub mod custom_cli;
+pub mod provider_models;
+pub mod providers;
+
+pub mod guest_control;

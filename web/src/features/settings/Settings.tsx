@@ -4,11 +4,13 @@ import { type ReactNode, useState } from "react";
 import { useSettings } from "../../api/queries";
 import { go } from "../../app/router";
 import { Icon } from "../../components/Icon";
+import { Accounts } from "./Accounts";
 import { Account } from "./Account";
 import { Backups } from "./Backups";
 import { General } from "./General";
 import { GitAccess } from "./GitAccess";
 import { Image } from "./Image";
+import { Providers } from "./Providers";
 import { Preferences } from "./Preferences";
 import { Resources } from "./Resources";
 import { GROUPS, matching, SECTIONS, type SectionId, sectionOf } from "./sections";
@@ -35,6 +37,8 @@ export function SettingsView({ section }: { section?: string }) {
       resources: <Resources s={s} set={set} limits={limits} />,
       preferences: <Preferences />,
       account: <Account />,
+      accounts: <Accounts />,
+      providers: <Providers />,
       git: <GitAccess />,
       tailscale: <Tailscale s={s} set={set} />,
       snapshots: <Snapshots s={s} set={set} />,

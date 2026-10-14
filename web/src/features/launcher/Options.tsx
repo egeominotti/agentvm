@@ -1,11 +1,12 @@
-// The machine's model, Claude Code version and resources, set from the Settings and changeable
+// The machine's coding CLI, release and resources, set from Settings and changeable
 // for this launch; with what still fits in this Mac's memory.
 import { useGolden, useReleases, useSettings, useStatus } from "../../api/queries";
 import { gb } from "../../lib/format";
 import { memoryChoices } from "../../lib/memory";
-import { MODELS } from "../../lib/models";
+import type { AgentSelection } from "../../api/generated/AgentSelection";
+import { AgentFields } from "./AgentFields";
 
-export type Choice = { model: string; version: string; cpus: number; memoryMb: number };
+export type Choice = { agent: AgentSelection; version: string; cpus: number; memoryMb: number };
 
 /** Kept for macOS, as the server's scheduler does. */
 const RESERVED_MB = 8192;
@@ -27,29 +28,23 @@ export function Options({ value: v, onChange }: { value: Choice; onChange: (c: C
   const now = fits == null || slots == null ? null : Math.min(fits, slots);
   return (
     <div className="options">
-      <label>
-        <span>Model</span>
-        <select value={v.model} onChange={(e) => set({ model: e.target.value })}>
-          {MODELS.map(([id, name]) => (
-            <option key={id} value={id}>
-              {name}
+      <AgentFields agent={v.agent} custom={settings?.settings.custom_cli} onChange={(agent) => set({ agent })} />
+      {v.agent.kind === "claude" ? (
+        <label>
+          <span>Claude Code</span>
+          <select value={v.version} onChange={(e) => set({ version: e.target.value })}>
+            <option value="">
+              {golden?.claude_version ? `Image's (${golden.claude_version})` : "Image's version"}
             </option>
-          ))}
-          {MODELS.some(([id]) => id === v.model) ? null : <option value={v.model}>{v.model}</option>}
-        </select>
-      </label>
-      <label>
-        <span>Claude Code</span>
-        <select value={v.version} onChange={(e) => set({ version: e.target.value })}>
-          <option value="">{golden?.claude_version ? `Image's (${golden.claude_version})` : "Image's version"}</option>
-          {/* The four newest releases: enough to step back from a bad one. */}
-          {releases?.versions.slice(0, 4).map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
-      </label>
+            {/* The four newest releases: enough to step back from a bad one. */}
+            {releases?.versions.slice(0, 4).map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <label>
         <span>vCPUs</span>
         <select value={v.cpus} onChange={(e) => set({ cpus: Number(e.target.value) })}>

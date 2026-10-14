@@ -50,6 +50,11 @@ pub fn user_services(listening: &[ListeningPort]) -> Vec<ListeningPort> {
     listening.iter().filter(|l| !SYSTEM_LISTENERS.contains(&l.name.as_str())).cloned().collect()
 }
 
+/// The loopback inference relay is an internal service only when this agent uses it.
+pub fn user_services_for_agent(listening: &[ListeningPort], has_relay: bool) -> Vec<ListeningPort> {
+    user_services(listening).into_iter().filter(|port| !has_relay || port.port != 5001).collect()
+}
+
 /// A VM port reachable from the Mac on `127.0.0.1:host_port`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]

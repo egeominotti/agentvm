@@ -1,6 +1,7 @@
 // This Mac: VMs running, memory promised to them, CPU they use, what Claude would cost.
 import type { Status } from "../../api/generated/Status";
 import type { TaskDto } from "../../api/generated/TaskDto";
+import { analyticsAvailable } from "../../lib/agents";
 import { gb, money } from "../../lib/format";
 
 function Gauge({ label, value, pct, hot }: { label: string; value: string; pct: number; hot?: boolean }) {
@@ -20,7 +21,7 @@ function Gauge({ label, value, pct, hot }: { label: string; value: string; pct: 
 export function HostGauges({ status: s, tasks }: { status: Status; tasks: TaskDto[] }) {
   const live = tasks.filter((t) => t.metrics && t.status.state === "running");
   const cpu = live.reduce((n, t) => n + (t.metrics?.cpu_pct ?? 0) * (t.metrics?.cpus ?? 0), 0) / s.host.cpus;
-  const spent = tasks.reduce((n, t) => n + (t.usage?.cost_usd ?? 0), 0);
+  const spent = tasks.filter((t) => analyticsAvailable(t.agent)).reduce((n, t) => n + (t.usage?.cost_usd ?? 0), 0);
   return (
     <section className="host" aria-label="This Mac">
       <Gauge

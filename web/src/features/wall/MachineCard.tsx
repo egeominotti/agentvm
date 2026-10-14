@@ -3,6 +3,7 @@ import type { TaskDto } from "../../api/generated/TaskDto";
 import { useStatus } from "../../api/queries";
 import { StatusMark } from "../../components/StatusMark";
 import { useToast } from "../../components/Toast";
+import { agentLabel, analyticsAvailable } from "../../lib/agents";
 import { gb, money, tokens } from "../../lib/format";
 import { age, shortId, statusOf, titleOf } from "../../lib/task";
 import { bootSteps, setupFailed } from "../machine/boot";
@@ -13,7 +14,7 @@ export function MachineCard({ task: t }: { task: TaskDto }) {
   const { tone } = statusOf(t);
   const ready = t.status.state === "running" && t.ready;
   const m = t.metrics;
-  const u = t.usage;
+  const u = analyticsAvailable(t.agent) ? t.usage : null;
   const port = t.ports.find((p) => p.kind === "http") ?? t.ports[0];
   return (
     <article className={`card tone-${tone}`}>
@@ -21,11 +22,13 @@ export function MachineCard({ task: t }: { task: TaskDto }) {
         <header className="card-head">
           <StatusMark task={t} label />
           <span className="card-title">{titleOf(t)}</span>
-          <span className="card-id">#{shortId(t)}</span>
+          <span className="card-id">
+            {agentLabel(t.agent)} · #{shortId(t)}
+          </span>
         </header>
         <div className="card-body">
           {!t.interactive ? (
-            <Note title="An automatic task" text="No terminal: open it to follow Claude's work." />
+            <Note title="An automatic task" text={`No terminal: open it to follow ${agentLabel(t.agent)}'s work.`} />
           ) : ready ? (
             <Preview id={t.id} />
           ) : (

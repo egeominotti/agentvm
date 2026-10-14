@@ -126,8 +126,11 @@ impl Store {
     }
 
     fn entry(&self, record: TaskRecord) -> Entry {
-        let log = Arc::new(EventLog::new());
-        log.push(StreamItem::State(record.state.clone()));
+        let output = self.dir.as_ref().map(|d| d.join(record.id.as_str()).join("output.jsonl"));
+        let log = Arc::new(output.map_or_else(EventLog::new, EventLog::persistent));
+        if log.is_empty() {
+            log.push(StreamItem::State(record.state.clone()));
+        }
         let file = RecordFile::new(self.dir.as_ref().map(|d| d.join(record.id.as_str()).join("record.json")));
         Entry { record, log, stop: watch::channel(false).0, version: 1, file }
     }

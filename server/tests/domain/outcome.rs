@@ -109,3 +109,9 @@ fn the_start_of_claude_is_read_from_the_guest_log() {
     assert_eq!(claude_start_uptime("[1.6s] job start"), None);
     assert_eq!(claude_start_uptime("garbage claude start"), None);
 }
+
+#[test]
+fn every_cli_start_sets_the_guest_timeout_backstop() {
+    use agentvm::domain::outcome::claude_start_uptime;
+    assert_eq!(claude_start_uptime("[42.15s] agent start"), Some(42.15));
+}

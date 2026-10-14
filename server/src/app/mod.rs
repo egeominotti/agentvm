@@ -34,3 +34,11 @@ mod supervise;
 pub mod supervisor;
 pub mod tailscale;
 pub mod telemetry;
+
+pub mod accounts;
+pub mod agent_gateway;
+pub mod agents;
+
+pub mod control;
+
+pub mod output;

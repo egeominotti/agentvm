@@ -19,6 +19,7 @@ async fn joining_the_tailnet_needs_a_saved_key() {
         prompt: String::new(),
         base_ref: None,
         interactive: true,
+        agent: Default::default(),
         model: None,
         claude_version: None,
         restore_from: None,

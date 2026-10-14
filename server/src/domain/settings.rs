@@ -16,11 +16,10 @@ pub struct Model(String);
 
 impl Model {
     pub fn parse(s: &str) -> Result<Self, SettingsError> {
-        let s = s.trim();
         let ok = !s.is_empty()
-            && s.len() <= 64
-            && s.starts_with(|c: char| c.is_ascii_lowercase())
-            && s.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || b"-.[]_".contains(&c));
+            && s.len() <= 200
+            && s.starts_with(|c: char| c.is_ascii_alphanumeric())
+            && s.bytes().all(|c| c.is_ascii_alphanumeric() || b"-.[]_/:".contains(&c));
         if ok { Ok(Model(s.to_owned())) } else { Err(SettingsError::Model(s.to_owned())) }
     }
 
@@ -112,6 +111,12 @@ impl From<ClaudeVersion> for String {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Settings {
+    #[serde(default)]
+    pub agent: super::agents::AgentSelection,
+    #[serde(default)]
+    pub providers: std::collections::BTreeMap<super::providers::Provider, super::providers::ProviderConfig>,
+    #[serde(default)]
+    pub custom_cli: Option<super::custom_cli::CustomCli>,
     /// VMs running at the same time; the others wait in the queue.
     pub max_vms: usize,
     /// vCPUs per VM.
@@ -181,6 +186,8 @@ pub enum SettingsError {
     ClaudeVersion(String),
     #[error("invalid model {0:?}: use an alias like opus or sonnet[1m], or a model ID like claude-opus-5-5")]
     Model(String),
+    #[error("agent: {0}")]
+    Agent(String),
     #[error("S3: {0}")]
     S3(String),
     #[error(transparent)]
@@ -211,6 +218,18 @@ impl Settings {
         if let Some(s3) = &self.s3 {
             s3.validate().map_err(|e| SettingsError::S3(e.to_string()))?;
         }
+        for config in self.providers.values() {
+            config.validate().map_err(SettingsError::Agent)?;
+        }
+        if let Some(custom) = &self.custom_cli {
+            custom.validate(true).map_err(SettingsError::Agent)?;
+        }
+        let mut agent = self.agent.clone();
+        if agent.kind == super::agents::AgentKind::Custom && agent.custom.is_none() {
+            agent.custom = self.custom_cli.clone();
+        }
+        let config = agent.resolved_provider().map(|p| self.providers.get(&p).cloned().unwrap_or_else(|| p.config()));
+        agent.validate(config.as_ref(), true).map_err(SettingsError::Agent)?;
         self.auto_snapshots.validate()?;
         self.tailscale.validate()?;
         Ok(())

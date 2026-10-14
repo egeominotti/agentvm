@@ -5,7 +5,6 @@ set -euo pipefail
 
 JOB=/mnt/job
 WORK=/root/work
-CLAUDE=/root/.local/bin/claude
 
 log() { echo "[$(cut -d' ' -f1 /proc/uptime)s] $*" >> "$JOB/job.log"; }
 
@@ -51,6 +50,17 @@ source "$JOB/runtime/agentvm-save"
 
 # Scripts newer than the image's agentvm-boot (which installs the others) come from here.
 [ -f "$JOB/runtime/agentvm-tailscale" ] && install -m 755 "$JOB/runtime/agentvm-tailscale" /usr/local/bin/agentvm-tailscale
+if [ -f "$JOB/runtime/agentvm-relay" ] && jq -e '.agent_endpoint | strings | length > 0' "$JOB/task.json" >/dev/null 2>&1; then
+  install -m 755 "$JOB/runtime/agentvm-relay" /usr/local/bin/agentvm-relay
+  keep_running /usr/local/bin/agentvm-relay
+fi
+# Python helpers are loaded beside the shipped PTY service, including on old images.
+for helper in "$JOB/runtime"/agent_*.py; do
+  [ -f "$helper" ] && install -m 644 "$helper" "/usr/local/bin/$(basename "$helper")"
+done
+for command in agentvm-install agentvm-run; do
+  [ -f "$JOB/runtime/$command" ] && install -m 755 "$JOB/runtime/$command" "/usr/local/bin/$command"
+done
 # The terminals' shell setup ships with every launch, like these scripts: a change needs no new
 # image. ~/.zshrc only loads it, so what the user adds there is never overwritten.
 if [ -f "$JOB/runtime/zshrc" ]; then
@@ -97,8 +107,11 @@ MODEL=$(jq -r '.model // empty' "$JOB/task.json")
 
 # Unexported variable: the token reaches Claude only through a pipe (fd 3), never via the environment,
 # so the commands run by the agent do not inherit it.
-TOKEN=$(cat "$JOB/.token")
+TOKEN=$(cat "$JOB/.token" 2>/dev/null || printf '%s' sk-ant-oat01-agentvm-dummy)
 rm -f "$JOB/.token"
+install -d -m 700 /run/agentvm
+(umask 077; printf '%s' "$TOKEN" > /run/agentvm/token)
+unset TOKEN
 
 RESTORE=$(jq -r '.restore // false' "$JOB/task.json")
 if [ "$RESTORE" = "true" ]; then
@@ -126,6 +139,8 @@ log "repo ready on $BRANCH"
 
 for _ in $(seq 100); do getent hosts api.anthropic.com >/dev/null && break; sleep 0.1; done
 log "network ready"
+# Structured process/file/terminal control is available while the selected CLI installs.
+keep_running /usr/local/bin/agentvm-pty
 # The user's tailnet, if this launch asked for it: joined in the background, so it never delays
 # the agent or the terminal; what came of it goes to tailscale.json.
 if [ -f "$JOB/tailscale-spec.json" ]; then /usr/local/bin/agentvm-tailscale up & fi
@@ -148,29 +163,27 @@ if [ "$RESTORE" != "true" ] && [ -f "$WORK/.agentvm/setup.sh" ]; then
   [ -z "$changed" ] || log "setup.sh changed tracked files (they will be in the agent's commits): $changed"
 fi
 
-# A launch can pin another Claude Code release than the image's (the version is validated by the server).
-CLAUDE_VERSION=$(jq -r '.claude_version // empty' "$JOB/task.json")
-if [ -n "$CLAUDE_VERSION" ]; then
-  log "installing Claude Code $CLAUDE_VERSION"
-  if ! env -i HOME=/root PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin "$CLAUDE" install "$CLAUDE_VERSION" >> "$JOB/job.log" 2>&1; then
-    write_result failed -1 0 "claude_install_failed: $CLAUDE_VERSION"
-    exit 0
-  fi
-  log "Claude Code $("$CLAUDE" --version 2>/dev/null)"
+# The image retains Claude; other CLIs are downloaded only when selected.
+if ! /usr/local/bin/agentvm-install "$JOB/task.json" >> "$JOB/install.log" 2>&1; then
+  log "agent install failed (see install.log)"
+  write_result failed -1 0 "agent_install_failed: see install.log"
+  exit 0
+fi
+if ! /usr/local/bin/agentvm-run --prepare >> "$JOB/install.log" 2>&1; then
+  log "agent configuration failed (see install.log)"
+  write_result failed -1 0 "agent_configuration_failed: see install.log"
+  exit 0
 fi
 
 if [ "$(jq -r '.interactive // false' "$JOB/task.json")" = "true" ]; then
-  # Terminal: interactive Claude in tmux, PTY server over vsock, save/close on request.
-  install -d -m 700 /run/agentvm
-  (umask 077; printf '%s' "$TOKEN" > /run/agentvm/token)
-  unset TOKEN
+  # The primary wire session keeps its old name for already connected clients.
   (umask 077; jq -r .prompt "$JOB/task.json" > /run/agentvm/prompt)
   [ "$RESTORE" = "true" ] && touch /run/agentvm/continue
   [ -s /run/agentvm/prompt ] && [ "$(tr -d '[:space:]' < /run/agentvm/prompt)" != "" ] || rm -f /run/agentvm/prompt
   if [ -n "$MODEL" ]; then printf '%s' "$MODEL" > /run/agentvm/model; fi
-  keep_running /usr/local/bin/agentvm-pty
   env -i HOME=/root USER=root LANG=C.UTF-8 TERM=xterm-256color PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-    tmux -f /etc/agentvm/tmux.conf new-session -d -s claude -c "$WORK" -x 160 -y 48 /usr/local/bin/agentvm-claude
+    tmux -f /etc/agentvm/tmux.conf new-session -d -s claude -c "$WORK" -x 160 -y 48 /usr/local/bin/agentvm-run
+  touch /run/agentvm/cli-ready
   log "terminal ready"
 
   # The terminal outlives any single failure (a full disk on the Mac, a request that cannot be
@@ -213,21 +226,18 @@ fi
 
 # The time limit is enforced here, so the work done until then is still saved (exit 124).
 TIMEOUT_S=$(jq -r '.timeout_s // 1800' "$JOB/task.json")
-# Prompt from stdin: never parsed as an option (e.g. "- list") nor limited by ARG_MAX.
-# Claude runs as root (IS_SANDBOX=1: the VM is the sandbox); the token arrives only on fd 3.
 # The server's backstop for the time limit counts from this line.
-log "claude start"
+log "agent start"
 set +e
-jq -r .prompt "$JOB/task.json" | env -i \
+: > "$JOB/agent.err"
+ln -f "$JOB/agent.err" "$JOB/claude.err"
+env -i \
   HOME=/root USER=root LANG=C.UTF-8 PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-  IS_SANDBOX=1 CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3 \
-  timeout --kill-after=30 "$TIMEOUT_S" "$CLAUDE" -p --dangerously-skip-permissions ${MODEL:+--model "$MODEL"} --output-format stream-json --verbose \
-  3< <(printf '%s' "$TOKEN") > "$JOB/stream.jsonl" 2> "$JOB/claude.err"
-CLAUDE_EXIT=${PIPESTATUS[1]}
+  timeout --kill-after=30 "$TIMEOUT_S" /usr/local/bin/agentvm-run 2>> "$JOB/agent.err"
+CLAUDE_EXIT=$?
 copy_transcripts || true
 set -e
-unset TOKEN
-log "claude exit $CLAUDE_EXIT"
+log "agent exit $CLAUDE_EXIT"
 
 save_work
 
@@ -236,7 +246,7 @@ if [ -n "$SAVE_ERROR" ]; then
 elif [ "$CLAUDE_EXIT" -eq 124 ] || [ "$CLAUDE_EXIT" -eq 137 ]; then
   write_result failed "$CLAUDE_EXIT" "$COMMITS" "timeout: the agent ran out of time; its commits are on the branch"
 elif [ "$CLAUDE_EXIT" -ne 0 ]; then
-  write_result failed "$CLAUDE_EXIT" "$COMMITS"
+  write_result failed "$CLAUDE_EXIT" "$COMMITS" "agent_exit $CLAUDE_EXIT"
 elif [ "$COMMITS" -eq 0 ]; then
   write_result no_changes 0 0
 else

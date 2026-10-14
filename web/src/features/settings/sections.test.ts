@@ -16,7 +16,12 @@ describe("settings sections", () => {
     expect(matching("dark").has("preferences")).toBe(true);
     expect(matching("r2 bucket").has("backups")).toBe(true);
     expect(matching("memory").has("resources")).toBe(true);
-    expect(matching("").size).toBe(10);
+    expect(matching("").size).toBe(12);
     expect(matching("nothing like this").size).toBe(0);
   });
+});
+
+it("finds account and subscription access without sending users to API provider settings", () => {
+  expect(sectionOf("accounts")).toBe("accounts");
+  expect(matching("chatgpt subscription").has("accounts")).toBe(true);
 });

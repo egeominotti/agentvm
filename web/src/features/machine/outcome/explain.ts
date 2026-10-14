@@ -6,6 +6,7 @@ export function explain(reason: string): [string, string] {
     return ["Time limit reached", "The agent was stopped after the time limit in Settings."];
   if (reason.startsWith("guest_no_result"))
     return ["The VM shut down without a result", "Diagnostics show its last logs."];
+  if (reason.startsWith("agent_exit")) return ["Agent stopped with an error", "Diagnostics show what it printed."];
   if (reason.startsWith("claude_exit")) return ["Claude stopped with an error", "Diagnostics show what it printed."];
   if (reason.startsWith("vm_error")) {
     // It ran, then its process ended: a crash, a kill, or the Mac out of memory.

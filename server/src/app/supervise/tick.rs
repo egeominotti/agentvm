@@ -95,7 +95,8 @@ impl<'a> Ticker<'a> {
     fn sync_ports(&self, m: &VmMetrics) {
         let socket = JobWorkspace::pty_socket_of(&self.ctx.config.jobs(), self.id);
         let vm = vm_name(self.record);
-        let services = crate::domain::metrics::user_services(&m.ports);
+        let services =
+            crate::domain::metrics::user_services_for_agent(&m.ports, self.record.agent_provider_config.is_some());
         let ports = self.ctx.forwards.sync(socket, self.id, &vm, self.ctx.config.port, &services);
         self.ctx.store.set_ports(self.id, ports);
     }

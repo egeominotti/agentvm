@@ -7,8 +7,8 @@ use futures::StreamExt;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use crate::adapters::tail::tail_lines;
-use crate::app::events::{EventLog, StreamItem};
+use crate::adapters::tail::tail_records;
+use crate::app::events::EventLog;
 use crate::domain::agent_event::{AgentEvent, parse_line};
 use crate::secret::Secret;
 
@@ -27,14 +27,16 @@ impl Follower {
     ) -> Self {
         let (stop, rx) = watch::channel(false);
         let handle = tokio::spawn(async move {
-            let mut lines = std::pin::pin!(tail_lines(stream, rx));
-            while let Some(line) = lines.next().await {
-                for event in parse_line(&token.redact(&line)) {
+            let cursor = log.source_cursor().unwrap_or_default();
+            let mut lines = std::pin::pin!(tail_records(stream, cursor, rx));
+            while let Some(record) = lines.next().await {
+                let events = parse_line(&token.redact(&record.line));
+                for event in &events {
                     if let AgentEvent::Result { cost_usd, input_tokens, output_tokens, .. } = &event {
                         on_result(*cost_usd, *input_tokens, *output_tokens);
                     }
-                    log.push(StreamItem::Agent(event));
                 }
+                log.publish_agent_line(events, record.cursor);
             }
         });
         Follower { stop, handle }

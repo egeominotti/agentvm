@@ -26,7 +26,7 @@ export function Storage() {
   return (
     <Page
       title="Storage"
-      description="A closed VM's disk is deleted as it closes; an interrupted one is kept as a snapshot. Logs and Claude's history stay until you delete them."
+      description="A closed VM's disk is deleted as it closes; an interrupted one is kept as a snapshot. Logs and agent history stay until you delete them."
     >
       <Panel title="On this Mac" description={d ? `${gb(total)} in ~/AgentVMs.` : undefined}>
         {d ? (
@@ -58,7 +58,7 @@ export function Storage() {
           description={
             cleanup.data
               ? `Deleted ${plural(cleanup.data.removed, "folder")}.`
-              : "Their diagnostics and Claude's history go with them, for good."
+              : "Their diagnostics and agent history go with them, for good."
           }
         >
           <ConfirmButton

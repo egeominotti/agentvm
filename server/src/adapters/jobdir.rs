@@ -18,20 +18,8 @@ unsafe extern "C" {
     fn getuid() -> u32;
 }
 
-/// Guest scripts of this build, installed by the image's `agentvm-boot` at every launch.
-const RUNTIME: &[(&str, &str)] = &[
-    ("agentvm-job", include_str!("../../../guest/agentvm-job")),
-    ("agentvm-save", include_str!("../../../guest/agentvm-save")),
-    ("agentvm-pty", include_str!("../../../guest/agentvm-pty")),
-    ("agentvm-metrics", include_str!("../../../guest/agentvm-metrics")),
-    ("agentvm-statusline", include_str!("../../../guest/agentvm-statusline")),
-    ("agentvm-claude", include_str!("../../../guest/agentvm-claude")),
-    ("agentvm-tailscale", include_str!("../../../guest/agentvm-tailscale")),
-    ("tmux.conf", include_str!("../../../guest/config/tmux.conf")),
-    ("zshrc", include_str!("../../../guest/config/zshrc")),
-    ("zshrc.stub", include_str!("../../../guest/config/zshrc.stub")),
-    ("starship.toml", include_str!("../../../guest/config/starship.toml")),
-];
+mod runtime;
+use runtime::RUNTIME;
 
 /// JSON the guest writes (metrics, usage, result) is a few KiB.
 const SMALL_FILE: u64 = 1 << 20;
@@ -64,6 +52,9 @@ impl JobWorkspace {
     }
     pub fn pty_socket_of(_jobs_root: &Path, id: &TaskId) -> PathBuf {
         socket_dir().join(format!("{id}.sock"))
+    }
+    pub fn agent_socket_of(id: &TaskId) -> PathBuf {
+        socket_dir().join(format!("{id}-agent.sock"))
     }
 
     /// Deletes a finished job's folder (logs included).
@@ -139,6 +130,9 @@ impl JobWorkspace {
     }
     pub fn pty_socket(&self) -> PathBuf {
         socket_dir().join(format!("{}.sock", self.id))
+    }
+    pub fn agent_socket(&self) -> PathBuf {
+        socket_dir().join(format!("{}-agent.sock", self.id))
     }
     pub fn read_metrics(&self) -> Option<crate::domain::metrics::VmMetrics> {
         serde_json::from_slice(&guestfs::read(&self.share().join("metrics.json"), SMALL_FILE)?).ok()
@@ -266,6 +260,7 @@ impl Drop for JobWorkspace {
             self.repo_bundle(),
             self.pid_path(),
             self.pty_socket(),
+            self.agent_socket(),
         ] {
             let _ = fs::remove_file(p);
         }

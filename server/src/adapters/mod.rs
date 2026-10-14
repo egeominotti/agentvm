@@ -1,4 +1,6 @@
 //! Adapters to external systems. They do not depend on each other.
+pub mod accounts;
+pub mod agent_proxy;
 pub mod archive;
 pub mod chunks;
 pub mod forward;
@@ -20,3 +22,5 @@ pub mod snapshots;
 pub mod tail;
 pub mod transcripts;
 pub mod vm;
+
+pub mod control;

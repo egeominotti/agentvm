@@ -27,7 +27,7 @@ TMUX_CONF = "/etc/agentvm/tmux.conf"
 # The shells are zsh with the developer's setup when the image has it (older images: bash).
 SHELL = ["/bin/zsh", "-l"] if os.path.exists("/bin/zsh") else ["/bin/bash", "-l"]
 SESSIONS = {
-    "claude": ["/usr/local/bin/agentvm-claude"],
+    "claude": ["/usr/local/bin/agentvm-run"],
     "shell": SHELL,
 }
 # Extra shells beside the first one, opened and closed from the dashboard.
@@ -63,6 +63,8 @@ def set_size(fd, cols, rows):
 
 
 def spawn(session, cols, rows, view=False):
+    if session == "claude" and not os.path.exists("/run/agentvm/cli-ready"):
+        raise ValueError("the primary CLI is still initializing")
     pw = pwd.getpwnam(USER)
     if view:
         # Previews watch without typing and without resizing the window for real clients.
@@ -133,9 +135,12 @@ def kill(conn, session):
 
 
 def serve(conn):
-    pid = fd = None
+    pid = fd = output = None
     try:
         header = read_header(conn)
+        if header and header.get("control") is True:
+            from agent_control import serve as control_serve
+            return control_serve(conn)
         if header and isinstance(header.get("forward"), int):
             return forward(conn, header["forward"])
         if header and header.get("kill") in EXTRA_SHELLS:
@@ -159,7 +164,8 @@ def serve(conn):
                 except OSError:
                     pass
 
-        threading.Thread(target=to_client, daemon=True).start()
+        output = threading.Thread(target=to_client, daemon=True)
+        output.start()
         while True:
             head = recv_exact(conn, 5)
             if head is None:
@@ -177,12 +183,19 @@ def serve(conn):
         pass
     finally:
         # Closes only the tmux client: the session stays alive for reconnections.
+        try:
+            conn.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
         if pid:
             try:
                 os.kill(pid, signal.SIGHUP)
                 os.waitpid(pid, 0)
             except OSError:
                 pass
+        # A reader must exit before its descriptor can be reused by another terminal.
+        if output is not None:
+            output.join()
         if fd is not None:
             os.close(fd)
         conn.close()

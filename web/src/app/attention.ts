@@ -2,6 +2,7 @@
 // when an agent goes from working to waiting while the page is in the background.
 import { useEffect, useRef } from "react";
 import type { TaskDto } from "../api/generated/TaskDto";
+import { agentLabel } from "../lib/agents";
 import { isWaiting, titleOf } from "../lib/task";
 
 const PREF_KEY = "agentvm.notify";
@@ -41,7 +42,7 @@ export function useAttention(tasks: TaskDto[]) {
       const before = last.current.get(t.id);
       last.current.set(t.id, t.activity);
       if (before === "working" && t.activity === "waiting" && document.hidden && notificationsOn()) {
-        const n = new Notification("Claude is waiting for you", {
+        const n = new Notification(`${agentLabel(t.agent)} is waiting for you`, {
           body: titleOf(t),
           icon: `${import.meta.env.BASE_URL}logo.svg`,
           tag: t.id,

@@ -23,6 +23,7 @@ pub type ClaudeReleases = Releases;
 const RELEASES_TTL: Duration = Duration::from_secs(600);
 
 pub struct AppCtx {
+    pub accounts: super::accounts::Accounts,
     pub config: Config,
     pub store: Store,
     pub scheduler: Scheduler,
@@ -57,10 +58,14 @@ impl AppCtx {
             s3: None,
             auto_snapshots: Default::default(),
             tailscale: Default::default(),
+            agent: Default::default(),
+            providers: Default::default(),
+            custom_cli: None,
         }
         .fitted(&limits);
         let settings = SettingsService::load(config.home.join("settings.json"), defaults, limits);
         AppCtx {
+            accounts: Default::default(),
             scheduler: Scheduler::new(settings.get().max_vms),
             store: Store::persistent(config.jobs()),
             golden: GoldenService::new(config.home.clone(), config.scripts_dir.join("build-golden.sh")),

@@ -83,15 +83,20 @@ check_tools() {
   command -v bun || { echo "Bun is missing: run  curl -fsSL https://bun.sh/install | bash"; return 1; }
   rustup target list --installed 2>/dev/null | grep -q aarch64-apple-darwin || rustup target add aarch64-apple-darwin
 }
-run Tools "macOS $(sw_vers -productVersion), Swift, Rust, Bun" check_tools
-
-run Build "VM helper, dashboard and server, only what changed" scripts/build.sh
+if [ -f server/Cargo.toml ]; then
+  run Tools "macOS $(sw_vers -productVersion), Swift, Rust, Bun" check_tools
+  run Build "VM helper, dashboard and server, only what changed" scripts/build.sh
+else
+  [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ] || fail "agentvm needs a Mac with Apple Silicon"
+  [ -x bin/agentvm-server ] && [ -x bin/agentvm-vm ] || fail "release binaries are missing"
+  run Build "ready-made release binaries" true
+fi
 
 if [ -f "$HOME_DIR/golden/disk.raw" ]; then
-  run "VM image" "Debian 13 with Claude Code, ready" true
+  run "VM image" "Debian 13, ready" true
 else
   note "first time only: the VM image is built once, about 3 minutes"
-  run "VM image" "Debian 13 with Claude Code" scripts/build-golden.sh
+  run "VM image" "Debian 13" scripts/build-golden.sh
 fi
 
 running=$(lsof -t -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -1 || true)
@@ -133,21 +138,15 @@ fi
 status=$(curl -fs "$URL/api/status" || echo '{}')
 field() { echo "$status" | sed -n "s/.*\"$1\":\([a-z0-9]*\).*/\1/p"; }
 vms=$(field running)
-token=$(field token)
 printf '\n  %s%s●%s %s%sagentvm is ready%s  %s%s%s\n\n' "$bold" "$green" "$off" "$bold" "$ink" "$off" "$ink3" "$(since "$T0")" "$off"
 printf '    %sDashboard%s   %s%s%s\n' "$ink3" "$off" "$brand$bold" "$URL" "$off"
 printf '    %sMachines%s    %s%s running%s\n' "$ink3" "$off" "$ink" "${vms:-0}" "$off"
-if [ "$token" = true ]; then
-  printf '    %sClaude%s      %stoken in the Keychain%s\n' "$ink3" "$off" "$ink" "$off"
-else
-  printf '    %sClaude%s      %srun  claude setup-token  and paste it in Settings → Claude account%s\n' "$ink3" "$off" "$violet" "$off"
-fi
 printf '    %sLogs%s        %s%s/logs%s\n' "$ink3" "$off" "$ink2" "${HOME_DIR/#$HOME/~}" "$off"
 if [ "$DEV" = 1 ]; then
   printf '    %sHot reload%s  %shttp://localhost:5173%s  %s(Ctrl-C stops it, the server stays)%s\n\n' "$ink3" "$off" "$brand$bold" "$off" "$ink3" "$off"
   [ "$OPEN" = 1 ] && (sleep 1.5 && open http://localhost:5173) &
   cd web && AGENTVM_API="$URL" exec bun run dev --port 5173 --strictPort
 fi
-printf '    %sNext%s        %s⌘K in the dashboard launches a VM · ./quickstart --dev for hot reload%s\n\n' "$ink3" "$off" "$ink2" "$off"
+printf '    %sNext%s        %sNew VM → choose a repository and coding CLI → Launch%s\n\n' "$ink3" "$off" "$ink2" "$off"
 [ "$OPEN" = 1 ] && open "$URL"
 exit 0

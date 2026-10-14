@@ -1,3 +1,4 @@
+import { analyticsAvailable } from "../../lib/agents";
 // Every machine: a summary, then the running ones (live cards or a table) and the finished ones.
 import { useState } from "react";
 import { useStatus, useTasks } from "../../api/queries";
@@ -35,8 +36,10 @@ export function Wall() {
   const waiting = live.filter((t) => liveKind(t) === "waiting").length;
   const working = live.filter((t) => liveKind(t) === "working").length;
   const memUsed = live.reduce((a, t) => a + (t.metrics?.mem_used_mb ?? 0), 0);
-  const spend = tasks.reduce((a, t) => a + (t.usage?.cost_usd ?? 0), 0);
-  const used = tasks.reduce((a, t) => a + (t.usage ? t.usage.input_tokens + t.usage.output_tokens : 0), 0);
+  const spend = tasks.filter((t) => analyticsAvailable(t.agent)).reduce((a, t) => a + (t.usage?.cost_usd ?? 0), 0);
+  const used = tasks
+    .filter((t) => analyticsAvailable(t.agent))
+    .reduce((a, t) => a + (t.usage ? t.usage.input_tokens + t.usage.output_tokens : 0), 0);
   return (
     <div className="wall-view">
       <header className="view-head">

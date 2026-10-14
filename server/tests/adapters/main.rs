@@ -1,5 +1,8 @@
 //! Adapter tests against real systems: git, APFS, processes, Keychain. No mocks.
 
+mod account_relay;
+mod accounts;
+mod agent_proxy;
 mod chunks;
 mod forward;
 mod git;
@@ -12,6 +15,8 @@ mod kernel;
 mod lock;
 mod private_git;
 mod process;
+mod provider_catalog;
+mod provider_keys;
 mod pty;
 mod remote;
 mod s3;

@@ -1,0 +1,128 @@
+#!/bin/bash
+# Install only the selected CLI in this disposable disk, never the shared image.
+set -euo pipefail
+dependencies() {
+  python3 - "$1" "$(dirname "$0")" <<'PY'
+import json
+import pathlib
+import sys
+sys.path.insert(0, sys.argv[2])
+from agent_auth import install_dependencies
+print(json.dumps(install_dependencies(json.loads(pathlib.Path(sys.argv[1]).read_text()))))
+PY
+}
+if [ "${1:-}" = --account-dependencies ]; then
+  dependencies "${2:-/mnt/job/task.json}"
+  exit 0
+fi
+export HOME=/root PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+SPEC=${1:-/mnt/job/task.json}
+KIND=$(jq -r '.agent.kind // "claude"' "$SPEC")
+VERSION=$(jq -r '.agent.version // .claude_version // empty' "$SPEC")
+mkdir -p /root/.local/bin /root/.local/share/agentvm
+
+log() { echo "[$(cut -d' ' -f1 /proc/uptime)s] $*" | tee -a /mnt/job/job.log; }
+fetch() { curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 --max-time 600 "$@"; }
+node22() {
+  if command -v node >/dev/null && [ "$(node -p 'process.versions.node.split(".")[0]')" -ge 22 ]; then return; fi
+  local stage archive
+  stage=$(mktemp -d)
+  fetch https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt -o "$stage/checksums"
+  archive=$(awk '$2 ~ /linux-arm64.tar.xz$/ {print $2; exit}' "$stage/checksums")
+  [ -n "$archive" ] || { log "Node 22 ARM64 release not found"; return 1; }
+  fetch "https://nodejs.org/dist/latest-v22.x/$archive" -o "$stage/$archive"
+  (cd "$stage" && awk -v name="$archive" '$2 == name' checksums | sha256sum -c -)
+  mkdir -p /root/.local/share/node22
+  tar -xJf "$stage/$archive" --strip-components=1 -C /root/.local/share/node22
+  for command in node npm npx; do ln -sf "/root/.local/share/node22/bin/$command" "/root/.local/bin/$command"; done
+  rm -rf "$stage"
+}
+npm_cli() {
+  node22
+  npm install --prefix /root/.local --global --no-fund --no-audit "$1@${2:-$VERSION}"
+}
+release() {
+  local url=$1 binary=$2 stage
+  stage=$(mktemp -d)
+  fetch "$url" -o "$stage/archive"
+  tar -xf "$stage/archive" -C "$stage"
+  local executable
+  executable=$(find "$stage" -type f -name "$binary" -print -quit)
+  [ -n "$executable" ] || { log "$binary missing from release archive"; rm -rf "$stage"; return 1; }
+  install -m 755 "$executable" "/root/.local/bin/$binary"
+  rm -rf "$stage"
+}
+
+case "$KIND" in
+  claude) NAME="Claude Code"; DEFAULT="" ;;
+  codex) NAME="Codex"; DEFAULT=0.162.1 ;;
+  gemini) NAME="Gemini CLI"; DEFAULT=0.64.0 ;;
+  opencode) NAME="OpenCode"; DEFAULT=1.19.0 ;;
+  qwen) NAME="Qwen Code"; DEFAULT=0.25.1 ;;
+  copilot) NAME="GitHub Copilot CLI"; DEFAULT=1.0.98 ;;
+  kilo) NAME="Kilo CLI"; DEFAULT=7.8.8 ;;
+  aider) NAME="Aider"; DEFAULT=0.86.2 ;;
+  goose) NAME="Goose"; DEFAULT=1.54.0 ;;
+  custom) NAME=$(jq -r '.agent.custom.name // "Custom CLI"' "$SPEC"); DEFAULT="" ;;
+  *) log "Unsupported CLI: $KIND"; exit 1 ;;
+esac
+VERSION=${VERSION:-$DEFAULT}
+if [ "$KIND" != custom ] && [ -n "$VERSION" ] && ! [[ "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?|latest|stable)$ ]]; then
+  log "Invalid CLI version"; exit 1
+fi
+# Restored Goose installations can switch accounts and need their nested CLI before the cache hit.
+DEPENDENCIES=$(dependencies "$SPEC")
+while IFS=$'\t' read -r dependency package pinned; do
+  marker="/root/.local/share/agentvm/$dependency-installed"
+  if [ -f "$marker" ] && [ "$(cat "$marker")" = "$pinned" ] && command -v "$dependency" >/dev/null; then
+    continue
+  fi
+  log "installing $dependency account dependency $pinned"
+  npm_cli "$package" "$pinned"
+  printf '%s' "$pinned" > "$marker"
+done < <(jq -r '.[] | [.kind, .package, .version] | @tsv' <<< "$DEPENDENCIES")
+MARKER="/root/.local/share/agentvm/$KIND-installed"
+if [ "$KIND" = custom ]; then
+  INSTALL=$(jq -r '.agent.custom.install // empty' "$SPEC")
+  SIGNATURE=$(printf '%s' "$INSTALL" | sha256sum | cut -d' ' -f1)
+else
+  SIGNATURE=$VERSION
+fi
+if [ -e "$MARKER" ] && [ "$(cat "$MARKER")" = "$SIGNATURE" ] && { [ "$KIND" = custom ] || command -v "$KIND" >/dev/null; }; then
+  log "$NAME already installed"
+  exit 0
+fi
+log "installing $NAME ${VERSION:-image}"
+case "$KIND" in
+  claude)
+    if [ -n "$VERSION" ]; then /root/.local/bin/claude install "$VERSION"; fi
+    test -x /root/.local/bin/claude ;;
+  codex) npm_cli @openai/codex ;;
+  gemini) npm_cli @google/gemini-cli ;;
+  qwen) npm_cli @qwen-code/qwen-code ;;
+  kilo) npm_cli @kilocode/cli ;;
+  copilot) npm_cli @github/copilot ;;
+  opencode)
+    if [ "$VERSION" = latest ]; then
+      release https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-arm64.tar.gz opencode
+    else
+      release "https://github.com/anomalyco/opencode/releases/download/v$VERSION/opencode-linux-arm64.tar.gz" opencode
+    fi ;;
+  goose)
+    if [ "$VERSION" = latest ]; then
+      release https://github.com/aaif-goose/goose/releases/latest/download/goose-aarch64-unknown-linux-gnu.tar.bz2 goose
+    else
+      release "https://github.com/aaif-goose/goose/releases/download/v$VERSION/goose-aarch64-unknown-linux-gnu.tar.bz2" goose
+    fi ;;
+  aider)
+    if ! command -v uv >/dev/null; then
+      release https://github.com/astral-sh/uv/releases/latest/download/uv-aarch64-unknown-linux-gnu.tar.gz uv
+    fi
+    PACKAGE="aider-chat==$VERSION"
+    [ "$VERSION" = latest ] && PACKAGE=aider-chat
+    uv tool install --force --python 3.12 --with pip "$PACKAGE" ;;
+  custom)
+    if [ -n "$INSTALL" ]; then (cd /root/work && bash -euo pipefail -c "$INSTALL"); fi ;;
+esac
+printf '%s' "$SIGNATURE" > "$MARKER"
+if [ "$KIND" = custom ]; then log "$NAME ready"; else log "$NAME $("$KIND" --version 2>/dev/null | head -1)"; fi

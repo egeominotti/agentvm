@@ -94,8 +94,8 @@ pub fn backstop(limit: Duration, claude_started: Option<Duration>) -> Duration {
     claude_started.unwrap_or(PREPARE_MAX) + limit + TIMEOUT_GRACE
 }
 
-/// The guest's uptime, in seconds, in its log line `[<uptime>s] claude start`.
+/// Guest uptime at agent start; old machines retain their Claude-specific marker.
 pub fn claude_start_uptime(line: &str) -> Option<f64> {
-    let rest = line.strip_suffix("] claude start")?.strip_prefix('[')?;
+    let rest = line.strip_suffix("] agent start").or_else(|| line.strip_suffix("] claude start"))?.strip_prefix('[')?;
     rest.strip_suffix('s')?.parse().ok()
 }

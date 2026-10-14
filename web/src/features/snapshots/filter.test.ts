@@ -8,6 +8,7 @@ const snap = (over: Partial<SnapshotMeta>): SnapshotMeta => ({
   source_task: "t1",
   repo: "/Users/me/shop",
   base_sha: "abc",
+  agent: { kind: "claude", provider: null, version: null, custom: null, auth: null, account_kind: null },
   model: "sonnet",
   claude_version: null,
   created_at: 100,

@@ -24,6 +24,8 @@ pub struct CreateTask {
     #[serde(default)]
     pub model: Option<Model>,
     #[serde(default)]
+    pub agent: Option<crate::domain::agents::AgentSelection>,
+    #[serde(default)]
     pub claude_version: Option<String>,
     #[serde(default)]
     pub cpus: Option<u32>,
@@ -128,6 +130,7 @@ pub struct TaskDto {
     pub interactive: bool,
     pub activity: Option<String>,
     pub model: Model,
+    pub agent: crate::domain::agents::AgentSelection,
     pub claude_version: Option<String>,
     pub cpus: u32,
     pub memory_mb: u64,
@@ -165,6 +168,7 @@ impl From<TaskRecord> for TaskDto {
             interactive: r.interactive,
             activity: r.activity,
             model: r.model,
+            agent: r.agent,
             claude_version: r.claude_version,
             cpus: r.cpus,
             memory_mb: r.memory_mb,

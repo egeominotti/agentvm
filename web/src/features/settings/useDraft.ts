@@ -37,6 +37,7 @@ export function useDraft(initial: Settings | undefined) {
       const saved = await api<SettingsView>("/api/settings", "PUT", latest.current);
       qc.setQueryData(keys.settings, saved);
       qc.invalidateQueries({ queryKey: keys.status });
+      qc.invalidateQueries({ queryKey: keys.agents });
       if (saves.current.isCurrent(revision)) setSave({ kind: "saved" });
     } catch (e) {
       if (saves.current.isCurrent(revision)) setSave({ kind: "error", message: (e as Error).message });

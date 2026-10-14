@@ -1,12 +1,13 @@
 //! Translates `claude -p --output-format stream-json` lines into readable events for the dashboard.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 const SUMMARY_MAX: usize = 300;
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub enum AgentEvent {
     Init {
         model: String,

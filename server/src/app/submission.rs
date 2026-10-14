@@ -28,6 +28,10 @@ pub enum SubmitError {
     #[error(transparent)]
     DiskFull(#[from] crate::domain::disk::DiskFull),
     #[error("{0}")]
+    Agent(String),
+    #[error("{0}")]
+    Credential(String),
+    #[error("{0}")]
     Shallow(&'static str),
     #[error("to join your tailnet, save a Tailscale auth key in Settings › Tailscale first")]
     NoTailscaleKey,
@@ -42,8 +46,9 @@ pub struct NewTask<'a> {
     pub base_ref: Option<&'a str>,
     /// Terminal with interactive Claude Code; the prompt becomes optional.
     pub interactive: bool,
-    /// `None` uses the model from the settings.
+    /// `None` uses the saved model for the configured CLI/provider, or the destination CLI default.
     pub model: Option<Model>,
+    pub agent: Option<crate::domain::agents::AgentSelection>,
     /// `None` keeps the Claude Code version of the VM image.
     pub claude_version: Option<ClaudeVersion>,
     /// Boot from this snapshot instead of the golden image.
@@ -67,6 +72,25 @@ pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError
     if tailscale && ctx.keychain.read_tailscale_key().is_none() {
         return Err(SubmitError::NoTailscaleKey);
     }
+    let mut agent = req.agent.unwrap_or(settings.agent.clone());
+    if agent.kind == crate::domain::agents::AgentKind::Custom && agent.custom.is_none() {
+        agent.custom = settings.custom_cli.clone();
+    }
+    let provider = agent.resolved_account().map(super::accounts::config).or_else(|| {
+        agent.resolved_provider().map(|p| settings.providers.get(&p).cloned().unwrap_or_else(|| p.config()))
+    });
+    agent.validate(provider.as_ref(), req.interactive).map_err(SubmitError::Agent)?;
+    let model = req.model.unwrap_or_else(|| {
+        if agent.kind == settings.agent.kind
+            && agent.resolved_provider() == settings.agent.resolved_provider()
+            && agent.resolved_account() == settings.agent.resolved_account()
+        {
+            settings.model
+        } else {
+            Model::default_choice()
+        }
+    });
+    agent.validate_model(&model).map_err(SubmitError::Agent)?;
     let repo = RepoPath::new(super::repos::expand_home(req.repo))?;
     let prompt = match Prompt::new(req.prompt) {
         Ok(p) => Some(p),
@@ -82,11 +106,14 @@ pub fn submit(ctx: &Arc<AppCtx>, req: NewTask<'_>) -> Result<TaskId, SubmitError
     if req.restore_from.is_none() && !ctx.config.golden().is_file() {
         return Err(SubmitError::NoGolden(ctx.config.golden().display().to_string()));
     }
-    ctx.keychain.read_token()?;
-
-    let model = req.model.unwrap_or(ctx.settings.get().model);
+    super::agents::read_credential_with_config(ctx, &agent, provider.as_ref()).map_err(SubmitError::Credential)?;
     let id = TaskId::generate(SystemTime::now(), &random_bytes());
     let mut record = TaskRecord::new(id, repo, prompt, base_sha, req.interactive).with_model(model);
+    record.agent_provider_config = provider.or_else(|| {
+        (agent.kind == crate::domain::agents::AgentKind::Claude)
+            .then(|| crate::domain::providers::Provider::Anthropic.config())
+    });
+    record.agent = agent;
     record.claude_version = req.claude_version.map(|v| v.as_str().to_owned());
     record.restore_from = req.restore_from;
     record.cpus = cpus;

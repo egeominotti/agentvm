@@ -35,3 +35,13 @@ fn the_systems_own_ports_are_not_the_users_services() {
     let listening = [port(3000, "node"), port(42228, "tailscaled"), port(5432, "postgres"), port(49771, "tailscaled")];
     assert_eq!(user_services(&listening), [port(3000, "node"), port(5432, "postgres")]);
 }
+
+#[test]
+fn inference_relay_is_hidden_but_user_port_5001_remains_available_without_it() {
+    use agentvm::domain::metrics::{ListeningPort, user_services_for_agent};
+    let relay = ListeningPort { port: 5001, name: "python3".into() };
+    let app = ListeningPort { port: 3000, name: "node".into() };
+    let listening = [relay.clone(), app.clone()];
+    assert_eq!(user_services_for_agent(&listening, true), [app]);
+    assert_eq!(user_services_for_agent(&listening, false), listening);
+}

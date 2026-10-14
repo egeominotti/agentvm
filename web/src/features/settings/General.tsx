@@ -1,53 +1,25 @@
-// What new VMs start with: the model, the repository suggested first, the time limit of tasks
+// What new VMs start with: the coding CLI, the repository suggested first, the time limit of tasks
 // that run without a terminal.
-import { useState } from "react";
 import type { Settings } from "../../api/generated/Settings";
-import { isKnownModel, MODELS } from "../../lib/models";
+import { CLAUDE_AGENT } from "../../lib/agents";
+import { AgentFields } from "../launcher/AgentFields";
+import { CustomCommands } from "./CustomCommands";
 import { Page, Panel, Row } from "./kit";
 import type { SetSetting } from "./useDraft";
 
-const OTHER = "__other";
-
 export function General({ s, set }: { s: Settings; set: SetSetting }) {
-  const [other, setOther] = useState(!isKnownModel(s.model));
   return (
     <Page title="General" description="What every new VM starts with. Each launch can still choose otherwise.">
       <Panel title="Agent">
-        <Row
-          label="Default model"
-          htmlFor="set-model"
-          description={`${MODELS.find(([id]) => id === s.model)?.[2] ?? "A model ID of your choice"}. Aliases point to the newest of their family.`}
-        >
-          <select
-            id="set-model"
-            className="text-input"
-            value={other ? OTHER : s.model}
-            onChange={(e) => {
-              const v = e.target.value;
-              setOther(v === OTHER);
-              if (v !== OTHER) set("model", v);
-            }}
-          >
-            {MODELS.map(([id, name]) => (
-              <option key={id} value={id}>
-                {name}
-              </option>
-            ))}
-            <option value={OTHER}>Another model ID…</option>
-          </select>
-        </Row>
-        {other ? (
-          <Row label="Model ID" htmlFor="set-model-id" description="As Claude Code takes it, e.g. claude-opus-5-5.">
-            <input
-              id="set-model-id"
-              className="text-input mono"
-              placeholder="claude-opus-5-5"
-              spellCheck={false}
-              defaultValue={isKnownModel(s.model) ? "" : s.model}
-              onChange={(e) => e.target.value.trim() && set("model", e.target.value.trim())}
+        <Row label="Default coding agent" wide>
+          <div className="options">
+            <AgentFields
+              agent={s.agent ?? CLAUDE_AGENT}
+              custom={s.custom_cli}
+              onChange={(agent) => set("agent", agent)}
             />
-          </Row>
-        ) : null}
+          </div>
+        </Row>
         <Row label="Default repository" htmlFor="set-repo" description="Suggested first in New VM: a folder or a link.">
           <input
             id="set-repo"
@@ -77,6 +49,13 @@ export function General({ s, set }: { s: Settings; set: SetSetting }) {
           </span>
         </Row>
       </Panel>
+      <CustomCommands
+        value={s.custom_cli}
+        onChange={(custom) => {
+          set("custom_cli", custom);
+          if (s.agent?.kind === "custom") set("agent", { ...s.agent, custom });
+        }}
+      />
     </Page>
   );
 }

@@ -33,6 +33,8 @@ pub struct VmConfig {
     pub seed_iso: Option<PathBuf>,
     /// Unix socket on the Mac forwarded to the vsock port of the PTY server in the guest.
     pub pty_socket: Option<PathBuf>,
+    /// Host Unix HTTP relay reached through guest-to-host vsock port 5001.
+    pub agent_socket: Option<PathBuf>,
     /// File holding the memory (MB) the VM may keep; the helper follows it with the balloon.
     pub balloon: Option<PathBuf>,
     /// Booted straight into this kernel; without it, through EFI and GRUB from the disk.

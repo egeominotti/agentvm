@@ -57,6 +57,7 @@ pub async fn create(State(ctx): Ctx, Json(req): Json<CreateTask>) -> Result<(Sta
             base_ref: base_ref.as_deref(),
             interactive: req.interactive,
             model: req.model,
+            agent: req.agent,
             claude_version,
             restore_from: None,
             cpus: req.cpus,

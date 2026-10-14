@@ -9,8 +9,8 @@ use axum::middleware;
 use axum::routing::{delete, get, post, put};
 
 use super::{
-    assets, backups, diagnostics, events, git_access, golden, guard, history, repos, session, settings, snapshots,
-    system, tailscale, tasks, telemetry, terminal,
+    accounts, agents, assets, backups, control, diagnostics, events, git_access, golden, guard, history, output, repos,
+    session, settings, snapshots, system, tailscale, tasks, telemetry, terminal,
 };
 use crate::app::supervisor::AppCtx;
 
@@ -36,8 +36,13 @@ fn dashboard() -> Routes {
 
 fn task_routes() -> Routes {
     Router::new()
+        .route("/api/tasks/{id}/control/exec", post(control::start))
+        .route("/api/tasks/{id}/control/exec/{exec_id}", get(control::read).delete(control::cancel))
+        .route("/api/tasks/{id}/control/files", post(control::files))
+        .route("/api/tasks/{id}/control/terminal", post(control::terminal))
         .route("/api/tasks", get(tasks::list).post(tasks::create))
         .route("/api/tasks/{id}", get(tasks::detail).delete(tasks::remove))
+        .route("/api/tasks/{id}/output", get(output::output))
         .route("/api/tasks/{id}/events", get(events::events))
         .route("/api/changes", get(events::changes))
         .route("/api/tasks/{id}/diff", get(tasks::diff))
@@ -72,6 +77,12 @@ fn snapshot_routes() -> Routes {
 
 fn host_routes() -> Routes {
     Router::new()
+        .route("/api/agents", get(agents::catalog))
+        .route("/api/settings/accounts/{account}", get(accounts::status).delete(accounts::delete))
+        .route("/api/settings/accounts/{account}/import", post(accounts::import))
+        .route("/api/settings/accounts/{account}/login", post(accounts::login))
+        .route("/api/settings/accounts/{account}/login/{id}", get(accounts::poll))
+        .route("/api/settings/providers/{provider}", put(agents::update).delete(agents::delete))
         .route("/api/status", get(system::status))
         .route("/api/storage", get(system::storage))
         .route("/api/storage/cleanup", post(system::cleanup))

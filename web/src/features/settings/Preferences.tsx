@@ -34,7 +34,7 @@ export function Preferences() {
       </Panel>
       <Panel title="Notifications">
         <Row
-          label="When Claude is waiting"
+          label="When an agent is waiting"
           description={
             !supported
               ? "This browser cannot show notifications."
@@ -44,7 +44,7 @@ export function Preferences() {
           }
         >
           <Toggle
-            label="Notify me when Claude is waiting"
+            label="Notify me when an agent is waiting"
             on={notify}
             disabled={!supported || blocked}
             onChange={async (next) => {

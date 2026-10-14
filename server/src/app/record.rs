@@ -24,6 +24,11 @@ pub struct TaskRecord {
     #[serde(skip)]
     pub activity: Option<String>,
     #[serde(default)]
+    pub agent: crate::domain::agents::AgentSelection,
+    /// Non-secret relay target fixed when this VM was requested; absent in legacy records.
+    #[serde(default)]
+    pub agent_provider_config: Option<crate::domain::providers::ProviderConfig>,
+    #[serde(default)]
     pub model: Model,
     /// Claude Code version installed at boot instead of the image's one.
     #[serde(default)]
@@ -102,6 +107,8 @@ impl TaskRecord {
             state: TaskState::Queued,
             activity: None,
             model: Model::default_choice(),
+            agent: Default::default(),
+            agent_provider_config: None,
             claude_version: None,
             restore_from: None,
             label: None,

@@ -17,17 +17,27 @@ use crate::adapters::vm::VmProcess;
 use crate::domain::ids::TaskId;
 use crate::domain::task::TaskEvent;
 use crate::secret::Secret;
+use std::sync::Arc;
 
 /// Follows a running VM until it stops, then collects the result. Shared by new VMs and by VMs
 /// re-attached after a server restart.
 pub(super) async fn supervise(
-    ctx: &AppCtx,
+    ctx: &Arc<AppCtx>,
     id: &TaskId,
     record: &TaskRecord,
     ws: JobWorkspace,
     mut vm: VmProcess,
     token: Secret,
 ) -> Result<(), String> {
+    // A relay failure must never drop ownership of a VM which survived a server restart.
+    let _relay = match super::agent_gateway::start(ctx, record, &token) {
+        Ok(relay) => relay,
+        Err(error) => {
+            ctx.store.push_boot(id, format!("host: inference relay unavailable: {error}"));
+            tracing::warn!(task = %id, %error, "inference relay unavailable");
+            None
+        }
+    };
     let usage = crate::app::history::UsageRecorder::shared(crate::app::history::usage_file(ctx, id));
     let on_result = usage_recorder(ctx, id, usage.clone());
     let follower = Follower::start(ctx.store.log(id).ok_or("task disappeared")?, ws.stream(), token, on_result);

@@ -6,6 +6,7 @@ import { Icon } from "../../components/Icon";
 import { Menu, MenuItem } from "../../components/Menu";
 import { StatusMark } from "../../components/StatusMark";
 import { gb, money, repoName } from "../../lib/format";
+import { agentLabel, analyticsAvailable } from "../../lib/agents";
 import { age, shortId, titleOf } from "../../lib/task";
 import { useMachineActions } from "../machine/actions";
 
@@ -25,7 +26,7 @@ export function MachineTable({ tasks }: { tasks: TaskDto[] }) {
           Open on this Mac
         </span>
         <span role="columnheader" className="num wide-only">
-          Claude
+          Cost
         </span>
         <span role="columnheader" className="num wide-only">
           Up
@@ -54,7 +55,7 @@ function MachineRow({ t }: { t: TaskDto }) {
           <b>{titleOf(t)}</b>
         </a>
         <span className="muted">
-          {repoName(t.repo)} · #{shortId(t)}
+          {agentLabel(t.agent)} · {repoName(t.repo)} · #{shortId(t)}
         </span>
       </span>
       <span role="cell" className="num wide-only">
@@ -76,7 +77,7 @@ function MachineRow({ t }: { t: TaskDto }) {
         )}
       </span>
       <span role="cell" className="num wide-only muted">
-        {t.usage?.cost_usd ? money(t.usage.cost_usd) : "–"}
+        {analyticsAvailable(t.agent) && t.usage?.cost_usd ? money(t.usage.cost_usd) : "–"}
       </span>
       <span role="cell" className="num wide-only muted">
         {age(t)}

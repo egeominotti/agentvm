@@ -1,6 +1,7 @@
 // The running machines (and the one open), each with its state and how long it has run.
 import type { TaskDto } from "../../api/generated/TaskDto";
 import { StatusMark } from "../../components/StatusMark";
+import { agentLabel } from "../../lib/agents";
 import { age, isEnded, isWaiting, shortId, statusOf, titleOf } from "../../lib/task";
 
 export function MachineList({ tasks, focused }: { tasks: TaskDto[]; focused: string | null }) {
@@ -17,7 +18,7 @@ export function MachineList({ tasks, focused }: { tasks: TaskDto[]; focused: str
           className={`side-vm${isWaiting(t) ? " waiting" : ""}`}
           href={`#/vm/${t.id}`}
           aria-current={t.id === focused ? "page" : undefined}
-          title={`${titleOf(t)} · ${shortId(t)}\n${statusOf(t).label}`}
+          title={`${agentLabel(t.agent)} · ${titleOf(t)} · ${shortId(t)}\n${statusOf(t).label}`}
         >
           <StatusMark task={t} />
           <span className="t">{titleOf(t)}</span>

@@ -20,7 +20,32 @@ pub fn recover(saved: &Value, defaults: &Settings, host: &HostLimits) -> (Settin
     };
     let mut current = defaults;
     let mut reset = Vec::new();
-    let mut names: Vec<&String> = fields.keys().collect();
+    // Selection, templates and endpoint overrides form one dependency group. Recover the
+    // largest valid subset together before replaying unrelated fields.
+    let linked = ["agent", "custom_cli", "providers"];
+    for kept in (0..=3).rev() {
+        let found = (0u8..8).rev().filter(|mask| mask.count_ones() == kept).find_map(|mask| {
+            let mut candidate = serde_json::to_value(&current).expect("settings serialize");
+            for (i, name) in linked.iter().enumerate() {
+                if mask & (1 << i) != 0
+                    && let Some(value) = fields.get(*name)
+                {
+                    candidate[*name] = value.clone();
+                }
+            }
+            serde_json::from_value::<Settings>(candidate).ok().filter(|s| s.validate(host).is_ok()).map(|s| (mask, s))
+        });
+        if let Some((mask, recovered)) = found {
+            current = recovered;
+            for (i, name) in linked.iter().enumerate() {
+                if mask & (1 << i) == 0 && fields.contains_key(*name) {
+                    reset.push((*name).to_owned());
+                }
+            }
+            break;
+        }
+    }
+    let mut names: Vec<&String> = fields.keys().filter(|name| !linked.contains(&name.as_str())).collect();
     names.sort();
     for name in names {
         let mut candidate = serde_json::to_value(&current).expect("settings serialize");
@@ -31,5 +56,6 @@ pub fn recover(saved: &Value, defaults: &Settings, host: &HostLimits) -> (Settin
             _ => reset.push(name.clone()),
         }
     }
+    reset.sort();
     (current, reset)
 }

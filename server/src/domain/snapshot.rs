@@ -42,6 +42,8 @@ pub struct SnapshotMeta {
     pub source_task: String,
     pub repo: String,
     pub base_sha: String,
+    #[serde(default)]
+    pub agent: crate::domain::agents::AgentSelection,
     pub model: String,
     pub claude_version: Option<String>,
     pub created_at: f64,

@@ -10,6 +10,7 @@ export function task(over: Partial<TaskDto> = {}): TaskDto {
     branch: "main",
     interactive: true,
     activity: null,
+    agent: { kind: "claude", provider: null, version: null, custom: null, auth: null, account_kind: null },
     model: "sonnet",
     claude_version: null,
     cpus: 4,

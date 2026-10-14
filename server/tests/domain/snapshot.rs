@@ -11,6 +11,7 @@ fn snap(task: &str, at: f64, auto: bool) -> SnapshotMeta {
         source_task: task.into(),
         repo: "/r".into(),
         base_sha: "a".repeat(40),
+        agent: Default::default(),
         model: "default".into(),
         claude_version: None,
         created_at: at,
@@ -87,4 +88,18 @@ fn a_clock_set_back_does_not_pause_automatic_snapshots() {
     let last = 10_000.0;
     assert!(every_30.due(Some(last), 0.0, last - 3600.0), "an hour back: due at once");
     assert!(!every_30.due(Some(last), 0.0, last - 30.0), "a few seconds of drift is not a jump");
+}
+
+#[test]
+fn snapshots_preserve_custom_selection_and_old_metadata_defaults_to_claude() {
+    let mut value = serde_json::to_value(snap("task", 1.0, false)).unwrap();
+    value.as_object_mut().unwrap().remove("agent");
+    let old: SnapshotMeta = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(old.agent.kind, agentvm::domain::agents::AgentKind::Claude);
+    value["agent"] = serde_json::json!({"kind":"custom","provider":"local","version":"1.2.3","custom":{"name":"Example","interactive":"example --model {model}","install":"install-example","headless":"example --prompt {prompt}","resume":"example --resume"}});
+    let meta: SnapshotMeta = serde_json::from_value(value).unwrap();
+    let restored: SnapshotMeta = serde_json::from_slice(&serde_json::to_vec(&meta).unwrap()).unwrap();
+    assert_eq!(restored.agent, meta.agent);
+    assert_eq!(restored.agent.version.as_deref(), Some("1.2.3"));
+    assert_eq!(restored.agent.custom.unwrap().name, "Example");
 }

@@ -63,12 +63,16 @@ async fn resume(ctx: Arc<AppCtx>, id: TaskId, _slot: Option<Slot>) {
             if record.stop_requested {
                 ctx.store.signal_stop(&id);
             }
-            let keychain = ctx.keychain.clone();
-            let token = tokio::task::spawn_blocking(move || keychain.read_token())
-                .await
-                .ok()
-                .and_then(Result::ok)
-                .unwrap_or_else(|| Secret::new(String::new()));
+            let credential_ctx = ctx.clone();
+            let selection = record.agent.clone();
+            let provider_config = record.agent_provider_config.clone();
+            let token = tokio::task::spawn_blocking(move || {
+                super::agents::read_credential_with_config(&credential_ctx, &selection, provider_config.as_ref())
+            })
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .unwrap_or_else(|| Secret::new(String::new()));
             supervise(&ctx, &id, &record, ws, vm, token).await
         }
         None => {

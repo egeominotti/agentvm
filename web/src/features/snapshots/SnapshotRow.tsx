@@ -9,6 +9,7 @@ import { Button, IconButton } from "../../components/Button";
 import { Icon } from "../../components/Icon";
 import { Menu, MenuItem } from "../../components/Menu";
 import { useToast } from "../../components/Toast";
+import { agentLabel, analyticsAvailable } from "../../lib/agents";
 import { ago, gb } from "../../lib/format";
 import { modelLabel } from "../../lib/models";
 import type { Kind } from "./filter";
@@ -65,7 +66,8 @@ export function SnapshotRow({ s, label, kind, selected, onSelect, s3Ready }: Pro
       <span role="cell" className="dt-name">
         <b title={s.name}>{label}</b>
         <span className="muted">
-          {modelLabel(s.model)}
+          {agentLabel(s.agent)} ·{" "}
+          {analyticsAvailable(s.agent) ? modelLabel(s.model) : s.model === "default" ? "CLI default" : s.model}
           {s.cpus ? ` · ${s.cpus} vCPUs, ${gb(s.memory_mb)}` : ""}
         </span>
       </span>
@@ -84,7 +86,7 @@ export function SnapshotRow({ s, label, kind, selected, onSelect, s3Ready }: Pro
           variant={resume ? "primary" : "default"}
           disabled={restore.isPending}
           onClick={() => restore.mutate()}
-          title="Starts a new VM exactly from this point; Claude continues its conversation"
+          title={`Starts a new VM exactly from this point; ${agentLabel(s.agent)} resumes its session`}
         >
           <Icon name="restore" />
           {restore.isPending ? "Starting…" : resume ? "Resume" : "Restore"}

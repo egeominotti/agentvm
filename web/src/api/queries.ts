@@ -1,7 +1,8 @@
 // The server's data, kept fresh: TanStack Query polls, caches and shares it between screens, and
 // never runs two identical requests at once.
 import { useQuery } from "@tanstack/react-query";
-import { api } from "./client";
+import { api, ApiError } from "./client";
+import type { AgentCatalog } from "./generated/AgentCatalog";
 import type { Diagnostics } from "./generated/Diagnostics";
 import type { GoldenStatus } from "./generated/GoldenStatus";
 import type { Releases } from "./generated/Releases";
@@ -16,6 +17,7 @@ export const keys = {
   tasks: ["tasks"] as const,
   status: ["status"] as const,
   settings: ["settings"] as const,
+  agents: ["agents"] as const,
   telemetry: (id: string, range: string) => ["telemetry", id, range] as const,
   diagnostics: (id: string) => ["diagnostics", id] as const,
   usage: (id: string) => ["usage", id] as const,
@@ -105,4 +107,20 @@ const ENDED = new Set(["done", "no_changes", "failed", "stopped"]);
 function byLiveThenAge(a: TaskDto, b: TaskDto): number {
   const ended = (t: TaskDto) => (ENDED.has(t.status.state) ? 1 : 0);
   return ended(a) - ended(b) || a.created_at - b.created_at;
+}
+
+/** Old engines have no catalog and keep their Claude-only launcher. */
+export function useAgentCatalog() {
+  return useQuery({
+    queryKey: keys.agents,
+    queryFn: async () => {
+      try {
+        return await api<AgentCatalog>("/api/agents");
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }
+    },
+    retry: false,
+  });
 }

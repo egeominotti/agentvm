@@ -46,3 +46,12 @@ it("tells when the repository's setup failed, even once the machine is ready", (
   expect(setupFailed(task({ boot_log: ["[1.69s] running .agentvm/setup.sh", "[3.0s] setup done"] }))).toBe(false);
   expect(setupFailed(task())).toBe(false);
 });
+
+it("shows the selected CLI during installation and readiness", () => {
+  const t = task({
+    agent: { kind: "codex", provider: "openai", version: null, custom: null, auth: null, account_kind: null },
+    boot_log: ["[2.0s] installing Codex 0.77.0", "[3.0s] Codex 0.77.0", "[3.1s] terminal ready"],
+  });
+  expect(bootSteps(t).steps.find((s) => s.label.startsWith("Installing"))).toMatchObject({ done: true });
+  expect(bootSteps(t).steps.at(-1)).toMatchObject({ label: "Codex ready", done: true });
+});

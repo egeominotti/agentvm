@@ -50,3 +50,18 @@ fn a_vm_whose_folder_is_gone_still_has_a_summary_and_a_timeline() {
     assert!(d.logs.is_empty());
     assert!(!d.timeline.is_empty());
 }
+
+#[test]
+fn cli_install_and_generic_process_errors_are_available_after_the_vm_exits() {
+    let (home, repo) = (tempfile::tempdir().unwrap(), git_repo());
+    let id = running_task(home.path(), &repo, false);
+    let share = home.path().join("jobs").join(id.as_str()).join("share");
+    std::fs::create_dir_all(&share).unwrap();
+    std::fs::write(share.join("install.log"), "package could not be downloaded\n").unwrap();
+    std::fs::write(share.join("agent.err"), "provider unavailable\n").unwrap();
+    let ctx = ctx(home.path());
+    ctx.store.insert(agentvm::app::store::Store::load(&home.path().join("jobs")).remove(0));
+    let diagnostic = of(&ctx, &id).unwrap();
+    assert!(diagnostic.logs.iter().any(|log| log.file == "share/install.log" && log.tail.contains("downloaded")));
+    assert!(diagnostic.logs.iter().any(|log| log.file == "share/agent.err" && log.tail.contains("provider")));
+}

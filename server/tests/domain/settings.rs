@@ -19,6 +19,9 @@ fn default_settings_are_valid() {
         s3: None,
         auto_snapshots: Default::default(),
         tailscale: Default::default(),
+        agent: Default::default(),
+        providers: Default::default(),
+        custom_cli: None,
     };
     assert!(s.validate(&limits()).is_ok());
 }
@@ -55,6 +58,9 @@ fn settings_reject_out_of_range_values() {
         s3: None,
         auto_snapshots: Default::default(),
         tailscale: Default::default(),
+        agent: Default::default(),
+        providers: Default::default(),
+        custom_cli: None,
     };
     for bad in [
         Settings { max_vms: 0, ..ok.clone() },
@@ -77,10 +83,12 @@ fn recommended_vms_fit_in_ram() {
 #[test]
 fn model_maps_to_cli_flag() {
     assert_eq!(Model::default_choice().cli_name(), None);
-    for ok in ["opus", "sonnet[1m]", "opusplan", "fable", "claude-opus-5-5", "claude-haiku-5-5"] {
+    for ok in
+        ["openai/gpt-model:free", "Opus", "sonnet[1m]", "opusplan", "fable", "claude-opus-5-5", "claude-haiku-5-5"]
+    {
         assert_eq!(Model::parse(ok).unwrap().cli_name(), Some(ok));
     }
-    for bad in ["", "Opus", "opus; rm -rf /", "--dangerous", "a b"] {
+    for bad in ["", "opus; rm -rf /", "--dangerous", "a b"] {
         assert!(Model::parse(bad).is_err(), "{bad}");
     }
     let m: Model = serde_json::from_str("\"haiku\"").unwrap();

@@ -6,6 +6,8 @@ export type SectionId =
   | "resources"
   | "preferences"
   | "account"
+  | "accounts"
+  | "providers"
   | "git"
   | "tailscale"
   | "snapshots"
@@ -37,7 +39,19 @@ export const GROUPS: { title: string; items: Section[] }[] = [
   {
     title: "Accounts & access",
     items: [
+      {
+        id: "accounts",
+        title: "Accounts",
+        icon: "user",
+        keywords: "account subscription plan credits chatgpt google copilot kilo claude import login sign in",
+      },
       { id: "account", title: "Claude account", icon: "user", keywords: "token subscription keychain claude" },
+      {
+        id: "providers",
+        title: "Providers",
+        icon: "user",
+        keywords: "openai anthropic google openrouter local custom endpoint api key codex gemini",
+      },
       { id: "git", title: "Git access", icon: "branch", keywords: "github gitlab token private repositories" },
       { id: "tailscale", title: "Tailscale", icon: "tailnet", keywords: "tailnet vpn ssh auth key network" },
     ],

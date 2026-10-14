@@ -3,7 +3,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use agentvm::app::golden::GoldenService;
 
@@ -22,6 +22,7 @@ async fn a_stuck_rebuild_is_stopped_at_its_time_limit() {
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     let mut cleanup = RebuildCleanup { builder_pid, child_pid: child_pid.clone(), armed: true };
     // Assess the real temporary executable before starting the short rebuild deadline.
+    let preparation_started = Instant::now();
     let mut prepare = tokio::process::Command::new(&script)
         .arg("--prepare")
         .stdin(Stdio::null())
@@ -30,10 +31,16 @@ async fn a_stuck_rebuild_is_stopped_at_its_time_limit() {
         .kill_on_drop(true)
         .spawn()
         .unwrap();
+    let preparation_pid = prepare.id();
     assert!(
-        tokio::time::timeout(Duration::from_secs(10), prepare.wait())
+        tokio::time::timeout(Duration::from_secs(30), prepare.wait())
             .await
-            .expect("the executable did not prepare")
+            .unwrap_or_else(|error| {
+                panic!(
+                    "the executable did not prepare: phase=prepare pid={preparation_pid:?} elapsed={:?}: {error}",
+                    preparation_started.elapsed()
+                )
+            })
             .unwrap()
             .success()
     );

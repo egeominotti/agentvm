@@ -41,6 +41,8 @@ final class Runner: NSObject, VZVirtualMachineDelegate {
     private let vm: VZVirtualMachine
     private let ptySocket: URL?
     private var bridge: VsockBridge?
+    private let agentSocket: URL?
+    private var hostBridge: HostBridge?
     private let startedAt = Date()
     private var signalSources: [DispatchSourceSignal] = []
     private let balloon: URL?
@@ -48,9 +50,10 @@ final class Runner: NSObject, VZVirtualMachineDelegate {
     private var balloonMB: UInt64 = 0
     private var balloonTimer: Timer?
 
-    init(configuration: VZVirtualMachineConfiguration, ptySocket: URL?, balloon: URL?, memoryMB: UInt64) {
+    init(configuration: VZVirtualMachineConfiguration, ptySocket: URL?, agentSocket: URL?, balloon: URL?, memoryMB: UInt64) {
         vm = VZVirtualMachine(configuration: configuration)
         self.ptySocket = ptySocket
+        self.agentSocket = agentSocket
         self.balloon = balloon
         self.memoryMB = memoryMB
         super.init()
@@ -71,7 +74,13 @@ final class Runner: NSObject, VZVirtualMachineDelegate {
     }
 
     private func startBridge() {
-        guard let path = ptySocket, let device = vm.socketDevices.first as? VZVirtioSocketDevice else { return }
+        guard let device = vm.socketDevices.first as? VZVirtioSocketDevice else { return }
+        if let path = agentSocket {
+            let host = HostBridge(path: path.path, device: device)
+            host.start()
+            hostBridge = host
+        }
+        guard let path = ptySocket else { return }
         let bridge = VsockBridge(path: path.path, port: VsockBridge.ptyPort, device: device)
         do { try bridge.start() } catch { Events.fail("terminal socket: \(error)") }
         self.bridge = bridge

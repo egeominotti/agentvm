@@ -14,6 +14,7 @@ import { Segmented } from "../../components/Segmented";
 import { StatusMark } from "../../components/StatusMark";
 import { useToast } from "../../components/Toast";
 import { ago, money, plural, repoName } from "../../lib/format";
+import { agentLabel, analyticsAvailable } from "../../lib/agents";
 import { age, shortId, titleOf } from "../../lib/task";
 import { type EndedKind, filterEnded } from "./filter";
 
@@ -116,7 +117,7 @@ export function FinishedTable({ ended }: { ended: TaskDto[] }) {
             Ran
           </span>
           <span role="columnheader" className="num wide-only">
-            Claude
+            Cost
           </span>
           <span role="columnheader" className="num wide-only">
             Ended
@@ -141,7 +142,7 @@ export function FinishedTable({ ended }: { ended: TaskDto[] }) {
                 <b>{titleOf(t)}</b>
               </a>
               <span className="muted">
-                {repoName(t.repo)} · #{shortId(t)}
+                {agentLabel(t.agent)} · {repoName(t.repo)} · #{shortId(t)}
               </span>
             </span>
             <span role="cell" className="muted mono wide-only" title={t.branch}>
@@ -151,7 +152,7 @@ export function FinishedTable({ ended }: { ended: TaskDto[] }) {
               {age(t)}
             </span>
             <span role="cell" className="num muted wide-only">
-              {t.usage?.cost_usd ? money(t.usage.cost_usd) : "–"}
+              {analyticsAvailable(t.agent) && t.usage?.cost_usd ? money(t.usage.cost_usd) : "–"}
             </span>
             <span
               role="cell"

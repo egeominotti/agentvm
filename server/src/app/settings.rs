@@ -19,6 +19,14 @@ pub struct SettingsService {
 pub enum UpdateError {
     #[error(transparent)]
     Invalid(#[from] SettingsError),
+    #[error("could not save the provider credential: {0}")]
+    ProviderCredential(String),
+    #[error("could not save the provider settings ({save}); provider rollback failed: {rollback}")]
+    ProviderRollback {
+        #[source]
+        save: std::io::Error,
+        rollback: String,
+    },
     #[error("could not save the settings: {0}")]
     Save(#[from] std::io::Error),
 }
@@ -58,11 +66,49 @@ impl SettingsService {
     /// save (the scheduler's size) always matches the file. Readers never wait for the disk.
     pub fn update_then(&self, mut new: Settings, then: impl FnOnce(&Settings)) -> Result<Settings, UpdateError> {
         let _writer = self.writer.lock().unwrap();
-        new.s3 = self.get().s3;
+        let current = self.get();
+        new.s3 = current.s3.clone();
+        new.providers = current.providers.clone();
+        reset_inherited_model(&mut new, &current);
         new.validate(&self.limits)?;
         settings_file::save(&self.path, &new)?;
         *self.current.write().unwrap() = new.clone();
         then(&new);
+        Ok(new)
+    }
+
+    /// The credential is changed only after validation, under the same writer lock as settings.
+    pub fn set_provider_with<R>(
+        &self,
+        provider: crate::domain::providers::Provider,
+        config: crate::domain::providers::ProviderConfig,
+        credential: impl FnOnce() -> Result<R, String>,
+        rollback: impl FnOnce(R) -> Result<(), String>,
+    ) -> Result<Settings, UpdateError> {
+        let _writer = self.writer.lock().unwrap();
+        let old = self.get();
+        let mut new = old.clone();
+        new.providers.insert(provider, config);
+        reset_inherited_model(&mut new, &old);
+        new.validate(&self.limits)?;
+        let previous_credential = credential().map_err(UpdateError::ProviderCredential)?;
+        if let Err(save) = settings_file::save(&self.path, &new) {
+            let mut failures = Vec::new();
+            if let Err(error) = rollback(previous_credential) {
+                failures.push(format!("credential: {error}"));
+            }
+            // The directory flush can fail after atomic_file has already renamed the new file.
+            if settings_file::load(&self.path) == Saved::Json(serde_json::to_value(&new).expect("settings serialize"))
+                && let Err(error) = settings_file::save(&self.path, &old)
+            {
+                failures.push(format!("configuration: {error}"));
+            }
+            if !failures.is_empty() {
+                return Err(UpdateError::ProviderRollback { save, rollback: failures.join("; ") });
+            }
+            return Err(UpdateError::Save(save));
+        }
+        *self.current.write().unwrap() = new.clone();
         Ok(new)
     }
 
@@ -72,5 +118,21 @@ impl SettingsService {
         settings_file::save(&self.path, &new)?;
         *self.current.write().unwrap() = new.clone();
         Ok(new)
+    }
+}
+
+/// A full settings form may carry the previous CLI's model without offering a model input.
+fn reset_inherited_model(new: &mut Settings, old: &Settings) {
+    let protocol = |settings: &Settings| {
+        settings.agent.resolved_provider().map(|provider| {
+            settings.providers.get(&provider).map_or_else(|| provider.config().protocol, |config| config.protocol)
+        })
+    };
+    let changed = new.agent.kind != old.agent.kind
+        || new.agent.resolved_provider() != old.agent.resolved_provider()
+        || new.agent.resolved_account() != old.agent.resolved_account()
+        || protocol(new) != protocol(old);
+    if changed && new.model == old.model {
+        new.model = crate::domain::settings::Model::default_choice();
     }
 }

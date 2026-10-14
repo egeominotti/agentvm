@@ -40,7 +40,7 @@ pub(super) async fn run(ctx: Arc<AppCtx>, id: TaskId) {
 }
 
 /// Errors before the VM shuts down → `Err(reason)`; the normal outcome goes through `Finished`.
-async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
+async fn execute(ctx: &Arc<AppCtx>, id: &TaskId) -> Result<(), String> {
     let apply = |e| ctx.store.apply(id, e).map(drop).map_err(|e| e.to_string());
     apply(TaskEvent::SlotAcquired)?;
     let record = ctx.store.get(id).ok_or("task disappeared")?;
@@ -69,7 +69,7 @@ async fn execute(ctx: &AppCtx, id: &TaskId) -> Result<(), String> {
 /// The repository, the token and the disk do not depend on each other: they are prepared at once,
 /// the first two on blocking threads while the disk is cloned.
 async fn prepare(
-    ctx: &AppCtx,
+    ctx: &Arc<AppCtx>,
     id: &TaskId,
     record: &TaskRecord,
 ) -> Result<(JobWorkspace, Secret, Option<DirectBoot>), String> {
@@ -79,10 +79,16 @@ async fn prepare(
     let repo = record.restore_from.is_none().then(|| pack_repo(ctx, record, &ws));
     let keychain = ctx.keychain.clone();
     let joins = record.tailscale;
+    let credential_ctx = ctx.clone();
+    let selection = record.agent.clone();
+    let provider_config = record.agent_provider_config.clone();
     let secrets = tokio::task::spawn_blocking(move || {
-        (keychain.read_token(), joins.then(|| keychain.read_tailscale_key()).flatten())
+        (
+            super::agents::read_credential_with_config(&credential_ctx, &selection, provider_config.as_ref()),
+            joins.then(|| keychain.read_tailscale_key()).flatten(),
+        )
     });
-    let disk = match ws.write_spec(&task_spec(id, record, timeout_s)).map_err(|e| format!("task.json: {e}")) {
+    let disk = match ws.write_spec(&task_spec(ctx, id, record, timeout_s)).map_err(|e| format!("task.json: {e}")) {
         Ok(()) => install_disk(ctx, record, &ws).await,
         Err(e) => Err(e),
     };
@@ -103,7 +109,7 @@ async fn prepare(
     }
     let direct = disk?;
     let token = token?;
-    ws.write_token(&token).map_err(|e| format!("token: {e}"))?;
+    ws.write_token(&Secret::new("sk-ant-oat01-agentvm-dummy".into())).map_err(|e| format!("token: {e}"))?;
     if record.tailscale {
         let spec = crate::domain::tailscale::spec_for(&record.id, &ctx.settings.get().tailscale);
         // A key removed since the launch was asked: the VM boots, and says it could not join.
@@ -170,7 +176,8 @@ fn direct_boot(ctx: &AppCtx, ws: &JobWorkspace, before: &str) -> Option<DirectBo
 }
 
 /// What the guest job reads from `task.json`.
-fn task_spec(id: &TaskId, record: &TaskRecord, timeout_s: u64) -> TaskSpec {
+fn task_spec(ctx: &AppCtx, id: &TaskId, record: &TaskRecord, timeout_s: u64) -> TaskSpec {
+    let provider = super::agent_gateway::config(ctx, record);
     TaskSpec {
         id: id.to_string(),
         prompt: record.prompt.as_ref().map(|p| p.as_str().to_owned()).unwrap_or_default(),
@@ -178,6 +185,14 @@ fn task_spec(id: &TaskId, record: &TaskRecord, timeout_s: u64) -> TaskSpec {
         base_sha: record.base_sha.as_str().to_owned(),
         timeout_s,
         interactive: record.interactive,
+        agent: record.agent.clone(),
+        agent_endpoint: provider.as_ref().and_then(|p| crate::domain::agent_proxy::guest_endpoint(&p.endpoint).ok()),
+        agent_native_defaults: provider.as_ref().map(|p| match record.agent.resolved_account() {
+            Some(crate::domain::accounts::AccountKind::Claude | crate::domain::accounts::AccountKind::Google) => true,
+            Some(_) => false,
+            None => crate::domain::agent_proxy::native_model_defaults(record.agent.kind, p),
+        }),
+        agent_protocol: provider.map(|p| p.protocol),
         model: record.model.cli_name().map(str::to_owned),
         claude_version: record.claude_version.clone(),
         restore: record.restore_from.is_some(),
@@ -193,7 +208,11 @@ fn vm_config(record: &TaskRecord, ws: &JobWorkspace, direct: Option<DirectBoot>)
         cpus: record.cpus,
         memory_mb: record.memory_mb,
         seed_iso: None,
-        pty_socket: record.interactive.then(|| ws.pty_socket()),
+        pty_socket: Some(ws.pty_socket()),
+        agent_socket: (record.agent.resolved_provider().is_some()
+            || record.agent.resolved_account().is_some()
+            || record.agent.kind == crate::domain::agents::AgentKind::Claude)
+            .then(|| ws.agent_socket()),
         balloon: Some(ws.balloon()),
         direct,
     }

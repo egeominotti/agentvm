@@ -1,6 +1,8 @@
 // The machine's busiest processes and its facts.
 import type { TaskDto } from "../../../api/generated/TaskDto";
 import type { VmMetrics } from "../../../api/generated/VmMetrics";
+import { accountLabel, authentication, selectedAccount } from "../../../lib/accounts";
+import { CLAUDE_AGENT, agentLabel, analyticsAvailable, defaultProvider } from "../../../lib/agents";
 import { gb, repoName } from "../../../lib/format";
 import { modelLabel } from "../../../lib/models";
 import { age, statusOf } from "../../../lib/task";
@@ -37,10 +39,26 @@ function ProcList({ title, rows, value }: { title: string; rows: Proc[] | null; 
 }
 
 export function Facts({ task: t }: { task: TaskDto }) {
+  const agent = t.agent ?? CLAUDE_AGENT;
+  const account = selectedAccount(agent);
   const rows: [string, string, string?][] = [
     ["State", statusOf(t).label],
-    ["Model", modelLabel(t.model)],
-    ["Claude Code", t.claude_version ?? "image version"],
+    [
+      "Model",
+      analyticsAvailable(t.agent) ? modelLabel(t.model) : t.model === "default" || !t.model ? "CLI default" : t.model,
+    ],
+    ["Coding CLI", agentLabel(t.agent)],
+    [
+      "Version",
+      analyticsAvailable(t.agent) ? (t.claude_version ?? "image version") : (t.agent?.version ?? "pinned recipe"),
+    ],
+    ["Authentication", authentication(agent) === "account" ? "Account / subscription" : "API / provider"],
+    [
+      account ? "Account" : "Provider",
+      account
+        ? accountLabel(account)
+        : (agent.provider ?? (agent.kind === "claude" ? "anthropic" : defaultProvider(agent.kind)) ?? "Command only"),
+    ],
     ["Resources", `${t.cpus} vCPUs, ${gb(t.memory_mb)}`],
     ["Repository", repoName(t.repo), t.repo],
     ["Branch", t.branch, t.branch],

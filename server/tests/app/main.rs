@@ -1,5 +1,8 @@
 //! Store and events: in-memory logic, tested directly.
 
+mod accounts;
+mod agent_defaults;
+mod agents;
 mod backups;
 mod balloon;
 mod bundles;
@@ -13,6 +16,8 @@ mod guest_requests;
 mod helpers;
 mod history;
 mod logging;
+mod output;
+mod output_compaction;
 mod persistence;
 mod recovery;
 mod remote_repos;

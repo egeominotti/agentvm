@@ -1,18 +1,25 @@
 //! Domain rules: pure logic without I/O, tested directly.
 
+mod account_proxy;
+mod accounts;
 mod agent_event;
+mod agent_proxy;
+mod agents;
 mod boot;
 mod branches;
 mod chunks;
 mod console_text;
 mod diagnosis;
 mod git_remote;
+mod guest_control;
 mod guest_reply;
 mod hostname;
 mod ids;
 mod memory;
 mod metrics;
 mod outcome;
+mod provider_models;
+mod providers;
 mod s3;
 mod save;
 mod settings;
