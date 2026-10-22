@@ -22,8 +22,8 @@ rmcp = { version = "=3.5.1", features = ["transport-io", "schemars"] }
 anyhow = "1"
 axum = { version = "0.8", features = ["ws"] }
 blake3 = "1"
-base64 = "0.22"
-sha2 = "0.10"
+base64 = "0.23"
+sha2 = "0.11"
 futures = "0.3"
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
@@ -38,7 +38,7 @@ tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3.23", features = ["json", "env-filter"] }
 url = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
-zstd = "0.13"
+zstd = "0.14"
 
 [dev-dependencies]
 ts-rs = { version = "12.0.1", features = ["no-serde-warnings"] }
